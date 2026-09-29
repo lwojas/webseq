@@ -6,6 +6,10 @@ import { defineConfig } from "vite";
 // tracker-specific beyond the React plugin and dev server port.
 export default defineConfig({
   plugins: [react()],
+  // GitHub Pages serves this as a project site at /webseq/, so asset URLs need that
+  // prefix; the Docker/nginx deploy serves from the domain root, so it must stay "/" there.
+  // The GitHub Actions workflow sets GITHUB_PAGES=true only for its build step.
+  base: process.env.GITHUB_PAGES ? "/webseq/" : "/",
   server: {
     port: 5174,
   },
