@@ -1,45 +1,134 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import type { NoteId, TrackId } from "./model/types";
-import { totalBeats } from "./model/types";
-import { createInitialState } from "./model/pattern";
-import { sequencerReducer } from "./model/reducer";
+import { MASTER_BUS } from "webdsp";
+import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, TrackId } from "./model/types";
+import { totalBeats, trackById } from "./model/types";
+import { createInitialProject } from "./model/project";
+import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { Transport, type PlaybackStatus } from "./audio/transport";
-import { useMasterFilterModule } from "./modules/useMasterFilterModule";
-import { TransportBar } from "./components/TransportBar";
+import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
+import { applyFxChain } from "./audio/applyFx";
+import { applyTrackVolume } from "./audio/mixer";
+import { encodeWav } from "./audio/wav";
+import { saveProject, loadProject, listProjects, deleteProject } from "./persistence/projectStore";
+import { remapAssetIds } from "./model/project";
+import { TransportBar, type ResamplePhase } from "./components/TransportBar";
+import { PatternBar } from "./components/PatternBar";
+import { ChainEditor } from "./components/ChainEditor";
+import { AssetsPanel } from "./components/AssetsPanel";
 import { SequencerGrid } from "./components/SequencerGrid";
-import { ModuleStrip } from "./components/ModuleStrip";
+import { FxPanel } from "./components/FxPanel";
+import { MixerPanel } from "./components/MixerPanel";
+
+/** The side panel (left of the timeline — see screenshots/concept.png) is tabbed so further
+ * views can be added later without another layout change: add an entry here and a matching
+ * branch in the side-panel-content render below. Assets is the only tenant today. */
+type SidePanelView = "assets";
+const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [{ id: "assets", label: "Assets" }];
+
+/** The panel below the timeline (see screenshots/concept.png) switches between the FX rack
+ * (contextual to whatever's selected in the timeline) and the Mixer (all tracks at once) —
+ * same tabbed pattern as the side panel above. */
+type BottomPanelView = "fx" | "mixer";
+const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
+  { id: "fx", label: "FX" },
+  { id: "mixer", label: "Mixer" },
+];
 
 export function App() {
   const { runtime, error, init } = useAudioRuntime();
-  const [state, dispatch] = useReducer(sequencerReducer, undefined, () => createInitialState());
+  const [project, dispatch] = useReducer(projectReducer, undefined, () => createInitialProject());
 
-  // Transport reads sequencer state through this ref rather than a closed-over value, so
-  // its lookahead tick (running on a setInterval outside React's render cycle) always sees
-  // the latest pattern/tempo without needing to be reconstructed on every edit.
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  // Transport (and the FX-push effect below) read project state through this ref rather than
+  // a closed-over value, so the lookahead tick (running on a setInterval outside React's
+  // render cycle) always sees the latest project without needing to be reconstructed on
+  // every edit — same rationale as the original prototype's stateRef.
+  const projectRef = useRef(project);
+  projectRef.current = project;
 
+  const trackBusesRef = useRef<TrackBusMap>({});
+  const assetDataRef = useRef<Map<AssetId, ArrayBuffer>>(new Map());
   const transportRef = useRef<Transport | null>(null);
+
   const [status, setStatus] = useState<PlaybackStatus>("stopped");
+  const [selectedPatternId, setSelectedPatternId] = useState(project.patterns[0].id);
+  const [sidePanelView, setSidePanelView] = useState<SidePanelView>("assets");
+  const [bottomPanelView, setBottomPanelView] = useState<BottomPanelView>("fx");
+  const [selectedTarget, setSelectedTarget] = useState<FxTarget>("master");
+  const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
+  const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
+  const [savedProjects, setSavedProjects] = useState<{ id: string; name: string }[]>([]);
+  const [loadTargetId, setLoadTargetId] = useState<string>("");
+  const [resamplePhase, setResamplePhase] = useState<ResamplePhase>("idle");
+  const [resampleError, setResampleError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const masterFilter = useMasterFilterModule(runtime);
+  const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
 
+  // Keep every track's bus assignment up to date (idempotent — see ensureTrackBuses) whenever
+  // the runtime is ready or the track list changes, and construct Transport once.
   useEffect(() => {
-    if (runtime && !transportRef.current) {
-      transportRef.current = new Transport(runtime, () => stateRef.current);
+    if (!runtime) return;
+    trackBusesRef.current = ensureTrackBuses(runtime, project.tracks.map((t) => t.id), trackBusesRef.current);
+    if (!transportRef.current) {
+      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId);
     }
-  }, [runtime]);
+  }, [runtime, project.tracks, getBusId]);
+
+  // Push the full FX + mixer state to the engine on every project change — covers live
+  // parameter edits (including volume/mute/solo drags), FX add/remove, and a freshly-loaded
+  // project. Automation's own per-tick updates (Transport.pollAutomation) only take over from
+  // here once playback starts. This is the same "dispatch -> reducer -> effect -> engine call"
+  // path for volume/mute/solo as for FX params — no separate mixer update mechanism.
+  useEffect(() => {
+    if (!runtime) return;
+    applyFxChain(runtime, MASTER_BUS, project.master.fx);
+    for (const track of project.tracks) {
+      const busId = trackBusesRef.current[track.id];
+      if (busId === undefined) continue;
+      applyFxChain(runtime, busId, track.fx);
+      applyTrackVolume(runtime, busId, project, track);
+    }
+  }, [runtime, project]);
+
+  // Keep the pattern selection valid: jump to a newly-added pattern, or off a removed one.
+  const prevPatternIds = useRef(project.patterns.map((p) => p.id));
+  useEffect(() => {
+    const ids = project.patterns.map((p) => p.id);
+    const added = ids.find((id) => !prevPatternIds.current.includes(id));
+    if (added) setSelectedPatternId(added);
+    else if (!ids.includes(selectedPatternId)) setSelectedPatternId(ids[0]);
+    prevPatternIds.current = ids;
+  }, [project.patterns, selectedPatternId]);
+
+  // Keep the FX/automation selection valid as the selected target's chain changes.
+  useEffect(() => {
+    const owner = selectedTarget === "master" ? project.master : trackById(project, selectedTarget);
+    const fx = owner?.fx ?? [];
+    if (selectedFxId && !fx.some((f) => f.id === selectedFxId)) {
+      setSelectedFxId(null);
+      setSelectedAutomationParamId(null);
+    }
+  }, [project, selectedTarget, selectedFxId]);
 
   const ensureTransport = useCallback(async (): Promise<Transport | null> => {
     if (transportRef.current) return transportRef.current;
     const rt = await init();
     if (!rt) return null;
-    const t = new Transport(rt, () => stateRef.current);
+    trackBusesRef.current = ensureTrackBuses(rt, projectRef.current.tracks.map((t) => t.id), trackBusesRef.current);
+    applyFxChain(rt, MASTER_BUS, projectRef.current.master.fx);
+    for (const track of projectRef.current.tracks) {
+      const busId = trackBusesRef.current[track.id];
+      if (busId === undefined) continue;
+      applyFxChain(rt, busId, track.fx);
+      applyTrackVolume(rt, busId, projectRef.current, track);
+    }
+    const t = new Transport(rt, () => projectRef.current, getBusId);
     transportRef.current = t;
     return t;
-  }, [init]);
+  }, [init, getBusId]);
 
   const handlePlay = useCallback(async () => {
     const transport = await ensureTransport();
@@ -57,94 +146,425 @@ export function App() {
     setStatus(transportRef.current?.getStatus() ?? "stopped");
   }, []);
 
-  const handleTempoChange = useCallback((tempo: number) => {
-    dispatch({ type: "SET_TEMPO", tempo });
-    // Live tempo changes only take audible effect once the transport re-anchors its
-    // schedule — see Transport.retime()'s doc comment for why that's required for a
-    // click-free change rather than a retroactive one.
+  const handleBpmChange = useCallback((bpm: number) => {
+    dispatch({ type: "SET_BPM", bpm });
+    // Live BPM changes only take audible effect once the transport re-anchors its schedule —
+    // see Transport.retime()'s doc comment for why that's required for a click-free change.
     transportRef.current?.retime();
   }, []);
 
-  const handleAddNote = useCallback((trackId: TrackId, start: number) => {
-    dispatch({ type: "ADD_NOTE", trackId, start });
-  }, []);
+  const handleAddNote = useCallback(
+    (trackId: TrackId, start: number) => dispatch({ type: "ADD_NOTE", patternId: selectedPatternId, trackId, start }),
+    [selectedPatternId],
+  );
+  const handleResizeNote = useCallback(
+    (noteId: NoteId, duration: number) => dispatch({ type: "RESIZE_NOTE", patternId: selectedPatternId, noteId, duration }),
+    [selectedPatternId],
+  );
+  const handleMoveNote = useCallback(
+    (noteId: NoteId, start: number) => dispatch({ type: "MOVE_NOTE", patternId: selectedPatternId, noteId, start }),
+    [selectedPatternId],
+  );
 
-  const handleResizeNote = useCallback((noteId: NoteId, duration: number) => {
-    dispatch({ type: "RESIZE_NOTE", noteId, duration });
-  }, []);
-
-  const handleMoveNote = useCallback((noteId: NoteId, start: number) => {
-    dispatch({ type: "MOVE_NOTE", noteId, start });
-  }, []);
-
-  const handleLoadSample = useCallback(
-    async (trackId: TrackId, file: File) => {
+  // Decodes a local file via the runtime (unchanged mechanism — see the project brief's "the
+  // existing ability to load and play local audio must continue working") and adds it to the
+  // Asset Bin. Shared by the Assets panel's "+ Import" (import only) and each track's "Load"
+  // button (import, then immediately assign — see handleImportAndAssignToTrack).
+  const importAsset = useCallback(
+    async (file: File): Promise<Asset | null> => {
       const runtimeInstance = runtime ?? (await init());
-      if (!runtimeInstance) return;
+      if (!runtimeInstance) return null;
       const arrayBuffer = await file.arrayBuffer();
-      const meta = await runtimeInstance.loadSample(arrayBuffer, { name: file.name });
-      dispatch({ type: "ASSIGN_SAMPLE", trackId, sampleId: meta.id, name: meta.name });
+      const meta = await runtimeInstance.loadSample(arrayBuffer.slice(0), { name: file.name });
+      assetDataRef.current.set(meta.id, arrayBuffer);
+      const asset: Asset = {
+        id: meta.id,
+        name: meta.name,
+        type: "audio",
+        duration: meta.duration,
+        sampleRate: meta.sampleRate,
+        channels: meta.channels,
+        origin: "import",
+      };
+      dispatch({ type: "ADD_ASSET", asset });
+      return asset;
     },
     [runtime, init],
   );
+
+  const handleImportAsset = useCallback((file: File) => void importAsset(file), [importAsset]);
+
+  const handleImportAndAssignToTrack = useCallback(
+    async (trackId: TrackId, file: File) => {
+      const asset = await importAsset(file);
+      if (asset) dispatch({ type: "ASSIGN_ASSET", trackId, assetId: asset.id });
+    },
+    [importAsset],
+  );
+
+  const handleAssignAsset = useCallback(
+    (trackId: TrackId, assetId: AssetId) => dispatch({ type: "ASSIGN_ASSET", trackId, assetId }),
+    [],
+  );
+  const handleRenameAsset = useCallback((assetId: AssetId, name: string) => dispatch({ type: "RENAME_ASSET", assetId, name }), []);
+  const handleRemoveAsset = useCallback((assetId: AssetId) => dispatch({ type: "REMOVE_ASSET", assetId }), []);
+
+  const handleResample = useCallback(async () => {
+    const transport = transportRef.current;
+    if (!transport) return;
+    const armed = transport.armResample();
+    if (!armed.ok) {
+      setResamplePhase("error");
+      setResampleError(armed.reason);
+      return;
+    }
+    setResamplePhase("pending");
+    setResampleError(null);
+    try {
+      const { metadata, channelData } = await armed.result;
+      setResamplePhase("processing");
+      const wavBytes = encodeWav(channelData.map((buf) => new Float32Array(buf)), metadata.sampleRate);
+      assetDataRef.current.set(metadata.id, wavBytes);
+      const resampleCount = projectRef.current.assets.filter((a) => a.origin === "resample").length + 1;
+      const asset: Asset = {
+        id: metadata.id,
+        name: `Resample ${String(resampleCount).padStart(2, "0")}`,
+        type: "audio",
+        duration: metadata.duration,
+        sampleRate: metadata.sampleRate,
+        channels: metadata.channels,
+        origin: "resample",
+        sourcePatternId: armed.patternId,
+      };
+      dispatch({ type: "ADD_ASSET", asset });
+      setResamplePhase("complete");
+    } catch (err) {
+      setResamplePhase("error");
+      setResampleError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.key === "Backspace" || e.key === "Delete") && selectedNoteId) {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) return;
-        dispatch({ type: "REMOVE_NOTE", noteId: selectedNoteId });
+        dispatch({ type: "REMOVE_NOTE", patternId: selectedPatternId, noteId: selectedNoteId });
         setSelectedNoteId(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNoteId]);
+  }, [selectedNoteId, selectedPatternId]);
 
   const getPositionText = useCallback(() => {
-    const beat = transportRef.current?.getPlayheadBeat() ?? 0;
-    const beatsPerBar = stateRef.current.beatsPerBar;
-    const bar = Math.floor(beat / beatsPerBar) + 1;
-    const beatInBar = Math.floor(beat % beatsPerBar) + 1;
-    return `BAR ${bar}  BEAT ${String(beatInBar).padStart(2, "0")}`;
+    const info = transportRef.current?.getPlayheadInfo();
+    const pattern = project.patterns.find((p) => p.id === info?.patternId);
+    if (!info || !pattern) return "— —";
+    const bar = Math.floor(info.beat / project.beatsPerBar) + 1;
+    const beatInBar = Math.floor(info.beat % project.beatsPerBar) + 1;
+    return `${pattern.name}  BAR ${bar}  BEAT ${String(beatInBar).padStart(2, "0")}`;
+  }, [project.patterns, project.beatsPerBar]);
+
+  const getPlayheadBeat = useCallback((): number | null => {
+    const info = transportRef.current?.getPlayheadInfo();
+    if (!info || info.patternId !== selectedPatternId) return null;
+    return info.beat;
+  }, [selectedPatternId]);
+
+  const getResampleLabel = useCallback(() => transportRef.current?.getResampleStatus() ?? "idle", []);
+
+  // --- FX / automation handlers ---
+  const handleAddFx = useCallback((type: FxType) => dispatch({ type: "ADD_FX", target: selectedTarget, fxType: type }), [selectedTarget]);
+  const handleRemoveFx = useCallback((fxId: FxId) => dispatch({ type: "REMOVE_FX", target: selectedTarget, fxId }), [selectedTarget]);
+  const handleSetFxParam = useCallback(
+    (fxId: FxId, paramId: string, value: number) => dispatch({ type: "SET_FX_PARAM", target: selectedTarget, fxId, paramId, value }),
+    [selectedTarget],
+  );
+  const handleSetFxEnabled = useCallback(
+    (fxId: FxId, enabled: boolean) => dispatch({ type: "SET_FX_ENABLED", target: selectedTarget, fxId, enabled }),
+    [selectedTarget],
+  );
+  const handleSetAutomationPoint = useCallback(
+    (fxId: FxId, parameter: string, position: number, value: number) =>
+      dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, value }),
+    [selectedTarget],
+  );
+  const handleRemoveAutomationPoint = useCallback(
+    (fxId: FxId, parameter: string, position: number) =>
+      dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position }),
+    [selectedTarget],
+  );
+  const handleClearAutomationLane = useCallback(
+    (fxId: FxId, parameter: string) => dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter }),
+    [selectedTarget],
+  );
+
+  // --- mixer (volume/mute/solo) ---
+  const handleSetTrackVolume = useCallback(
+    (trackId: TrackId, volume: number) => dispatch({ type: "SET_TRACK_VOLUME", trackId, volume }),
+    [],
+  );
+  const handleSetTrackMuted = useCallback(
+    (trackId: TrackId, muted: boolean) => dispatch({ type: "SET_TRACK_MUTED", trackId, muted }),
+    [],
+  );
+  const handleSetTrackSoloed = useCallback(
+    (trackId: TrackId, soloed: boolean) => dispatch({ type: "SET_TRACK_SOLOED", trackId, soloed }),
+    [],
+  );
+
+  const handleSelectTarget = useCallback((target: FxTarget) => {
+    setSelectedTarget(target);
+    setSelectedFxId(null);
+    setSelectedAutomationParamId(null);
   }, []);
 
-  const getPlayheadBeat = useCallback(() => transportRef.current?.getPlayheadBeat() ?? 0, []);
+  // --- persistence ---
+  const refreshSavedProjects = useCallback(() => {
+    listProjects().then(setSavedProjects);
+  }, []);
+  useEffect(() => refreshSavedProjects(), [refreshSavedProjects]);
+
+  const handleSaveProject = useCallback(async () => {
+    setSaveStatus("saving");
+    setSaveError(null);
+    try {
+      await saveProject(project, assetDataRef.current);
+      refreshSavedProjects();
+      setSaveStatus("saved");
+    } catch (err) {
+      setSaveStatus("error");
+      setSaveError(err instanceof Error ? err.message : String(err));
+    }
+  }, [project, refreshSavedProjects]);
+
+  // Clears the transient "Saved ✓" confirmation after a couple seconds — a UI-only timer for a
+  // toast message, not anything audio-timed, so a plain setTimeout is fine here (see
+  // audio/transport.ts for where wall-clock timers are actually forbidden).
+  useEffect(() => {
+    if (saveStatus !== "saved") return;
+    const timer = setTimeout(() => setSaveStatus("idle"), 2000);
+    return () => clearTimeout(timer);
+  }, [saveStatus]);
+
+  const handleLoadProject = useCallback(async () => {
+    if (!loadTargetId) return;
+    const loaded = await loadProject(loadTargetId);
+    if (!loaded) return;
+    const runtimeInstance = runtime ?? (await init());
+    if (!runtimeInstance) return;
+
+    transportRef.current?.stop();
+    const idMap = new Map<AssetId, AssetId>();
+    assetDataRef.current = new Map();
+    for (const asset of loaded.project.assets) {
+      const data = loaded.assetData.get(asset.id);
+      if (!data) continue;
+      const meta = await runtimeInstance.loadSample(data.slice(0), { name: asset.name });
+      idMap.set(asset.id, meta.id);
+      assetDataRef.current.set(meta.id, data);
+    }
+    const remapped = remapAssetIds(loaded.project, idMap);
+    // Deliberately NOT resetting trackBusesRef here: webdsp's createBus() hands buses out
+    // from a one-way counter (MAX_TRACK_BUSES = 32) with no release call, so wiping this map
+    // on every load would force a brand-new set of buses per load and exhaust the pool after
+    // just two — see ensureTrackBuses' doc comment. Every project has the same fixed,
+    // deterministic track ids (createInitialTracks: "track-1".."track-16" — there is no add/
+    // remove-track feature), so the existing id -> bus mapping is still correct for whatever
+    // project is loaded next; ensureTrackBuses only ever allocates for an id it hasn't seen.
+    dispatch({ type: "LOAD_PROJECT", project: remapped });
+    setStatus("stopped");
+  }, [loadTargetId, runtime, init]);
+
+  const handleNewProject = useCallback(() => {
+    transportRef.current?.stop();
+    assetDataRef.current = new Map();
+    // See handleLoadProject's comment just above: trackBusesRef is intentionally kept, not
+    // reset, since webdsp has no way to release a bus and every project shares the same
+    // track ids.
+    dispatch({ type: "LOAD_PROJECT", project: createInitialProject() });
+    setStatus("stopped");
+  }, []);
+
+  const handleDeleteProject = useCallback(async () => {
+    if (!loadTargetId) return;
+    await deleteProject(loadTargetId);
+    setLoadTargetId("");
+    refreshSavedProjects();
+  }, [loadTargetId, refreshSavedProjects]);
+
+  const selectedPattern = project.patterns.find((p) => p.id === selectedPatternId) ?? project.patterns[0];
+  const fxOwner = selectedTarget === "master" ? project.master : trackById(project, selectedTarget);
+  const playheadInfo = transportRef.current?.getPlayheadInfo();
 
   return (
     <div className="app">
       <div className="topbar">
         <div>
           <span className="brand">WEBSEQ</span>
-          <span className="subtitle">// tracker client for webdsp</span>
+          <input
+            className="project-name-input"
+            value={project.name}
+            onChange={(e) => dispatch({ type: "SET_PROJECT_NAME", name: e.target.value })}
+          />
+        </div>
+        <div className="project-controls">
+          <button className="btn small" onClick={handleNewProject}>
+            New
+          </button>
+          <button className="btn small" onClick={handleSaveProject} disabled={saveStatus === "saving"}>
+            {saveStatus === "saving" ? "Saving…" : "Save"}
+          </button>
+          {saveStatus === "saved" && <span className="save-status saved">Saved ✓</span>}
+          {saveStatus === "error" && (
+            <span className="save-status error" title={saveError ?? undefined}>
+              Save failed
+            </span>
+          )}
+          <select className="project-select" value={loadTargetId} onChange={(e) => setLoadTargetId(e.target.value)}>
+            <option value="">— saved projects —</option>
+            {savedProjects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button className="btn small" onClick={handleLoadProject} disabled={!loadTargetId}>
+            Load
+          </button>
+          <button className="btn small danger" onClick={handleDeleteProject} disabled={!loadTargetId}>
+            Delete
+          </button>
         </div>
         <div className="subtitle">
-          {totalBeats(state)} beats / {state.bars} bar{state.bars > 1 ? "s" : ""}
+          {totalBeats(selectedPattern, project.beatsPerBar)} beats / {selectedPattern.bars} bar
+          {selectedPattern.bars > 1 ? "s" : ""}
         </div>
       </div>
 
       <TransportBar
         status={status}
-        tempo={state.tempo}
+        bpm={project.bpm}
         onPlay={handlePlay}
         onPause={handlePause}
         onStop={handleStop}
-        onTempoChange={handleTempoChange}
+        onBpmChange={handleBpmChange}
         getPositionText={getPositionText}
+        canResample={status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing"}
+        onResample={handleResample}
+        resamplePhase={resamplePhase}
+        resampleError={resampleError}
+        getResampleLabel={getResampleLabel}
       />
 
-      <div className="main">
-        <SequencerGrid
-          state={state}
-          selectedNoteId={selectedNoteId}
-          onSelectNote={setSelectedNoteId}
-          onAddNote={handleAddNote}
-          onResizeNote={handleResizeNote}
-          onMoveNote={handleMoveNote}
-          onLoadSample={handleLoadSample}
-          getPlayheadBeat={getPlayheadBeat}
-        />
-        <ModuleStrip modules={[masterFilter]} />
+      <PatternBar
+        patterns={project.patterns}
+        selectedPatternId={selectedPatternId}
+        onSelectPattern={setSelectedPatternId}
+        onAddPattern={() => dispatch({ type: "ADD_PATTERN" })}
+        onDuplicatePattern={(id) => dispatch({ type: "DUPLICATE_PATTERN", patternId: id })}
+        onRemovePattern={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
+        onRenamePattern={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
+        onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
+      />
+
+      <ChainEditor
+        chain={project.patternChain}
+        patterns={project.patterns}
+        playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
+        onAppend={(patternId) => dispatch({ type: "APPEND_TO_CHAIN", patternId })}
+        onRemoveEntry={(entryId) => dispatch({ type: "REMOVE_CHAIN_ENTRY", entryId })}
+        onMoveEntry={(from, to) => dispatch({ type: "MOVE_CHAIN_ENTRY", fromIndex: from, toIndex: to })}
+        selectedPatternIdToAdd={selectedPatternId}
+      />
+
+      <div className="workspace">
+        <aside className="side-panel">
+          <div className="side-panel-tabs">
+            {SIDE_PANEL_VIEWS.map((view) => (
+              <button
+                key={view.id}
+                className={`side-panel-tab ${sidePanelView === view.id ? "active" : ""}`}
+                onClick={() => setSidePanelView(view.id)}
+              >
+                {view.label}
+              </button>
+            ))}
+          </div>
+          <div className="side-panel-content">
+            {sidePanelView === "assets" && (
+              <AssetsPanel
+                assets={project.assets}
+                selectedTarget={selectedTarget}
+                onImport={handleImportAsset}
+                onAssign={handleAssignAsset}
+                onRename={handleRenameAsset}
+                onRemove={handleRemoveAsset}
+              />
+            )}
+          </div>
+        </aside>
+
+        <div className="main">
+          <SequencerGrid
+            project={project}
+            pattern={selectedPattern}
+            selectedTarget={selectedTarget}
+            onSelectTarget={handleSelectTarget}
+            selectedNoteId={selectedNoteId}
+            onSelectNote={setSelectedNoteId}
+            onAddNote={handleAddNote}
+            onResizeNote={handleResizeNote}
+            onMoveNote={handleMoveNote}
+            onLoadSample={handleImportAndAssignToTrack}
+            getPlayheadBeat={getPlayheadBeat}
+          />
+          <div className="bottom-panel">
+            <div className="bottom-panel-tabs">
+              {BOTTOM_PANEL_VIEWS.map((view) => (
+                <button
+                  key={view.id}
+                  className={`bottom-panel-tab ${bottomPanelView === view.id ? "active" : ""}`}
+                  onClick={() => setBottomPanelView(view.id)}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </div>
+            {bottomPanelView === "fx" && (
+              <FxPanel
+                target={selectedTarget}
+                track={selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null)}
+                fx={fxOwner?.fx ?? []}
+                automation={fxOwner?.automation ?? []}
+                patternTotalBeats={totalBeats(selectedPattern, project.beatsPerBar)}
+                selectedFxId={selectedFxId}
+                selectedAutomationParamId={selectedAutomationParamId}
+                onSelectFx={(id) => {
+                  setSelectedFxId(id);
+                  setSelectedAutomationParamId(null);
+                }}
+                onAddFx={handleAddFx}
+                onRemoveFx={handleRemoveFx}
+                onSetFxParam={handleSetFxParam}
+                onSetFxEnabled={handleSetFxEnabled}
+                onSelectAutomationParam={setSelectedAutomationParamId}
+                onSetAutomationPoint={handleSetAutomationPoint}
+                onRemoveAutomationPoint={handleRemoveAutomationPoint}
+                onClearAutomationLane={handleClearAutomationLane}
+              />
+            )}
+            {bottomPanelView === "mixer" && (
+              <MixerPanel
+                tracks={project.tracks}
+                onSetVolume={handleSetTrackVolume}
+                onSetMuted={handleSetTrackMuted}
+                onSetSoloed={handleSetTrackSoloed}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {error && <div className="gesture-veil">Audio engine failed to start: {error}</div>}

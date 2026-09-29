@@ -1,14 +1,18 @@
 import { useRef } from "react";
-import type { NoteId, Track } from "../model/types";
-import { notesForTrack, totalBeats, type SequencerState } from "../model/types";
+import type { NoteId, Pattern, Track } from "../model/types";
+import { notesForTrack, totalBeats } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
+import { BEAT_WIDTH_PX } from "./timelineConstants";
 
 interface Props {
   index: number;
   track: Track;
-  state: SequencerState;
+  pattern: Pattern;
+  beatsPerBar: number;
+  selected: boolean;
   selectedNoteId: NoteId | null;
   onSelectNote: (id: NoteId | null) => void;
+  onSelectTrack: () => void;
   onAddNote: (start: number) => void;
   onResizeNote: (noteId: NoteId, duration: number) => void;
   onMoveNote: (noteId: NoteId, start: number) => void;
@@ -18,26 +22,37 @@ interface Props {
 export function TrackRow({
   index,
   track,
-  state,
+  pattern,
+  beatsPerBar,
+  selected,
   selectedNoteId,
   onSelectNote,
+  onSelectTrack,
   onAddNote,
   onResizeNote,
   onMoveNote,
   onLoadSample,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const beats = totalBeats(state);
-  const notes = notesForTrack(state, track.id);
+  const beats = totalBeats(pattern, beatsPerBar);
+  const notes = notesForTrack(pattern, track.id);
+  const width = beats * BEAT_WIDTH_PX;
 
   return (
-    <div className="track-row">
-      <div className="track-header">
+    <div className={`track-row ${selected ? "selected" : ""}`}>
+      <div className="track-header" onClick={onSelectTrack}>
         <span className="track-num">{String(index + 1).padStart(2, "0")}</span>
-        <span className={`track-name ${track.sampleId == null ? "unassigned" : ""}`}>
-          {track.sampleId == null ? "— empty —" : track.name}
+        <span className={`track-name ${track.assetId == null ? "unassigned" : ""}`}>
+          {track.assetId == null ? "— empty —" : track.name}
         </span>
-        <button className="load-btn" onClick={() => fileInputRef.current?.click()}>
+        {track.fx.length > 0 && <span className="track-fx-badge">{track.fx.length}FX</span>}
+        <button
+          className="load-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            fileInputRef.current?.click();
+          }}
+        >
           Load
         </button>
         <input
@@ -52,12 +67,12 @@ export function TrackRow({
           }}
         />
       </div>
-      <div className="track-lane">
-        <div className="cells">
+      <div className="track-lane" style={{ width }}>
+        <div className="cells" style={{ gridTemplateColumns: `repeat(${beats}, ${BEAT_WIDTH_PX}px)` }}>
           {Array.from({ length: beats }, (_, i) => (
             <button
               key={i}
-              className={`cell ${i % 4 === 0 ? "bar-start" : ""}`}
+              className={`cell ${i % beatsPerBar === 0 ? "bar-start" : ""}`}
               onClick={() => onAddNote(i)}
               aria-label={`beat ${i + 1}`}
             />

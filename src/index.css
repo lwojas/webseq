@@ -71,6 +71,53 @@ select {
   margin-left: 8px;
 }
 
+.project-name-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text);
+  margin-left: 10px;
+  padding: 2px 4px;
+  font-size: 12px;
+  width: 14em;
+}
+
+.project-name-input:hover,
+.project-name-input:focus {
+  border-bottom-color: var(--border-strong);
+  outline: none;
+}
+
+.project-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.save-status {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.save-status.saved {
+  color: var(--accent);
+}
+
+.save-status.error {
+  color: var(--danger);
+}
+
+.project-select {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 3px 6px;
+  color: var(--text);
+  font-size: 11px;
+  max-width: 12em;
+}
+
 /* --- transport --- */
 
 .transport {
@@ -157,12 +204,288 @@ select {
   flex: 1;
 }
 
+.resample-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.resample-status {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--amber);
+  min-width: 6em;
+}
+
+.resample-status.complete {
+  color: var(--accent);
+}
+
+.resample-status.error {
+  color: var(--danger);
+}
+
+/* --- pattern bar / chain editor --- */
+
+.pattern-bar,
+.chain-editor {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.pattern-bar-label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.pattern-chips,
+.chain-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pattern-chip {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.pattern-chip.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+.pattern-edit-fields {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.pattern-name-input {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 4px 8px;
+  color: var(--text);
+  width: 10em;
+}
+
+.btn.small {
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn.danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.chain-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 11px;
+}
+
+.chain-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.chain-chip.playing {
+  border-color: var(--amber);
+  box-shadow: 0 0 4px rgba(240, 168, 60, 0.4);
+}
+
+.chain-chip-name {
+  padding: 0 4px;
+  font-size: 11px;
+}
+
+.chain-move,
+.chain-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 12px;
+}
+
+.chain-move:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.chain-remove:hover {
+  color: var(--danger);
+}
+
+/* --- workspace (side panel + main content) --- */
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* The column to the left of the timeline (see screenshots/concept.png) — a general-purpose
+   sidebar for views that want their own vertical real estate rather than a horizontal strip.
+   Assets is the first tenant; further views can add their own section alongside it. */
+.side-panel {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.side-panel-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.side-panel-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 10px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.side-panel-tab:last-child {
+  border-right: none;
+}
+
+.side-panel-tab:hover {
+  color: var(--text);
+}
+
+.side-panel-tab.active {
+  background: var(--panel-alt);
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.side-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* --- assets panel (lives inside .side-panel) --- */
+
+.assets-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 0;
+}
+
+.assets-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.asset-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.asset-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 4px 6px;
+}
+
+.asset-origin-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  flex-shrink: 0;
+}
+
+.asset-origin-badge.resample {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.asset-name-input {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 11px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 4px;
+}
+
+.asset-name-input:focus {
+  outline: 1px solid var(--accent-dim);
+  border-radius: 2px;
+}
+
+.asset-chip-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
 /* --- main body --- */
 
+/* Never scrolls itself — a plain flex column whose two children (the sequencer and the
+   bottom panel) each own their own bounded scroll region instead, so scrolling one never
+   drags the other out of view (see .timeline-scroll / .fx-panel / .mixer-panel below). */
 .main {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -170,9 +493,27 @@ select {
 /* --- sequencer grid --- */
 
 .sequencer {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   border-bottom: 1px solid var(--border);
+}
+
+/* Caps the visible viewport to ~VIEWPORT_BARS bars (see timelineConstants.ts) and scrolls
+   for anything longer — horizontally for a pattern wider than the viewport, vertically for
+   more tracks than fit — instead of stretching to fill available space. This is `.sequencer`'s
+   own bounded scroll region (see .main's doc comment just above). */
+.timeline-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.timeline-content {
+  width: max-content;
+  min-width: 100%;
 }
 
 .grid-header {
@@ -195,10 +536,8 @@ select {
 }
 
 .grid-header .beat-ruler {
-  flex: 1;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
 }
 
 .grid-header .beat-num {
@@ -277,7 +616,7 @@ select {
 
 .track-lane {
   position: relative;
-  flex: 1;
+  flex-shrink: 0;
 }
 
 .track-lane .cells {
@@ -285,7 +624,39 @@ select {
   inset: 0;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+}
+
+.master-row {
+  cursor: pointer;
+}
+
+.master-row .track-header {
+  cursor: pointer;
+}
+
+.master-lane {
+  background: rgba(240, 168, 60, 0.03);
+}
+
+.track-name.master-name {
+  color: var(--amber);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.track-fx-badge {
+  background: var(--accent-dim);
+  color: #eafffa;
+  font-size: 8px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.track-row.selected {
+  background: rgba(41, 224, 224, 0.05);
+  outline: 1px solid var(--accent-dim);
+  outline-offset: -1px;
 }
 
 .track-lane .cell {
@@ -336,7 +707,6 @@ select {
   top: 0;
   bottom: 0;
   left: var(--header-width);
-  right: 0;
   pointer-events: none;
 }
 
@@ -367,15 +737,61 @@ select {
   position: relative;
 }
 
-/* --- module strip --- */
+/* --- bottom panel (FX / Mixer tab switch, below the timeline) --- */
 
-.module-strip {
-  padding: 12px 16px;
-  background: var(--panel);
+/* A fixed-height sibling of .sequencer inside .main (see .main's doc comment) — its own
+   bounded box, so it never grows to push the sequencer around and never scrolls with it.
+   Whichever tab is active (.fx-panel / .mixer-panel) owns the scrolling within this box. */
+.bottom-panel {
+  height: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   border-top: 1px solid var(--border);
 }
 
-.module-strip-title {
+.bottom-panel-tabs {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.bottom-panel-tab {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.bottom-panel-tab:hover {
+  color: var(--text);
+}
+
+.bottom-panel-tab.active {
+  background: var(--panel-alt);
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* --- FX panel (contextual: selected track or MASTER) --- */
+
+.fx-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-top: none;
+}
+
+.fx-panel-title {
   color: var(--text-dim);
   text-transform: uppercase;
   font-size: 10px;
@@ -383,10 +799,69 @@ select {
   margin-bottom: 8px;
 }
 
-.modules {
+.fx-panel-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 11px;
+  margin-top: 8px;
+}
+
+.fx-chain-strip {
   display: flex;
-  gap: 12px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.fx-chip {
+  display: flex;
+  align-items: center;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fx-chip.active {
+  border-color: var(--accent);
+}
+
+.fx-chip.bypassed {
+  opacity: 0.5;
+}
+
+.fx-chip-label {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fx-chip.active .fx-chip-label {
+  color: var(--accent);
+}
+
+.fx-chip-remove {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 5px 8px;
+}
+
+.fx-chip-remove:hover {
+  color: var(--danger);
+}
+
+.fx-panel-detail {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .module-panel {
@@ -394,7 +869,7 @@ select {
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   padding: 10px 14px;
-  min-width: 280px;
+  max-width: 640px;
 }
 
 .module-panel-header {
@@ -423,11 +898,88 @@ select {
   gap: 4px;
 }
 
-.module-param label {
+.module-param .param-label {
+  background: transparent;
+  border: none;
   color: var(--text-dim);
   text-transform: uppercase;
   font-size: 9px;
   letter-spacing: 0.05em;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+}
+
+.module-param .param-label:hover {
+  color: var(--text);
+}
+
+.module-param .param-label.automated {
+  color: var(--amber);
+}
+
+.automation-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 4px var(--amber);
+}
+
+/* --- automation lane --- */
+
+.automation-lane-wrap {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  max-width: 640px;
+}
+
+.automation-lane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.automation-lane {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: crosshair;
+}
+
+.automation-curve {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.automation-curve polyline {
+  stroke: var(--accent-dim);
+  stroke-width: 1.5;
+}
+
+.automation-point {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: 1px solid #ffcb7a;
+  cursor: grab;
 }
 
 .module-param .enum-toggle {
@@ -465,6 +1017,112 @@ select {
   color: var(--amber);
   min-width: 4.5em;
   text-align: right;
+}
+
+/* --- mixer panel (contextual bottom-panel tab, alongside FX) --- */
+/* Vertical channel strips laid out in a row, one per track, scrolling horizontally as a whole
+   (see .bottom-panel's doc comment for why this scrolls independently of the sequencer) —
+   same track order as the timeline, just a fader-strip layout instead of a note lane. */
+
+.mixer-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  padding: 10px 12px;
+  background: var(--panel);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.mixer-strip {
+  flex-shrink: 0;
+  width: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border-right: 1px solid var(--border);
+}
+
+.mixer-strip:last-child {
+  border-right: none;
+}
+
+.mixer-strip.muted {
+  opacity: 0.5;
+}
+
+.mixer-strip-num {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+/* Deliberately narrow + ellipsized — asset names can be long, but this strip is a control
+   surface, not a place to read the full name; rename the asset in the Assets panel for that.
+   `title` on the element (see MixerPanel.tsx) surfaces the full name on hover instead. */
+.mixer-strip-name {
+  flex-shrink: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  color: var(--text);
+  font-size: 10px;
+}
+
+.mixer-strip-name.unassigned {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.mixer-strip-value {
+  flex-shrink: 0;
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.mixer-fader-wrap {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* A vertical fader built from a horizontal <input type=range> rotated -90deg — native vertical
+   range styling (orient=vertical / writing-mode) is inconsistent across browsers, this rotation
+   trick isn't. Rotating -90deg puts the input's max (its right end) at the top and min (left
+   end) at the bottom, matching a normal fader with no min/max/direction juggling needed. The
+   fixed 130px "width" becomes the fader's visible vertical length once rotated. */
+.mixer-fader {
+  width: 130px;
+  transform: rotate(-90deg);
+  accent-color: var(--accent);
+}
+
+.mixer-strip-buttons {
+  flex-shrink: 0;
+  display: flex;
+  gap: 4px;
+}
+
+.mixer-mute.active {
+  background: #6b2323;
+  border-color: var(--danger);
+  color: #ffe4e4;
+}
+
+.mixer-solo.active {
+  background: #6b5323;
+  border-color: var(--amber);
+  color: #ffe9c4;
 }
 
 /* --- empty state --- */

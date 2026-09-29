@@ -1,30 +1,99 @@
-import type { NoteId, SequencerState, TrackId } from "./types";
-import * as pattern from "./pattern";
+import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, Project, TrackId } from "./types";
+import type { Asset } from "./types";
+import * as project from "./project";
+import * as fx from "./fx";
+import * as automation from "./automation";
 
 export type Action =
-  | { type: "SET_TEMPO"; tempo: number }
-  | { type: "ASSIGN_SAMPLE"; trackId: TrackId; sampleId: number; name: string }
-  | { type: "ADD_NOTE"; trackId: TrackId; start: number }
-  | { type: "REMOVE_NOTE"; noteId: NoteId }
-  | { type: "RESIZE_NOTE"; noteId: NoteId; duration: number }
-  | { type: "MOVE_NOTE"; noteId: NoteId; start: number }
-  | { type: "SET_BARS"; bars: number };
+  | { type: "SET_BPM"; bpm: number }
+  | { type: "SET_PROJECT_NAME"; name: string }
+  | { type: "ADD_ASSET"; asset: Asset }
+  | { type: "ASSIGN_ASSET"; trackId: TrackId; assetId: AssetId }
+  | { type: "RENAME_ASSET"; assetId: AssetId; name: string }
+  | { type: "REMOVE_ASSET"; assetId: AssetId }
+  | { type: "SET_TRACK_VOLUME"; trackId: TrackId; volume: number }
+  | { type: "SET_TRACK_MUTED"; trackId: TrackId; muted: boolean }
+  | { type: "SET_TRACK_SOLOED"; trackId: TrackId; soloed: boolean }
+  | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
+  | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
+  | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number }
+  | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number }
+  | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
+  | { type: "ADD_PATTERN" }
+  | { type: "DUPLICATE_PATTERN"; patternId: PatternId }
+  | { type: "REMOVE_PATTERN"; patternId: PatternId }
+  | { type: "RENAME_PATTERN"; patternId: PatternId; name: string }
+  | { type: "APPEND_TO_CHAIN"; patternId: PatternId }
+  | { type: "REMOVE_CHAIN_ENTRY"; entryId: ChainEntryId }
+  | { type: "MOVE_CHAIN_ENTRY"; fromIndex: number; toIndex: number }
+  | { type: "ADD_FX"; target: FxTarget; fxType: FxType }
+  | { type: "REMOVE_FX"; target: FxTarget; fxId: FxId }
+  | { type: "SET_FX_PARAM"; target: FxTarget; fxId: FxId; paramId: string; value: number }
+  | { type: "SET_FX_ENABLED"; target: FxTarget; fxId: FxId; enabled: boolean }
+  | { type: "SET_AUTOMATION_POINT"; target: FxTarget; fxId: FxId; parameter: string; position: number; value: number }
+  | { type: "REMOVE_AUTOMATION_POINT"; target: FxTarget; fxId: FxId; parameter: string; position: number }
+  | { type: "CLEAR_AUTOMATION_LANE"; target: FxTarget; fxId: FxId; parameter: string }
+  | { type: "LOAD_PROJECT"; project: Project };
 
-export function sequencerReducer(state: SequencerState, action: Action): SequencerState {
+export function projectReducer(state: Project, action: Action): Project {
   switch (action.type) {
-    case "SET_TEMPO":
-      return pattern.setTempo(state, action.tempo);
-    case "ASSIGN_SAMPLE":
-      return pattern.assignSample(state, action.trackId, action.sampleId, action.name);
+    case "SET_BPM":
+      return project.setBpm(state, action.bpm);
+    case "SET_PROJECT_NAME":
+      return project.renameProject(state, action.name);
+    case "ADD_ASSET":
+      return project.addAsset(state, action.asset);
+    case "ASSIGN_ASSET":
+      return project.assignAsset(state, action.trackId, action.assetId);
+    case "RENAME_ASSET":
+      return project.renameAsset(state, action.assetId, action.name);
+    case "REMOVE_ASSET":
+      return project.removeAsset(state, action.assetId);
+    case "SET_TRACK_VOLUME":
+      return project.setTrackVolume(state, action.trackId, action.volume);
+    case "SET_TRACK_MUTED":
+      return project.setTrackMuted(state, action.trackId, action.muted);
+    case "SET_TRACK_SOLOED":
+      return project.setTrackSoloed(state, action.trackId, action.soloed);
     case "ADD_NOTE":
-      return pattern.addNote(state, action.trackId, action.start);
+      return project.addNote(state, action.patternId, action.trackId, action.start);
     case "REMOVE_NOTE":
-      return pattern.removeNote(state, action.noteId);
+      return project.removeNote(state, action.patternId, action.noteId);
     case "RESIZE_NOTE":
-      return pattern.resizeNote(state, action.noteId, action.duration);
+      return project.resizeNote(state, action.patternId, action.noteId, action.duration);
     case "MOVE_NOTE":
-      return pattern.moveNote(state, action.noteId, action.start);
-    case "SET_BARS":
-      return pattern.setBars(state, action.bars);
+      return project.moveNote(state, action.patternId, action.noteId, action.start);
+    case "SET_PATTERN_BARS":
+      return project.setPatternBars(state, action.patternId, action.bars);
+    case "ADD_PATTERN":
+      return project.addPattern(state);
+    case "DUPLICATE_PATTERN":
+      return project.duplicatePattern(state, action.patternId);
+    case "REMOVE_PATTERN":
+      return project.removePattern(state, action.patternId);
+    case "RENAME_PATTERN":
+      return project.renamePattern(state, action.patternId, action.name);
+    case "APPEND_TO_CHAIN":
+      return project.appendToChain(state, action.patternId);
+    case "REMOVE_CHAIN_ENTRY":
+      return project.removeChainEntry(state, action.entryId);
+    case "MOVE_CHAIN_ENTRY":
+      return project.moveChainEntry(state, action.fromIndex, action.toIndex);
+    case "ADD_FX":
+      return fx.addFx(state, action.target, action.fxType);
+    case "REMOVE_FX":
+      return fx.removeFx(state, action.target, action.fxId);
+    case "SET_FX_PARAM":
+      return fx.setFxParam(state, action.target, action.fxId, action.paramId, action.value);
+    case "SET_FX_ENABLED":
+      return fx.setFxEnabled(state, action.target, action.fxId, action.enabled);
+    case "SET_AUTOMATION_POINT":
+      return automation.setAutomationPoint(state, action.target, action.fxId, action.parameter, action.position, action.value);
+    case "REMOVE_AUTOMATION_POINT":
+      return automation.removeAutomationPoint(state, action.target, action.fxId, action.parameter, action.position);
+    case "CLEAR_AUTOMATION_LANE":
+      return automation.clearAutomationLane(state, action.target, action.fxId, action.parameter);
+    case "LOAD_PROJECT":
+      return action.project;
   }
 }
