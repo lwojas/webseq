@@ -11,11 +11,12 @@ interface Props {
 
 const ALL_TYPES = Object.keys(FX_DEFS) as FxType[];
 
-/** Compact chip row for one FX chain, e.g. `[ Filter ] [ Delay ] [ + Filter ] [ + Delay ]` —
+/** Compact chip row for one FX chain, e.g. `[ Filter ] [ Delay ] [ + Filter ] [ + Reverb ]` —
  * keeps the timeline/module panel from being overwhelmed when a track has multiple FX (see
  * project brief section 13). Only offers "+<type>" for a type not already in the chain: the
- * audio engine has exactly one filter slot and one delay slot per bus, so a second of the
- * same type would have nothing distinct to control (see model/fx.ts's doc comment). */
+ * audio engine has exactly one filter slot, one delay slot, and one reverb slot per bus, so a
+ * second of the same type would have nothing distinct to control (see model/fx.ts's doc
+ * comment). */
 export function FxChainStrip({ fx, selectedFxId, onSelectFx, onAddFx, onRemoveFx }: Props) {
   const presentTypes = new Set(fx.map((f) => f.type));
 

@@ -14,8 +14,9 @@ describe("FX chains (track and master)", () => {
   it("supports multiple different FX on the same track, in order", () => {
     let project = addFx(createInitialProject(), "track-1", "filter");
     project = addFx(project, "track-1", "delay");
+    project = addFx(project, "track-1", "reverb");
     const track = project.tracks.find((t) => t.id === "track-1")!;
-    expect(track.fx.map((f) => f.type)).toEqual(["filter", "delay"]);
+    expect(track.fx.map((f) => f.type)).toEqual(["filter", "delay", "reverb"]);
   });
 
   it("does not add a second FX of the same type to one track (engine has one filter/delay slot per bus)", () => {
@@ -35,6 +36,20 @@ describe("FX chains (track and master)", () => {
     const project = addFx(createInitialProject(), "master", "delay");
     expect(project.master.fx).toHaveLength(1);
     expect(project.tracks.every((t) => t.fx.length === 0)).toBe(true);
+  });
+
+  it("supports reverb on the master bus with its own default params", () => {
+    const project = addFx(createInitialProject(), "master", "reverb");
+    expect(project.master.fx).toHaveLength(1);
+    expect(project.master.fx[0].type).toBe("reverb");
+    expect(project.master.fx[0].params).toEqual({ decay: 0.5, damping: 0.2, mix: 0 });
+  });
+
+  it("supports reverb on a track the same way as master", () => {
+    const project = addFx(createInitialProject(), "track-1", "reverb");
+    const track = project.tracks.find((t) => t.id === "track-1")!;
+    expect(track.fx).toHaveLength(1);
+    expect(track.fx[0].type).toBe("reverb");
   });
 
   it("updates a parameter on a specific FX instance", () => {
