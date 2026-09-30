@@ -1,15 +1,16 @@
 // FX chain operations, generic over FxTarget (a track or the master bus — see types.ts).
-// This is the one place that knows what a "filter", "delay", or "reverb" *is* at the model
-// level (their param keys, defaults, and ranges); src/audio/applyFx.ts is the only other
-// place that needs to know it, translating these generic params into webdsp's NodeParam
-// calls. The UI's module panel renders any FxInstance generically from FX_DEFS, the same way
-// the old AudioModule abstraction rendered a single hand-written module.
+// This is the one place that knows what a "filter", "delay", "reverb", or "compressor" *is*
+// at the model level (their param keys, defaults, and ranges); src/audio/applyFx.ts is the
+// only other place that needs to know it, translating these generic params into webdsp's
+// NodeParam calls. The UI's module panel renders any FxInstance generically from FX_DEFS, the
+// same way the old AudioModule abstraction rendered a single hand-written module.
 //
 // One real engine constraint shapes this: webdsp's Bus has exactly one filter slot, one delay
-// slot, and (as of webdsp's ECS-15) one reverb slot — a fixed three-node DSPChain (see
-// webdsp's ARCHITECTURE.md, "How DSP is composed"), not an arbitrary stack of any of them. So
-// a chain may contain at most one FX of each type; addFx() is a no-op if that type is already
-// present rather than adding a duplicate that could never be distinctly processed.
+// slot, one reverb slot, and (as of webdsp commit 60bb9b6) one compressor slot — a fixed
+// four-node DSPChain (see webdsp's ARCHITECTURE.md, "How DSP is composed"), not an arbitrary
+// stack of any of them. So a chain may contain at most one FX of each type; addFx() is a
+// no-op if that type is already present rather than adding a duplicate that could never be
+// distinctly processed.
 
 import type { FxId, FxInstance, FxTarget, FxType, Project, Track } from "./types";
 import { fxOwner } from "./types";
@@ -71,6 +72,18 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "decay", label: "Decay", min: 0, max: 0.99, step: 0.01, default: 0.5 },
       { id: "damping", label: "Damping", min: 0, max: 0.99, step: 0.01, default: 0.2 },
       { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
+    ],
+  },
+  compressor: {
+    type: "compressor",
+    label: "Compressor",
+    params: [
+      { id: "threshold", label: "Threshold", min: -60, max: 0, step: 0.1, unit: "dB", default: -18 },
+      { id: "ratio", label: "Ratio", min: 1, max: 20, step: 0.1, default: 4 },
+      { id: "attack", label: "Attack", min: 0.0001, max: 1, step: 0.0001, unit: "s", default: 0.01 },
+      { id: "release", label: "Release", min: 0.001, max: 3, step: 0.001, unit: "s", default: 0.15 },
+      { id: "knee", label: "Knee", min: 0, max: 24, step: 0.1, unit: "dB", default: 6 },
+      { id: "makeup", label: "Makeup", min: -24, max: 24, step: 0.1, unit: "dB", default: 0 },
     ],
   },
 };

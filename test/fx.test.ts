@@ -15,8 +15,9 @@ describe("FX chains (track and master)", () => {
     let project = addFx(createInitialProject(), "track-1", "filter");
     project = addFx(project, "track-1", "delay");
     project = addFx(project, "track-1", "reverb");
+    project = addFx(project, "track-1", "compressor");
     const track = project.tracks.find((t) => t.id === "track-1")!;
-    expect(track.fx.map((f) => f.type)).toEqual(["filter", "delay", "reverb"]);
+    expect(track.fx.map((f) => f.type)).toEqual(["filter", "delay", "reverb", "compressor"]);
   });
 
   it("does not add a second FX of the same type to one track (engine has one filter/delay slot per bus)", () => {
@@ -50,6 +51,27 @@ describe("FX chains (track and master)", () => {
     const track = project.tracks.find((t) => t.id === "track-1")!;
     expect(track.fx).toHaveLength(1);
     expect(track.fx[0].type).toBe("reverb");
+  });
+
+  it("supports compressor on the master bus with its own default params", () => {
+    const project = addFx(createInitialProject(), "master", "compressor");
+    expect(project.master.fx).toHaveLength(1);
+    expect(project.master.fx[0].type).toBe("compressor");
+    expect(project.master.fx[0].params).toEqual({
+      threshold: -18,
+      ratio: 4,
+      attack: 0.01,
+      release: 0.15,
+      knee: 6,
+      makeup: 0,
+    });
+  });
+
+  it("supports compressor on a track the same way as master", () => {
+    const project = addFx(createInitialProject(), "track-1", "compressor");
+    const track = project.tracks.find((t) => t.id === "track-1")!;
+    expect(track.fx).toHaveLength(1);
+    expect(track.fx[0].type).toBe("compressor");
   });
 
   it("updates a parameter on a specific FX instance", () => {

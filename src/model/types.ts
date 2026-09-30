@@ -69,14 +69,14 @@ export interface MasterBus {
   automation: AutomationLane[];
 }
 
-export type FxType = "filter" | "delay" | "reverb";
+export type FxType = "filter" | "delay" | "reverb" | "compressor";
 
 /** One FX in a track's or master's ordered chain. `params` is a flat, generic key->value map
  * (see fx.ts's FX_DEFS for what keys each `type` defines and their defaults/ranges) rather
  * than a per-type interface, so the chain, the reducer, and the generic module-panel UI never
  * need a switch statement over FX type — only fx.ts's registry and audio/applyFx.ts (the
- * translation to webdsp's NodeParam ids) know what a "filter", "delay", or "reverb"
- * actually is. */
+ * translation to webdsp's NodeParam ids) know what a "filter", "delay", "reverb", or
+ * "compressor" actually is. */
 export interface FxInstance {
   id: FxId;
   type: FxType;

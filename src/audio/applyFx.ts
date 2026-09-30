@@ -1,7 +1,7 @@
 // Pushes a track's (or master's) FX chain to webdsp as real-time bus parameters. The only
-// file besides src/model/fx.ts that knows what a "filter", "delay", or "reverb" *is* — this
-// is the generic AudioModule-style abstraction's counterpart on the engine side, translating
-// FxInstance.params into NodeParam calls on whichever BusId that target owns (see
+// file besides src/model/fx.ts that knows what a "filter", "delay", "reverb", or "compressor"
+// *is* — this is the generic AudioModule-style abstraction's counterpart on the engine side,
+// translating FxInstance.params into NodeParam calls on whichever BusId that target owns (see
 // src/audio/buses.ts). Called both on live parameter edits and, at the same tick rate as note
 // scheduling, by Transport's automation polling (see transport.ts) — never from a React
 // render, only from an explicit "the user changed this" or "the playhead advanced" event.
@@ -10,7 +10,10 @@
 // no dedicated bypass control (once parameterized it stays shaped until reparameterized), so
 // "no filter in this chain" / "filter disabled" is approximated by pushing the cutoff to
 // whichever edge of the audible range is transparent for the current mode. Delay and reverb
-// both have a real bypass (mix = 0), used both when disabled and when absent.
+// both have a real bypass (mix = 0), used both when disabled and when absent. Compressor has
+// no mix knob at all — it's bypassed via ratio = 1 (a mathematical no-op regardless of the
+// other params, per webdsp's NodeParam.CompRatio doc comment), used both when disabled and
+// when absent.
 import { FilterMode, NodeParam, type AudioRuntime, type BusId } from "webdsp";
 import type { FxInstance } from "../model/types";
 
@@ -47,16 +50,28 @@ function applyReverb(runtime: AudioRuntime, busId: BusId, instance: FxInstance |
   runtime.setNodeParameter(busId, NodeParam.ReverbMix, mix);
 }
 
+function applyCompressor(runtime: AudioRuntime, busId: BusId, instance: FxInstance | undefined): void {
+  const enabled = instance?.enabled ?? false;
+  const ratio = enabled ? (instance?.params.ratio ?? 4) : 1;
+  runtime.setNodeParameter(busId, NodeParam.CompThreshold, instance?.params.threshold ?? -18);
+  runtime.setNodeParameter(busId, NodeParam.CompRatio, ratio);
+  runtime.setNodeParameter(busId, NodeParam.CompAttack, instance?.params.attack ?? 0.01);
+  runtime.setNodeParameter(busId, NodeParam.CompRelease, instance?.params.release ?? 0.15);
+  runtime.setNodeParameter(busId, NodeParam.CompKnee, instance?.params.knee ?? 6);
+  runtime.setNodeParameter(busId, NodeParam.CompMakeup, instance?.params.makeup ?? 0);
+}
+
 /** Pushes the full state of one FX chain onto its bus, including resetting any FX type that
  * chain no longer contains back to transparent — so removing an FX audibly reverts to
  * pass-through rather than leaving the bus stuck at that FX's last parameters. Note: webdsp's
- * Bus chain applies filter, then delay, then reverb unconditionally (a fixed three-node
- * native chain, see webdsp's ARCHITECTURE.md "Buses / mixing" and "How DSP is composed")
- * regardless of this array's order — see FX_DEFS's doc comment in model/fx.ts. */
+ * Bus chain applies filter, then delay, then reverb, then compressor unconditionally (a fixed
+ * four-node native chain, see webdsp's ARCHITECTURE.md "Buses / mixing" and "How DSP is
+ * composed") regardless of this array's order — see FX_DEFS's doc comment in model/fx.ts. */
 export function applyFxChain(runtime: AudioRuntime, busId: BusId, fx: FxInstance[]): void {
   applyFilter(runtime, busId, fx.find((f) => f.type === "filter"));
   applyDelay(runtime, busId, fx.find((f) => f.type === "delay"));
   applyReverb(runtime, busId, fx.find((f) => f.type === "reverb"));
+  applyCompressor(runtime, busId, fx.find((f) => f.type === "compressor"));
 }
 
 /** Applies one automated parameter value directly (bypassing the FX's base `params`), for
@@ -75,5 +90,12 @@ export function applyAutomatedParam(runtime: AudioRuntime, busId: BusId, fxType:
     if (paramId === "decay") runtime.setNodeParameter(busId, NodeParam.ReverbDecay, value);
     else if (paramId === "damping") runtime.setNodeParameter(busId, NodeParam.ReverbDamping, value);
     else if (paramId === "mix") runtime.setNodeParameter(busId, NodeParam.ReverbMix, value);
+  } else if (fxType === "compressor") {
+    if (paramId === "threshold") runtime.setNodeParameter(busId, NodeParam.CompThreshold, value);
+    else if (paramId === "ratio") runtime.setNodeParameter(busId, NodeParam.CompRatio, value);
+    else if (paramId === "attack") runtime.setNodeParameter(busId, NodeParam.CompAttack, value);
+    else if (paramId === "release") runtime.setNodeParameter(busId, NodeParam.CompRelease, value);
+    else if (paramId === "knee") runtime.setNodeParameter(busId, NodeParam.CompKnee, value);
+    else if (paramId === "makeup") runtime.setNodeParameter(busId, NodeParam.CompMakeup, value);
   }
 }
