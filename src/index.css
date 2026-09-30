@@ -869,7 +869,7 @@ select {
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   padding: 10px 14px;
-  max-width: 640px;
+  width: 100%;
 }
 
 .module-panel-header {
