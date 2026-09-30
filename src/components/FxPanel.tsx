@@ -78,7 +78,9 @@ export function FxPanel({
           )}
         </div>
       )}
-      {fx.length === 0 && <div className="fx-panel-empty">No FX yet — add a Filter, Delay, Reverb, Compressor, or Saturation above.</div>}
+      {fx.length === 0 && (
+        <div className="fx-panel-empty">No FX yet — add a Filter, Chorus/Flanger, Delay, Reverb, Compressor, or Saturation above.</div>
+      )}
     </div>
   );
 }

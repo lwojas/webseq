@@ -1,17 +1,23 @@
 // FX chain operations, generic over FxTarget (a track or the master bus — see types.ts).
-// This is the one place that knows what a "filter", "delay", "reverb", "compressor", or
-// "saturation" *is* at the model level (their param keys, defaults, and ranges);
-// src/audio/applyFx.ts is the only other place that needs to know it, translating these
-// generic params into webdsp's NodeParam calls. The UI's module panel renders any FxInstance
-// generically from FX_DEFS, the same way the old AudioModule abstraction rendered a single
-// hand-written module.
+// This is the one place that knows what a "filter", "chorusFlanger", "delay", "reverb",
+// "compressor", or "saturation" *is* at the model level (their param keys, defaults, and
+// ranges); src/audio/applyFx.ts is the only other place that needs to know it, translating
+// these generic params into webdsp's NodeParam calls. The UI's module panel renders any
+// FxInstance generically from FX_DEFS, the same way the old AudioModule abstraction rendered a
+// single hand-written module.
 //
-// One real engine constraint shapes this: webdsp's Bus has exactly one filter slot, one delay
-// slot, one reverb slot, one compressor slot, and (as of webdsp commit 8e04e46) one saturation
-// slot — a fixed five-node DSPChain (see webdsp's ARCHITECTURE.md, "How DSP is composed"), not
-// an arbitrary stack of any of them. So a chain may contain at most one FX of each type;
-// addFx() is a no-op if that type is already present rather than adding a duplicate that could
-// never be distinctly processed.
+// One real engine constraint shapes this: webdsp's Bus has exactly one filter slot, one
+// chorus/flanger slot, one delay slot, one reverb slot, one compressor slot, and (as of webdsp
+// commit 8e04e46) one saturation slot — a fixed six-node DSPChain (see webdsp's
+// ARCHITECTURE.md, "How DSP is composed"), not an arbitrary stack of any of them. So a chain
+// may contain at most one FX of each type; addFx() is a no-op if that type is already present
+// rather than adding a duplicate that could never be distinctly processed.
+//
+// Chorus and flanger are one engine node ("chorusFlanger" here), not two — a longer center
+// delay with little feedback reads as chorus, a short delay with feedback dialed up reads as
+// flanger. There's deliberately no separate "flanger" FxType: both are the same NodeParam ids
+// at different settings (see webdsp's docs/chorus-flanger-node.md), and this module only has
+// one chorus/flanger slot to give them.
 
 import type { FxId, FxInstance, FxTarget, FxType, Project, Track } from "./types";
 import { fxOwner } from "./types";
@@ -55,6 +61,18 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       },
       { id: "cutoff", label: "Cutoff", min: 40, max: 18000, step: 1, unit: "Hz", default: 18000 },
       { id: "resonance", label: "Resonance", min: 0.1, max: 20, step: 0.01, unit: "Q", default: 0.707 },
+    ],
+  },
+  chorusFlanger: {
+    type: "chorusFlanger",
+    label: "Chorus/Flanger",
+    params: [
+      { id: "rate", label: "Rate", min: 0.01, max: 10, step: 0.01, unit: "Hz", default: 2 },
+      { id: "depth", label: "Depth", min: 0, max: 20, step: 0.1, unit: "ms", default: 5 },
+      { id: "delay", label: "Delay", min: 0.1, max: 40, step: 0.1, unit: "ms", default: 15 },
+      { id: "feedback", label: "Feedback", min: -0.95, max: 0.95, step: 0.01, default: 0 },
+      { id: "stereoPhase", label: "Stereo Phase", min: 0, max: 1, step: 0.01, default: 0.25 },
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
   delay: {
