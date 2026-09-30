@@ -14,9 +14,9 @@ const ALL_TYPES = Object.keys(FX_DEFS) as FxType[];
 /** Compact chip row for one FX chain, e.g. `[ Filter ] [ Delay ] [ + Filter ] [ + Compressor ]`
  * — keeps the timeline/module panel from being overwhelmed when a track has multiple FX (see
  * project brief section 13). Only offers "+<type>" for a type not already in the chain: the
- * audio engine has exactly one filter slot, one delay slot, one reverb slot, and one
- * compressor slot per bus, so a second of the same type would have nothing distinct to
- * control (see model/fx.ts's doc comment). */
+ * audio engine has exactly one filter slot, one delay slot, one reverb slot, one compressor
+ * slot, and one saturation slot per bus, so a second of the same type would have nothing
+ * distinct to control (see model/fx.ts's doc comment). */
 export function FxChainStrip({ fx, selectedFxId, onSelectFx, onAddFx, onRemoveFx }: Props) {
   const presentTypes = new Set(fx.map((f) => f.type));
 

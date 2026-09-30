@@ -16,8 +16,9 @@ describe("FX chains (track and master)", () => {
     project = addFx(project, "track-1", "delay");
     project = addFx(project, "track-1", "reverb");
     project = addFx(project, "track-1", "compressor");
+    project = addFx(project, "track-1", "saturation");
     const track = project.tracks.find((t) => t.id === "track-1")!;
-    expect(track.fx.map((f) => f.type)).toEqual(["filter", "delay", "reverb", "compressor"]);
+    expect(track.fx.map((f) => f.type)).toEqual(["filter", "delay", "reverb", "compressor", "saturation"]);
   });
 
   it("does not add a second FX of the same type to one track (engine has one filter/delay slot per bus)", () => {
@@ -72,6 +73,20 @@ describe("FX chains (track and master)", () => {
     const track = project.tracks.find((t) => t.id === "track-1")!;
     expect(track.fx).toHaveLength(1);
     expect(track.fx[0].type).toBe("compressor");
+  });
+
+  it("supports saturation on the master bus with its own default params", () => {
+    const project = addFx(createInitialProject(), "master", "saturation");
+    expect(project.master.fx).toHaveLength(1);
+    expect(project.master.fx[0].type).toBe("saturation");
+    expect(project.master.fx[0].params).toEqual({ drive: 0, asymmetry: 0, outputGain: 0, mix: 0 });
+  });
+
+  it("supports saturation on a track the same way as master", () => {
+    const project = addFx(createInitialProject(), "track-1", "saturation");
+    const track = project.tracks.find((t) => t.id === "track-1")!;
+    expect(track.fx).toHaveLength(1);
+    expect(track.fx[0].type).toBe("saturation");
   });
 
   it("updates a parameter on a specific FX instance", () => {

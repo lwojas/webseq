@@ -69,7 +69,7 @@ export interface MasterBus {
   automation: AutomationLane[];
 }
 
-export type FxType = "filter" | "delay" | "reverb" | "compressor";
+export type FxType = "filter" | "delay" | "reverb" | "compressor" | "saturation";
 
 /** One FX in a track's or master's ordered chain. `params` is a flat, generic key->value map
  * (see fx.ts's FX_DEFS for what keys each `type` defines and their defaults/ranges) rather
