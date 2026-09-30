@@ -35,6 +35,20 @@ const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
   { id: "mixer", label: "Mixer" },
 ];
 
+/** On a phone-sized viewport there isn't room for the side panel and bottom panel to sit
+ * alongside the timeline the way they do on desktop (see index.css's `@media (max-width:
+ * 768px)` block, which shows exactly one of these four sections at a time), so mobile gets
+ * its own bottom tab bar covering all of them instead of the desktop's two separate tab
+ * strips. This is pure navigation state — desktop's existing `sidePanelView`/`bottomPanelView`
+ * still own which content actually renders inside each section (see handleSelectMobileTab). */
+type MobileTab = "timeline" | "fx" | "mixer" | "assets";
+const MOBILE_TABS: { id: MobileTab; label: string }[] = [
+  { id: "timeline", label: "Timeline" },
+  { id: "fx", label: "FX" },
+  { id: "mixer", label: "Mixer" },
+  { id: "assets", label: "Assets" },
+];
+
 export function App() {
   const { runtime, error, init } = useAudioRuntime();
   const [project, dispatch] = useReducer(projectReducer, undefined, () => createInitialProject());
@@ -54,6 +68,7 @@ export function App() {
   const [selectedPatternId, setSelectedPatternId] = useState(project.patterns[0].id);
   const [sidePanelView, setSidePanelView] = useState<SidePanelView>("assets");
   const [bottomPanelView, setBottomPanelView] = useState<BottomPanelView>("fx");
+  const [mobileTab, setMobileTab] = useState<MobileTab>("timeline");
   const [selectedTarget, setSelectedTarget] = useState<FxTarget>("master");
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
   const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
@@ -320,6 +335,15 @@ export function App() {
     setSelectedAutomationParamId(null);
   }, []);
 
+  // Keeps desktop's bottomPanelView in sync when mobile nav picks FX/Mixer, so the same
+  // state that already decides what renders inside .bottom-panel (see the workspace JSX
+  // below) works unchanged for both layouts — mobile just has a different set of buttons
+  // driving it.
+  const handleSelectMobileTab = useCallback((tab: MobileTab) => {
+    setMobileTab(tab);
+    if (tab === "fx" || tab === "mixer") setBottomPanelView(tab);
+  }, []);
+
   // --- persistence ---
   const refreshSavedProjects = useCallback(() => {
     listProjects().then(setSavedProjects);
@@ -399,7 +423,7 @@ export function App() {
   const playheadInfo = transportRef.current?.getPlayheadInfo();
 
   return (
-    <div className="app">
+    <div className="app" data-mobile-tab={mobileTab}>
       <div className="topbar">
         <div>
           <span className="brand">WEBSEQ</span>
@@ -566,6 +590,22 @@ export function App() {
           </div>
         </div>
       </div>
+
+      {/* Hidden on desktop (see index.css) — on a phone-sized viewport this replaces the
+          desktop side-panel/bottom-panel tab strips as the one control that switches which
+          of Timeline/FX/Mixer/Assets is visible (see the @media block's section-visibility
+          rules keyed off .app's data-mobile-tab attribute above). */}
+      <nav className="mobile-tabbar">
+        {MOBILE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`mobile-tab ${mobileTab === tab.id ? "active" : ""}`}
+            onClick={() => handleSelectMobileTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
       {error && <div className="gesture-veil">Audio engine failed to start: {error}</div>}
       {!runtime && !error && (

@@ -685,6 +685,10 @@ select {
   display: flex;
   align-items: center;
   overflow: hidden;
+  /* Scoped to just this element (see NoteBlock.tsx's doc comment) — stops a touch that starts
+     on a note from being interpreted as a timeline scroll, without affecting scrolling
+     anywhere else in the timeline. */
+  touch-action: none;
 }
 
 .note-block.selected {
@@ -700,6 +704,7 @@ select {
   width: 8px;
   cursor: ew-resize;
   background: rgba(255, 255, 255, 0.12);
+  touch-action: none;
 }
 
 .playhead-wrapper {
@@ -1148,4 +1153,183 @@ select {
 
 .hidden-input {
   display: none;
+}
+
+/* ============================================================
+   Mobile / responsive layout
+   ============================================================
+   Desktop is untouched outside these two media queries:
+
+   - (max-width: 768px) — phone-sized viewport. The side panel and bottom panel no longer sit
+     alongside the timeline (there isn't room); instead exactly one of Timeline/FX/Mixer/Assets
+     is shown at a time, switched by .mobile-tabbar (see App.tsx) instead of the desktop's two
+     separate tab strips (.side-panel-tabs / .bottom-panel-tabs), which are redundant once that
+     bar exists and are hidden here. Section visibility is driven by the .app[data-mobile-tab]
+     attribute App.tsx sets from its `mobileTab` state.
+
+   - (pointer: coarse) — an actual touch/stylus pointer, independent of viewport width (a
+     touchscreen laptop at desktop width still needs bigger hit areas than a mouse does). Widens
+     the note resize handle and the transport/track/FX/mixer controls the project brief calls
+     out, rather than shrinking anything — see NoteBlock.tsx's doc comment for the resize handle
+     specifically. */
+
+.mobile-tabbar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .topbar .subtitle {
+    display: none;
+  }
+
+  .project-controls {
+    flex-wrap: wrap;
+  }
+
+  .transport {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .transport .spacer {
+    display: none;
+  }
+
+  :root {
+    --header-width: 132px;
+  }
+
+  .workspace {
+    flex-direction: column;
+  }
+
+  .side-panel-tabs,
+  .bottom-panel-tabs {
+    display: none;
+  }
+
+  .side-panel,
+  .main,
+  .sequencer,
+  .bottom-panel {
+    display: none;
+  }
+
+  .app[data-mobile-tab="assets"] .side-panel {
+    display: flex;
+    width: 100%;
+    flex: 1;
+    border-right: none;
+  }
+
+  .app[data-mobile-tab="timeline"] .main {
+    display: flex;
+    flex: 1;
+  }
+
+  .app[data-mobile-tab="timeline"] .sequencer {
+    display: flex;
+    flex: 1;
+  }
+
+  .app[data-mobile-tab="fx"] .main,
+  .app[data-mobile-tab="mixer"] .main {
+    display: flex;
+    flex: 1;
+  }
+
+  .app[data-mobile-tab="fx"] .bottom-panel,
+  .app[data-mobile-tab="mixer"] .bottom-panel {
+    display: flex;
+    flex: 1;
+    height: auto;
+    border-top: none;
+  }
+
+  .mobile-tabbar {
+    display: flex;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  .mobile-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 10px 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+  }
+
+  .mobile-tab:last-child {
+    border-right: none;
+  }
+
+  .mobile-tab.active {
+    color: var(--accent);
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+}
+
+@media (pointer: coarse) {
+  :root {
+    --row-height: 40px;
+  }
+
+  .note-block .resize-handle {
+    width: 22px;
+  }
+
+  .transport .btn,
+  .btn.small {
+    padding: 9px 12px;
+  }
+
+  .pattern-chip,
+  .chain-chip {
+    padding: 8px 10px;
+  }
+
+  .track-header .load-btn {
+    padding: 7px 9px;
+  }
+
+  .fx-chip-label {
+    padding: 9px 12px;
+  }
+
+  .fx-chip-remove {
+    padding: 9px 10px;
+  }
+
+  .side-panel-tab,
+  .bottom-panel-tab,
+  .mobile-tab {
+    padding: 12px 8px;
+  }
+
+  .mixer-mute,
+  .mixer-solo {
+    padding: 9px 12px;
+  }
+
+  .chain-move,
+  .chain-remove {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  .asset-chip-actions .btn {
+    padding: 8px 10px;
+  }
 }
