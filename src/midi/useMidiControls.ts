@@ -94,13 +94,20 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         return;
       }
 
+      // Logs the literal MidiMessage bindControlMapping() hands to output.send() -- channel
+      // included -- rather than a Control's onChange value. The two are not interchangeable:
+      // a mapping with no `feedback` (volume, deliberately -- see mappings.ts) never calls
+      // send() at all, so logging onChange directly as "out:" claimed something went out over
+      // MIDI when nothing did. Wrapping send() itself can't lie about that.
+      const loggedSend = output.send.bind(output);
+      output.send = (message) => {
+        appendLog(`out: ${describeMessage(message)}`);
+        loggedSend(message);
+      };
+
       const bindings = createTrack1Bindings(() => projectRef.current, dispatch);
       const unbinds = bindings.map(({ mapping, control }) => bindControlMapping(mapping, input, output, control));
-
       unbinds.push(input.onMessage((message) => appendLog(`in:  ${describeMessage(message)}`)));
-      for (const { mapping, control } of bindings) {
-        unbinds.push(control.onChange((value) => appendLog(`out: ${mapping.id} -> ${JSON.stringify(value)}`)));
-      }
 
       connectionRef.current = { input, output, unbinds, controls: bindings.map(({ control }) => control) };
       setStatus("connected");
