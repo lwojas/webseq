@@ -21,9 +21,12 @@ export function secondsPerBeat(bpm: number): number {
  * straight 16th-note durations, so it never shifts where the *next* pair starts and never
  * accumulates drift across beats/bars/loops. `swing` is the proportion of the pair occupied
  * by its first 16th (0.5 = straight/no-op, 0.75 = strong swing); `sixteenthIndex` is a note's
- * grid position in 16th-note units (Note.start — always an integer, see model/notes.ts). */
+ * grid position in 16th-note units (Note.start — since ECS-52, a note may start at a
+ * fractional sub-step position under micro-timing, so this floors to the *containing* 16th
+ * before checking parity — a note anywhere within 16th #5 belongs to that odd slot and swings
+ * the same fixed amount as one starting exactly on it). */
 export function swingOffsetSeconds(sixteenthIndex: number, swing: number, sixteenthDuration: number): number {
-  if (sixteenthIndex % 2 === 0) return 0;
+  if (Math.floor(sixteenthIndex) % 2 === 0) return 0;
   return sixteenthDuration * (swing - 0.5);
 }
 

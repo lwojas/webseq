@@ -8,9 +8,29 @@
 import type { Note, NoteId, Pattern, TrackId } from "./types";
 import { notesForTrack, totalBeats } from "./types";
 
-export const MIN_NOTE_DURATION = 1;
+/** Snap resolutions a user can pick in the toolbar, in steps (a step = one 16th note — see
+ * Project.beatsPerBar). Power-of-two fractions only, so quantizing to any of them and back is
+ * exactly representable in IEEE doubles and never introduces float-fuzz into the overlap
+ * comparisons in `openRange`/`fitsWithoutOverlap`. */
+export type GridResolution = 1 | 0.5 | 0.25 | 0.125;
+export const GRID_RESOLUTIONS: GridResolution[] = [1, 0.5, 0.25, 0.125];
+export const DEFAULT_GRID_RESOLUTION: GridResolution = 1;
+
+/** Fixed quantization applied when Alt/Option overrides musical-grid snapping for free
+ * placement. Fine enough to feel continuous while still a power-of-two fraction of a step, so
+ * free-placed notes never carry raw pixel-derived floats into the model (see
+ * quantizeToResolution). */
+export const FREE_PLACEMENT_RESOLUTION = 1 / 64;
+
+export const MIN_NOTE_DURATION = FREE_PLACEMENT_RESOLUTION;
 export const DEFAULT_NOTE_DURATION = 1;
 export const DEFAULT_VELOCITY = 1;
+
+/** Snaps `value` (beats) to the nearest multiple of `resolution` (also beats). The one place
+ * addNote/resizeNote/moveNote quantize a proposed position — see their call sites below. */
+export function quantizeToResolution(value: number, resolution: number): number {
+  return Math.round(value / resolution) * resolution;
+}
 
 let idCounter = 0;
 function nextId(prefix: string): string {
@@ -61,7 +81,10 @@ export function addNote(
   duration: number = DEFAULT_NOTE_DURATION,
   velocity: number = DEFAULT_VELOCITY,
 ): Pattern {
-  const clampedStart = Math.max(0, Math.min(Math.round(start), totalBeats(pattern, beatsPerBar) - 1));
+  const clampedStart = Math.max(
+    0,
+    Math.min(quantizeToResolution(start, DEFAULT_GRID_RESOLUTION), totalBeats(pattern, beatsPerBar) - 1),
+  );
   if (!fitsWithoutOverlap(pattern, beatsPerBar, trackId, clampedStart, duration)) return pattern;
   const id = nextId("note");
   const note: Note = { id, trackId, start: clampedStart, duration, velocity };
@@ -75,25 +98,39 @@ export function removeNote(pattern: Pattern, noteId: NoteId): Pattern {
   return { ...pattern, notes };
 }
 
-/** Resizes a note's duration (dragging its right edge), clamped to at least
- * MIN_NOTE_DURATION beat and to whatever room the next note/loop end leaves open. */
-export function resizeNote(pattern: Pattern, beatsPerBar: number, noteId: NoteId, newDuration: number): Pattern {
+/** Resizes a note's duration (dragging its right edge), snapped to `resolution` (a toolbar
+ * grid resolution, or FREE_PLACEMENT_RESOLUTION while Alt/Option overrides snapping — see
+ * NoteBlock/App.tsx), clamped to at least MIN_NOTE_DURATION beat and to whatever room the
+ * next note/loop end leaves open. */
+export function resizeNote(
+  pattern: Pattern,
+  beatsPerBar: number,
+  noteId: NoteId,
+  newDuration: number,
+  resolution: number = DEFAULT_GRID_RESOLUTION,
+): Pattern {
   const note = pattern.notes[noteId];
   if (!note) return pattern;
-  const rounded = Math.max(MIN_NOTE_DURATION, Math.round(newDuration));
+  const quantized = Math.max(MIN_NOTE_DURATION, quantizeToResolution(newDuration, resolution));
   const ranges = openRange(pattern, beatsPerBar, note.trackId, note.id);
   const containing = ranges.find((r) => note.start >= r.min && note.start < r.max);
-  const maxDuration = containing ? containing.max - note.start : rounded;
-  const clamped = Math.min(rounded, Math.max(MIN_NOTE_DURATION, maxDuration));
+  const maxDuration = containing ? containing.max - note.start : quantized;
+  const clamped = Math.min(quantized, Math.max(MIN_NOTE_DURATION, maxDuration));
   return { ...pattern, notes: { ...pattern.notes, [noteId]: { ...note, duration: clamped } } };
 }
 
-/** Moves a note to a new start position (dragging its body), clamped within the pattern and
- * to not overlap its neighbors. */
-export function moveNote(pattern: Pattern, beatsPerBar: number, noteId: NoteId, newStart: number): Pattern {
+/** Moves a note to a new start position (dragging its body), snapped to `resolution` (see
+ * resizeNote's doc comment), clamped within the pattern and to not overlap its neighbors. */
+export function moveNote(
+  pattern: Pattern,
+  beatsPerBar: number,
+  noteId: NoteId,
+  newStart: number,
+  resolution: number = DEFAULT_GRID_RESOLUTION,
+): Pattern {
   const note = pattern.notes[noteId];
   if (!note) return pattern;
-  const rounded = Math.round(newStart);
+  const quantized = quantizeToResolution(newStart, resolution);
   const ranges = openRange(pattern, beatsPerBar, note.trackId, note.id);
   let best = note.start;
   let bestDistance = Infinity;
@@ -101,8 +138,8 @@ export function moveNote(pattern: Pattern, beatsPerBar: number, noteId: NoteId, 
     const lo = r.min;
     const hi = r.max - note.duration;
     if (hi < lo) continue;
-    const candidate = Math.min(hi, Math.max(lo, rounded));
-    const distance = Math.abs(candidate - rounded);
+    const candidate = Math.min(hi, Math.max(lo, quantized));
+    const distance = Math.abs(candidate - quantized);
     if (distance < bestDistance) {
       best = candidate;
       bestDistance = distance;

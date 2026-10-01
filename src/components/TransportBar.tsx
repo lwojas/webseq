@@ -1,18 +1,26 @@
 import { MAX_BPM, MAX_SWING, MIN_BPM, MIN_SWING } from "../model/project";
+import { GRID_RESOLUTIONS, type GridResolution } from "../model/notes";
 import type { PlaybackStatus, ResampleStatus } from "../audio/transport";
 import { useRafText } from "../hooks/useRafText";
 
 export type ResamplePhase = "idle" | "pending" | "processing" | "complete" | "error";
 
+/** Label for a toolbar grid-resolution option, e.g. 1 -> "1", 0.25 -> "1/4". */
+function gridResolutionLabel(resolution: GridResolution): string {
+  return resolution === 1 ? "1" : `1/${Math.round(1 / resolution)}`;
+}
+
 interface Props {
   status: PlaybackStatus;
   bpm: number;
   swing: number;
+  gridResolution: GridResolution;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
   onBpmChange: (bpm: number) => void;
   onSwingChange: (swing: number) => void;
+  onGridResolutionChange: (resolution: GridResolution) => void;
   getPositionText: () => string;
   canResample: boolean;
   onResample: () => void;
@@ -28,11 +36,13 @@ export function TransportBar({
   status,
   bpm,
   swing,
+  gridResolution,
   onPlay,
   onPause,
   onStop,
   onBpmChange,
   onSwingChange,
+  onGridResolutionChange,
   getPositionText,
   canResample,
   onResample,
@@ -89,6 +99,21 @@ export function TransportBar({
           onChange={(e) => onSwingChange(Number(e.target.value) / 100)}
         />
         <span>{Math.round(swing * 100)}%</span>
+      </div>
+
+      <div className="field">
+        <span>Grid</span>
+        <select
+          value={gridResolution}
+          onChange={(e) => onGridResolutionChange(Number(e.target.value) as GridResolution)}
+          title="Musical grid resolution drag/resize snaps to — hold Alt/Option while dragging to override"
+        >
+          {GRID_RESOLUTIONS.map((resolution) => (
+            <option key={resolution} value={resolution}>
+              {gridResolutionLabel(resolution)}
+            </option>
+          ))}
+        </select>
       </div>
 
       <span className="position-readout" ref={positionRef} />

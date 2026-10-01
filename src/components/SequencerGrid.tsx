@@ -13,8 +13,8 @@ interface Props {
   selectedNoteId: NoteId | null;
   onSelectNote: (id: NoteId | null) => void;
   onAddNote: (trackId: TrackId, start: number) => void;
-  onResizeNote: (noteId: NoteId, duration: number) => void;
-  onMoveNote: (noteId: NoteId, start: number) => void;
+  onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
+  onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onLoadSample: (trackId: TrackId, file: File) => void;
   /** Beat position within `pattern`, or null if `pattern` isn't the one currently sounding —
    * see Transport.getPlayheadInfo() and usePlayheadAnimation's doc comment. */

@@ -17,8 +17,8 @@ export type Action =
   | { type: "SET_TRACK_SOLOED"; trackId: TrackId; soloed: boolean }
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
-  | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number }
-  | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number }
+  | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
+  | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
   | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
   | { type: "ADD_PATTERN" }
   | { type: "DUPLICATE_PATTERN"; patternId: PatternId }
@@ -63,9 +63,9 @@ export function projectReducer(state: Project, action: Action): Project {
     case "REMOVE_NOTE":
       return project.removeNote(state, action.patternId, action.noteId);
     case "RESIZE_NOTE":
-      return project.resizeNote(state, action.patternId, action.noteId, action.duration);
+      return project.resizeNote(state, action.patternId, action.noteId, action.duration, action.resolution);
     case "MOVE_NOTE":
-      return project.moveNote(state, action.patternId, action.noteId, action.start);
+      return project.moveNote(state, action.patternId, action.noteId, action.start, action.resolution);
     case "SET_PATTERN_BARS":
       return project.setPatternBars(state, action.patternId, action.bars);
     case "ADD_PATTERN":

@@ -205,12 +205,18 @@ export function removeNote(project: Project, patternId: PatternId, noteId: NoteI
   return updatePattern(project, patternId, (p) => notes.removeNote(p, noteId));
 }
 
-export function resizeNote(project: Project, patternId: PatternId, noteId: NoteId, duration: number): Project {
-  return updatePattern(project, patternId, (p) => notes.resizeNote(p, project.beatsPerBar, noteId, duration));
+export function resizeNote(
+  project: Project,
+  patternId: PatternId,
+  noteId: NoteId,
+  duration: number,
+  resolution?: number,
+): Project {
+  return updatePattern(project, patternId, (p) => notes.resizeNote(p, project.beatsPerBar, noteId, duration, resolution));
 }
 
-export function moveNote(project: Project, patternId: PatternId, noteId: NoteId, start: number): Project {
-  return updatePattern(project, patternId, (p) => notes.moveNote(p, project.beatsPerBar, noteId, start));
+export function moveNote(project: Project, patternId: PatternId, noteId: NoteId, start: number, resolution?: number): Project {
+  return updatePattern(project, patternId, (p) => notes.moveNote(p, project.beatsPerBar, noteId, start, resolution));
 }
 
 // --- pattern chain ---

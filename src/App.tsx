@@ -3,6 +3,7 @@ import { MASTER_BUS } from "webdsp";
 import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, TrackId } from "./model/types";
 import { totalBeats, trackById } from "./model/types";
 import { createInitialProject } from "./model/project";
+import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { Transport, type PlaybackStatus } from "./audio/transport";
@@ -73,6 +74,7 @@ export function App() {
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
   const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
+  const [gridResolution, setGridResolution] = useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const [savedProjects, setSavedProjects] = useState<{ id: string; name: string }[]>([]);
   const [loadTargetId, setLoadTargetId] = useState<string>("");
   const [resamplePhase, setResamplePhase] = useState<ResamplePhase>("idle");
@@ -178,13 +180,30 @@ export function App() {
     (trackId: TrackId, start: number) => dispatch({ type: "ADD_NOTE", patternId: selectedPatternId, trackId, start }),
     [selectedPatternId],
   );
+  // `freePlacement` (Alt/Option held at drag-end, see NoteBlock) swaps the toolbar-selected
+  // musical-grid resolution for a fixed fine resolution rather than snapping to no grid at
+  // all — see model/notes.ts's resizeNote/moveNote doc comments for why.
   const handleResizeNote = useCallback(
-    (noteId: NoteId, duration: number) => dispatch({ type: "RESIZE_NOTE", patternId: selectedPatternId, noteId, duration }),
-    [selectedPatternId],
+    (noteId: NoteId, duration: number, freePlacement: boolean) =>
+      dispatch({
+        type: "RESIZE_NOTE",
+        patternId: selectedPatternId,
+        noteId,
+        duration,
+        resolution: freePlacement ? FREE_PLACEMENT_RESOLUTION : gridResolution,
+      }),
+    [selectedPatternId, gridResolution],
   );
   const handleMoveNote = useCallback(
-    (noteId: NoteId, start: number) => dispatch({ type: "MOVE_NOTE", patternId: selectedPatternId, noteId, start }),
-    [selectedPatternId],
+    (noteId: NoteId, start: number, freePlacement: boolean) =>
+      dispatch({
+        type: "MOVE_NOTE",
+        patternId: selectedPatternId,
+        noteId,
+        start,
+        resolution: freePlacement ? FREE_PLACEMENT_RESOLUTION : gridResolution,
+      }),
+    [selectedPatternId, gridResolution],
   );
 
   // Decodes a local file via the runtime (unchanged mechanism — see the project brief's "the
@@ -477,11 +496,13 @@ export function App() {
         status={status}
         bpm={project.bpm}
         swing={project.swing}
+        gridResolution={gridResolution}
         onPlay={handlePlay}
         onPause={handlePause}
         onStop={handleStop}
         onBpmChange={handleBpmChange}
         onSwingChange={handleSwingChange}
+        onGridResolutionChange={setGridResolution}
         getPositionText={getPositionText}
         canResample={status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing"}
         onResample={handleResample}

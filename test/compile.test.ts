@@ -133,6 +133,24 @@ describe("global swing timing", () => {
       const spbSlow = secondsPerBeat(60); // half the BPM -> double the 16th duration
       expect(swingOffsetSeconds(1, 0.75, spbSlow)).toBeCloseTo(swingOffsetSeconds(1, 0.75, spb) * 2, 10);
     });
+
+    // ECS-52: micro-timing lets a note's start be a fractional sub-step position. The parity
+    // check must key off the *containing* 16th-note index (Math.floor), not the raw fractional
+    // value, or every micro-timed note in an odd pair-slot would wrongly read as "even".
+    it("applies no swing to a fractional start still within an even (first-of-pair) 16th slot", () => {
+      expect(swingOffsetSeconds(4.5, 0.75, spb)).toBe(0);
+      expect(swingOffsetSeconds(4.9375, 0.75, spb)).toBe(0); // same slot, right up against the next boundary
+    });
+
+    it("applies the full swing offset to a fractional start within an odd (second-of-pair) 16th slot", () => {
+      expect(swingOffsetSeconds(5.5, 0.75, spb)).toBeCloseTo(spb * 0.25, 10);
+      expect(swingOffsetSeconds(5.0625, 0.75, spb)).toBeCloseTo(spb * 0.25, 10);
+    });
+
+    it("treats a fractional start the same as the integer start of its containing 16th slot", () => {
+      expect(swingOffsetSeconds(5.9, 0.75, spb)).toBeCloseTo(swingOffsetSeconds(5, 0.75, spb), 10);
+      expect(swingOffsetSeconds(4.9, 0.75, spb)).toBeCloseTo(swingOffsetSeconds(4, 0.75, spb), 10);
+    });
   });
 
   describe("compileNote with swing", () => {
@@ -155,6 +173,12 @@ describe("global swing timing", () => {
       const swung = compileNote(track, note, 120, 10, undefined, 0.75)!;
       expect(swung.time).toBeCloseTo(straight.time + spb * 0.25, 10);
       expect(swung.duration).toBe(straight.duration); // swing never touches note duration
+    });
+
+    it("applies the correct pair member's swing to a micro-timed, fractional-start note", () => {
+      const note: Note = { id: "n", trackId: "track-1", start: 5.25, duration: 0.5, velocity: 1 }; // sub-step offset within the odd (5th) 16th
+      const event = compileNote(track, note, 120, 10, undefined, 0.75);
+      expect(event!.time).toBeCloseTo(10 + 5.25 * spb + spb * 0.25, 10);
     });
 
     it("keeps the following pair's first 16th at its original, unswung grid boundary", () => {

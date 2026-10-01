@@ -1,13 +1,18 @@
 import { useRef } from "react";
 import type { Note } from "../model/types";
+import { MIN_NOTE_DURATION } from "../model/notes";
 
 interface Props {
   note: Note;
   totalBeats: number;
   selected: boolean;
   onSelect: () => void;
-  onResize: (duration: number) => void;
-  onMove: (start: number) => void;
+  /** `freePlacement` is true when Alt/Option was held at the end of the gesture, overriding
+   * musical-grid snapping (see model/notes.ts's resizeNote/moveNote `resolution` param and
+   * App.tsx's handleResizeNote/handleMoveNote, which pick FREE_PLACEMENT_RESOLUTION instead of
+   * the toolbar grid resolution when this is true). */
+  onResize: (duration: number, freePlacement: boolean) => void;
+  onMove: (start: number, freePlacement: boolean) => void;
 }
 
 const MIN_DRAG_PX_FOR_RESIZE_HANDLE = 8;
@@ -61,7 +66,7 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
       if (ev.pointerId !== pointerId) return;
       const deltaBeats = ((ev.clientX - startX) / laneWidth) * totalBeats;
       cleanup();
-      onMove(note.start + deltaBeats);
+      onMove(note.start + deltaBeats, ev.altKey);
     };
     const onPointerCancel = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
@@ -88,7 +93,7 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
     const onPointerMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
       const deltaBeats = ((ev.clientX - startX) / laneWidth) * totalBeats;
-      const proposed = Math.max(0.25, note.duration + deltaBeats);
+      const proposed = Math.max(MIN_NOTE_DURATION, note.duration + deltaBeats);
       el.style.width = `${(proposed / totalBeats) * 100}%`;
     };
     const cleanup = () => {
@@ -102,7 +107,7 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
       if (ev.pointerId !== pointerId) return;
       const deltaBeats = ((ev.clientX - startX) / laneWidth) * totalBeats;
       cleanup();
-      onResize(note.duration + deltaBeats);
+      onResize(note.duration + deltaBeats, ev.altKey);
     };
     const onPointerCancel = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;

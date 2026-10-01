@@ -14,8 +14,8 @@ interface Props {
   onSelectNote: (id: NoteId | null) => void;
   onSelectTrack: () => void;
   onAddNote: (start: number) => void;
-  onResizeNote: (noteId: NoteId, duration: number) => void;
-  onMoveNote: (noteId: NoteId, start: number) => void;
+  onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
+  onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onLoadSample: (file: File) => void;
 }
 
@@ -85,8 +85,8 @@ export function TrackRow({
             totalBeats={beats}
             selected={note.id === selectedNoteId}
             onSelect={() => onSelectNote(note.id)}
-            onResize={(duration) => onResizeNote(note.id, duration)}
-            onMove={(start) => onMoveNote(note.id, start)}
+            onResize={(duration, freePlacement) => onResizeNote(note.id, duration, freePlacement)}
+            onMove={(start, freePlacement) => onMoveNote(note.id, start, freePlacement)}
           />
         ))}
       </div>
