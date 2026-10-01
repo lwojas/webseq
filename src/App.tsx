@@ -18,15 +18,20 @@ import { TransportBar, type ResamplePhase } from "./components/TransportBar";
 import { PatternBar } from "./components/PatternBar";
 import { ChainEditor } from "./components/ChainEditor";
 import { AssetsPanel } from "./components/AssetsPanel";
+import { MidiPanel } from "./components/MidiPanel";
 import { SequencerGrid } from "./components/SequencerGrid";
 import { FxPanel } from "./components/FxPanel";
 import { MixerPanel } from "./components/MixerPanel";
+import { useMidiControls } from "./midi/useMidiControls";
 
 /** The side panel (left of the timeline — see screenshots/concept.png) is tabbed so further
  * views can be added later without another layout change: add an entry here and a matching
- * branch in the side-panel-content render below. Assets is the only tenant today. */
-type SidePanelView = "assets";
-const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [{ id: "assets", label: "Assets" }];
+ * branch in the side-panel-content render below. */
+type SidePanelView = "assets" | "midi";
+const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [
+  { id: "assets", label: "Assets" },
+  { id: "midi", label: "MIDI" },
+];
 
 /** The panel below the timeline (see screenshots/concept.png) switches between the FX rack
  * (contextual to whatever's selected in the timeline) and the Mixer (all tracks at once) —
@@ -77,6 +82,7 @@ export function App() {
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
   const [gridResolution, setGridResolution] = useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const { pxPerBeat, zoomPercent, canZoomIn, canZoomOut, onZoomIn, onZoomOut } = useTimelineZoom();
+  const midi = useMidiControls(project, dispatch);
   const [savedProjects, setSavedProjects] = useState<{ id: string; name: string }[]>([]);
   const [loadTargetId, setLoadTargetId] = useState<string>("");
   const [resamplePhase, setResamplePhase] = useState<ResamplePhase>("idle");
@@ -561,6 +567,19 @@ export function App() {
                 onAssign={handleAssignAsset}
                 onRename={handleRenameAsset}
                 onRemove={handleRemoveAsset}
+              />
+            )}
+            {sidePanelView === "midi" && (
+              <MidiPanel
+                status={midi.status}
+                hasAccess={midi.hasAccess}
+                error={midi.error}
+                inputs={midi.inputs}
+                outputs={midi.outputs}
+                log={midi.log}
+                onRequestAccess={midi.requestAccess}
+                onConnect={midi.connect}
+                onDisconnect={midi.disconnect}
               />
             )}
           </div>

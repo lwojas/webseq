@@ -494,6 +494,80 @@ select {
   flex-shrink: 0;
 }
 
+/* --- midi panel (lives inside .side-panel, see AssetsPanel's sibling MidiPanel) --- */
+
+.midi-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 0;
+}
+
+.midi-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.midi-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.midi-panel-row select {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 3px 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.midi-panel-hint {
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.midi-status {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.midi-status.connected {
+  color: var(--accent);
+}
+
+.midi-status.error {
+  color: var(--danger);
+}
+
+.midi-log {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.midi-log-line {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* --- main body --- */
 
 /* Never scrolls itself — a plain flex column whose two children (the sequencer and the
