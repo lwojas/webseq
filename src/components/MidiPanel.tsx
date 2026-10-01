@@ -82,8 +82,9 @@ export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRe
           {error && status === "error" && <div className="midi-status error">{error}</div>}
 
           <div className="midi-panel-hint">
-            Track 1 only: CC7 on channel 0 → volume (input-only), pad note 0 → mute (echoes
-            light/unlight feedback) — see src/midi/mappings.ts.
+            Track 1 only: CC7 on channel 0 ↔ volume, pad note 0 ↔ mute. Both send feedback on
+            a non-MIDI change (e.g. this app's own mixer fader) without echoing back to
+            whichever one you just moved — see src/midi/mappings.ts.
           </div>
 
           <div className="midi-log">

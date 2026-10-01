@@ -79,14 +79,15 @@ describe("track-1 MIDI bindings — MIDI -> Control", () => {
 });
 
 describe("track-1 MIDI bindings — Control -> MIDI (feedback)", () => {
-  // The volume mapping deliberately has no `feedback` -- see mappings.ts's doc comment on why
-  // echoing CC7 back fought a real Launchpad fader strip's own LED-position tracking.
-  it("a volume change sends no feedback", () => {
+  // A volume change from elsewhere (a UI mixer fader, not the MIDI fader itself) sends CC7
+  // feedback -- re-enabled once midi-core's ECS-57 suppressed the echo back to the fader that
+  // moved it (see the "MIDI echo suppression" describe block below for that half).
+  it("a volume change from a non-MIDI origin sends CC7 feedback once synced", () => {
     const h = harness();
     h.commit({ type: "SET_TRACK_VOLUME", trackId: "track-1", volume: 0 });
     h.volumeControl.syncFromProject(h.getProject());
 
-    expect(h.device.output.sentMessages).toHaveLength(0);
+    expect(Array.from(h.device.output.sentMessages[0]!)).toEqual([0xb0, 7, 0]);
   });
 
   it("a mute change lights/unlights the pad via note-on/note-off feedback", () => {
@@ -95,6 +96,32 @@ describe("track-1 MIDI bindings — Control -> MIDI (feedback)", () => {
     h.muteControl.syncFromProject(h.getProject());
 
     expect(Array.from(h.device.output.sentMessages[0]!)).toEqual([0x90, 0, 127]);
+  });
+});
+
+describe("track-1 MIDI bindings — MIDI echo suppression", () => {
+  // The real-hardware bug this mapping was built to avoid: a CC7 fader move must not echo
+  // straight back out to the same fader, even though the volume mapping now has `feedback`
+  // again. This is midi-core's ECS-57 behavior, exercised here through webseq's actual
+  // mapping + adapter + reducer, not just midi-core's own unit tests.
+  it("moving the fader does not echo CC7 feedback back to it", () => {
+    const h = harness();
+    h.device.input.emitRawMessage(Uint8Array.of(0xb0, 7, 0)); // the fader itself, moved to 0
+
+    expect(h.getProject().tracks[0]).toMatchObject({ id: "track-1", volume: 0 });
+    h.volumeControl.syncFromProject(h.getProject()); // what useMidiControls' effect does on every Project change
+    expect(h.device.output.sentMessages).toHaveLength(0);
+  });
+
+  it("a later UI-driven change to a different value still sends feedback", () => {
+    const h = harness();
+    h.device.input.emitRawMessage(Uint8Array.of(0xb0, 7, 0)); // suppressed, per the test above
+    h.volumeControl.syncFromProject(h.getProject());
+
+    h.commit({ type: "SET_TRACK_VOLUME", trackId: "track-1", volume: 0.75 });
+    h.volumeControl.syncFromProject(h.getProject());
+
+    expect(Array.from(h.device.output.sentMessages[0]!)).toEqual([0xb0, 7, 64]);
   });
 });
 

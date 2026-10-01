@@ -9,18 +9,19 @@
 // wired, and keeping to one makes the real-hardware test (move the fader, press the pad) easy
 // to reason about.
 //
-// The volume mapping is pinned to channel 0 and carries no `feedback`, learned from testing
-// against a real Launchpad Mini custom-mode fader bank (several CC7 fader strips, one per
-// MIDI channel): `channel: "any"` made every strip in the bank drive this one control, and
-// echoing the value back out as CC7 fought the strip's own LED-position feedback on every
-// move (it reads its own incoming CC to reposition its LEDs, so echoing its own value back
-// turns a smooth drag into something that feels like discrete button presses). Both are
-// `bindControlMapping()` behaving exactly as documented -- it doesn't compare against a
-// control's current value or suppress feedback for a change that just arrived from the same
-// source (see docs/contracts/mapping-runtime.md's "No loop prevention" section in midi-core)
-// -- so the fix belongs here, in which mapping this integration chooses to author, not in
-// midi-core itself. The mute mapping below still has `feedback`, proving that direction still
-// works; a plain pad has no position-tracking state to fight.
+// The volume mapping is pinned to channel 0, learned from testing against a real Launchpad
+// Mini custom-mode fader bank: several CC7 fader strips share the controller number, one per
+// MIDI channel, so `channel: "any"` made every strip in the bank drive this one control.
+//
+// It originally also had no `feedback`, because echoing the value back out as CC7 fought the
+// fader strip's own LED-position tracking on every move (it reads its own incoming CC to
+// reposition its LEDs, so echoing its own value back turned a smooth drag into something
+// that felt like discrete button presses). That's fixed upstream now -- midi-core's
+// bindControlMapping() (ECS-57) suppresses feedback for the exact value it just pushed in
+// from MIDI, while still sending it for a change from anywhere else (this app's own mixer
+// fader, say) -- so `feedback` is back here, and a UI-driven volume change now updates the
+// fader strip's LEDs without a device-side move re-triggering the fight. See
+// docs/contracts/mapping-runtime.md's "Echo suppression" section in midi-core for the detail.
 
 import type { ControlMapping } from "midi-core/mapping";
 import type { Action } from "../model/reducer";
@@ -42,6 +43,7 @@ export function createTrack1Bindings(getProject: () => Project, dispatch: (actio
     id: "cc7-track1-volume",
     control: `track.${BOUND_TRACK_ID}.volume`,
     source: { address: { type: "control-change", controller: 7 }, channel: 0 },
+    feedback: { address: { type: "control-change", controller: 7 }, channel: 0 },
   };
 
   const muteMapping: ControlMapping = {
