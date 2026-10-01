@@ -12,6 +12,11 @@ export const DEFAULT_BPM = 120;
 export const DEFAULT_TRACK_COUNT = 16;
 export const DEFAULT_BEATS_PER_BAR = 16;
 
+// 0.5 = straight (no-op), 0.75 = strong swing — see types.ts's Project.swing doc comment.
+export const MIN_SWING = 0.5;
+export const MAX_SWING = 0.75;
+export const DEFAULT_SWING = 0.5;
+
 // Linear gain multiplier (not dB) — mirrors webdsp's own TriggerParams.gain convention.
 // Headroom above 1.0 is allowed (same as a normal DAW fader going "past unity"); 0 is silence.
 export const MIN_TRACK_VOLUME = 0;
@@ -46,12 +51,14 @@ export function createInitialProject(
   trackCount = DEFAULT_TRACK_COUNT,
   beatsPerBar = DEFAULT_BEATS_PER_BAR,
   bpm = DEFAULT_BPM,
+  swing = DEFAULT_SWING,
 ): Project {
   const firstPattern = createEmptyPattern("Pattern A", 1);
   return {
     id: nextId("project"),
     name,
     bpm,
+    swing,
     beatsPerBar,
     tracks: createInitialTracks(trackCount),
     patterns: [firstPattern],
@@ -67,6 +74,14 @@ export function clampBpm(bpm: number): number {
 
 export function setBpm(project: Project, bpm: number): Project {
   return { ...project, bpm: clampBpm(bpm) };
+}
+
+export function clampSwing(swing: number): number {
+  return Math.min(MAX_SWING, Math.max(MIN_SWING, swing));
+}
+
+export function setSwing(project: Project, swing: number): Project {
+  return { ...project, swing: clampSwing(swing) };
 }
 
 export function renameProject(project: Project, name: string): Project {

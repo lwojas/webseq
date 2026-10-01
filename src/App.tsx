@@ -168,6 +168,12 @@ export function App() {
     transportRef.current?.retime();
   }, []);
 
+  const handleSwingChange = useCallback((swing: number) => {
+    dispatch({ type: "SET_SWING", swing });
+    // Same re-anchoring requirement as BPM — see handleBpmChange above.
+    transportRef.current?.retime();
+  }, []);
+
   const handleAddNote = useCallback(
     (trackId: TrackId, start: number) => dispatch({ type: "ADD_NOTE", patternId: selectedPatternId, trackId, start }),
     [selectedPatternId],
@@ -470,10 +476,12 @@ export function App() {
       <TransportBar
         status={status}
         bpm={project.bpm}
+        swing={project.swing}
         onPlay={handlePlay}
         onPause={handlePause}
         onStop={handleStop}
         onBpmChange={handleBpmChange}
+        onSwingChange={handleSwingChange}
         getPositionText={getPositionText}
         canResample={status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing"}
         onResample={handleResample}

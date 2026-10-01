@@ -182,6 +182,11 @@ export interface Project {
   /** BPM, 40..240. Applies to every pattern in the project — see the module doc comment for
    * why patterns don't have independent tempos. */
   bpm: number;
+  /** Global swing, 0.5 (straight) .. 0.75 (strong swing) — the proportion of a two-16th-note
+   * pair occupied by its first 16th. Applies to every pattern/track in the project, same as
+   * bpm: it only shifts where the second 16th of each pair is scheduled in time (see
+   * audio/compile.ts's swingOffsetSeconds), never the stored note positions themselves. */
+  swing: number;
   /** Steps per bar — the grid's horizontal resolution, and the fixed real-world duration of
    * one "beat" everywhere in this model. Project-wide (not per-pattern), and not hardcoded
    * anywhere outside this field. */

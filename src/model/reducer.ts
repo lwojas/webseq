@@ -6,6 +6,7 @@ import * as automation from "./automation";
 
 export type Action =
   | { type: "SET_BPM"; bpm: number }
+  | { type: "SET_SWING"; swing: number }
   | { type: "SET_PROJECT_NAME"; name: string }
   | { type: "ADD_ASSET"; asset: Asset }
   | { type: "ASSIGN_ASSET"; trackId: TrackId; assetId: AssetId }
@@ -39,6 +40,8 @@ export function projectReducer(state: Project, action: Action): Project {
   switch (action.type) {
     case "SET_BPM":
       return project.setBpm(state, action.bpm);
+    case "SET_SWING":
+      return project.setSwing(state, action.swing);
     case "SET_PROJECT_NAME":
       return project.renameProject(state, action.name);
     case "ADD_ASSET":

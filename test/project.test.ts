@@ -12,6 +12,7 @@ import {
   removePattern,
   renameAsset,
   setBpm,
+  setSwing,
   setPatternBars,
   setTrackMuted,
   setTrackSoloed,
@@ -40,6 +41,14 @@ describe("project model", () => {
     expect(project.bpm).toBe(240);
     project = setBpm(project, -10);
     expect(project.bpm).toBe(40);
+  });
+
+  it("defaults swing to 50% (straight) and clamps it to the 50-75% range", () => {
+    expect(createInitialProject().swing).toBe(0.5);
+    let project = setSwing(createInitialProject(), 0.9);
+    expect(project.swing).toBe(0.75);
+    project = setSwing(project, 0.1);
+    expect(project.swing).toBe(0.5);
   });
 
   it("adds an asset to the bin without assigning it to any track", () => {

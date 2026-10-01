@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AudioRuntime, CaptureHandle, RuntimeCapabilities, SampleMetadata, ScheduledEvent, VoiceHandle } from "webdsp";
 import { Transport } from "../src/audio/transport";
+import { secondsPerBeat } from "../src/audio/compile";
 import { addAsset, addNote } from "../src/model/project";
-import { addPattern, appendToChain, assignAsset, createInitialProject, setBpm } from "../src/model/project";
+import { addPattern, appendToChain, assignAsset, createInitialProject, setBpm, setSwing } from "../src/model/project";
 import type { Asset, Project } from "../src/model/types";
 
 // AudioRuntime needs a real browser (AudioContext/AudioWorklet) — not available under
@@ -265,6 +266,125 @@ describe("Transport", () => {
 
     transport.play();
     expect(transport.getPlayheadBeat()).toBeCloseTo(4, 4);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+});
+
+describe("Transport swing", () => {
+  const spb = secondsPerBeat(120); // one 16th at 120 BPM
+
+  it("50% swing reproduces the existing straight timing (no-op)", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 120);
+    project = setSwing(project, 0.5);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, project.patterns[0].id, "track-1", 1); // odd step -> would be swung if swing != 50%
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spb, 10);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("delays only the second (odd-indexed) 16th of a pair at 66.67% swing", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 120);
+    project = setSwing(project, 2 / 3);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, project.patterns[0].id, "track-1", 1);
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spb + spb * (2 / 3 - 0.5), 10);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("leaves the first (even-indexed) 16th of a pair on the normal grid at strong (75%) swing", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 120);
+    project = setSwing(project, 0.75);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, project.patterns[0].id, "track-1", 4); // even step -> first of its pair
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    expect(scheduled[0].time).toBeCloseTo(0.05 + 4 * spb, 10);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("applies the same swing offset to every loop iteration, with no accumulated drift across the loop boundary", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, advance } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 120);
+    project = setSwing(project, 0.75);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, project.patterns[0].id, "track-1", 1); // 1 bar @16 beats/bar = 2s loop @120bpm
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    expect(scheduled).toHaveLength(1);
+
+    advance(2.0); // exactly one loop later
+    vi.advanceTimersByTime(25);
+    expect(scheduled.length).toBeGreaterThanOrEqual(2);
+    // Both iterations' swing offset is identical, so the gap between them is exactly one
+    // straight loop length — swing never shifts where the next loop starts.
+    expect(scheduled[1].time - scheduled[0].time).toBeCloseTo(2.0, 5);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("recalculates the swing offset relative to the current BPM, not a fixed time", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 60); // half tempo -> double the 16th duration
+    project = setSwing(project, 0.75);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, project.patterns[0].id, "track-1", 1);
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    const spbSlow = secondsPerBeat(60);
+    expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spbSlow + spbSlow * 0.25, 10);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("retime() re-anchors a live swing change onto the already-running schedule", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 120);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, project.patterns[0].id, "track-1", 1);
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spb, 10); // default swing is 50% (straight)
+
+    project = setSwing(project, 0.75); // same reference the transport reads via getProject()
+    transport.retime();
+
+    const latest = scheduled[scheduled.length - 1];
+    expect(latest.time).toBeCloseTo(0.05 + 1 * spb + spb * 0.25, 5);
 
     transport.stop();
     vi.useRealTimers();

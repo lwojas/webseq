@@ -1,4 +1,4 @@
-import { MAX_BPM, MIN_BPM } from "../model/project";
+import { MAX_BPM, MAX_SWING, MIN_BPM, MIN_SWING } from "../model/project";
 import type { PlaybackStatus, ResampleStatus } from "../audio/transport";
 import { useRafText } from "../hooks/useRafText";
 
@@ -7,10 +7,12 @@ export type ResamplePhase = "idle" | "pending" | "processing" | "complete" | "er
 interface Props {
   status: PlaybackStatus;
   bpm: number;
+  swing: number;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
   onBpmChange: (bpm: number) => void;
+  onSwingChange: (swing: number) => void;
   getPositionText: () => string;
   canResample: boolean;
   onResample: () => void;
@@ -25,10 +27,12 @@ interface Props {
 export function TransportBar({
   status,
   bpm,
+  swing,
   onPlay,
   onPause,
   onStop,
   onBpmChange,
+  onSwingChange,
   getPositionText,
   canResample,
   onResample,
@@ -72,6 +76,19 @@ export function TransportBar({
           disabled={bpmDisabled}
           onChange={(e) => onBpmChange(Number(e.target.value))}
         />
+      </div>
+
+      <div className="field">
+        <span>Swing</span>
+        <input
+          type="range"
+          min={MIN_SWING * 100}
+          max={MAX_SWING * 100}
+          value={Math.round(swing * 100)}
+          disabled={bpmDisabled}
+          onChange={(e) => onSwingChange(Number(e.target.value) / 100)}
+        />
+        <span>{Math.round(swing * 100)}%</span>
       </div>
 
       <span className="position-readout" ref={positionRef} />

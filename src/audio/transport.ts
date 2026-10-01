@@ -339,8 +339,13 @@ export class Transport {
         continue;
       }
       const stepStartTime = this.nextStepStartTime;
-      const events = compilePatternIteration(pattern, project.tracks, this.anchorTempo, stepStartTime, (trackId) =>
-        this.getBusId(trackId),
+      const events = compilePatternIteration(
+        pattern,
+        project.tracks,
+        this.anchorTempo,
+        stepStartTime,
+        (trackId) => this.getBusId(trackId),
+        project.swing,
       );
       if (events.length > 0) {
         const handles = this.runtime.schedule(events);
