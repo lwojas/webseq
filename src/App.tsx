@@ -6,6 +6,7 @@ import { createInitialProject } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
+import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { Transport, type PlaybackStatus } from "./audio/transport";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
 import { applyFxChain } from "./audio/applyFx";
@@ -75,6 +76,7 @@ export function App() {
   const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
   const [gridResolution, setGridResolution] = useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
+  const { pxPerBeat, zoomPercent, canZoomIn, canZoomOut, onZoomIn, onZoomOut } = useTimelineZoom();
   const [savedProjects, setSavedProjects] = useState<{ id: string; name: string }[]>([]);
   const [loadTargetId, setLoadTargetId] = useState<string>("");
   const [resamplePhase, setResamplePhase] = useState<ResamplePhase>("idle");
@@ -503,6 +505,11 @@ export function App() {
         onBpmChange={handleBpmChange}
         onSwingChange={handleSwingChange}
         onGridResolutionChange={setGridResolution}
+        zoomPercent={zoomPercent}
+        canZoomIn={canZoomIn}
+        canZoomOut={canZoomOut}
+        onZoomIn={onZoomIn}
+        onZoomOut={onZoomOut}
         getPositionText={getPositionText}
         canResample={status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing"}
         onResample={handleResample}
@@ -572,6 +579,7 @@ export function App() {
             onMoveNote={handleMoveNote}
             onLoadSample={handleImportAndAssignToTrack}
             getPlayheadBeat={getPlayheadBeat}
+            pxPerBeat={pxPerBeat}
           />
           <div className="bottom-panel">
             <div className="bottom-panel-tabs">
@@ -592,6 +600,7 @@ export function App() {
                 fx={fxOwner?.fx ?? []}
                 automation={fxOwner?.automation ?? []}
                 patternTotalBeats={totalBeats(selectedPattern, project.beatsPerBar)}
+                pxPerBeat={pxPerBeat}
                 selectedFxId={selectedFxId}
                 selectedAutomationParamId={selectedAutomationParamId}
                 onSelectFx={(id) => {

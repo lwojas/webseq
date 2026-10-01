@@ -21,6 +21,13 @@ interface Props {
   onBpmChange: (bpm: number) => void;
   onSwingChange: (swing: number) => void;
   onGridResolutionChange: (resolution: GridResolution) => void;
+  /** Current timeline zoom, as a percentage of the default zoom level (100% = default) — see
+   * useTimelineZoom (ECS-53). */
+  zoomPercent: number;
+  canZoomIn: boolean;
+  canZoomOut: boolean;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
   getPositionText: () => string;
   canResample: boolean;
   onResample: () => void;
@@ -43,6 +50,11 @@ export function TransportBar({
   onBpmChange,
   onSwingChange,
   onGridResolutionChange,
+  zoomPercent,
+  canZoomIn,
+  canZoomOut,
+  onZoomIn,
+  onZoomOut,
   getPositionText,
   canResample,
   onResample,
@@ -114,6 +126,17 @@ export function TransportBar({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="field zoom-control">
+        <span>Zoom</span>
+        <button className="btn small" onClick={onZoomOut} disabled={!canZoomOut} aria-label="Zoom out" title="Zoom out">
+          −
+        </button>
+        <span className="zoom-level">{zoomPercent}%</span>
+        <button className="btn small" onClick={onZoomIn} disabled={!canZoomIn} aria-label="Zoom in" title="Zoom in">
+          +
+        </button>
       </div>
 
       <span className="position-readout" ref={positionRef} />

@@ -192,6 +192,23 @@ select {
   padding: 3px 6px;
 }
 
+.zoom-control {
+  gap: 4px;
+}
+
+.zoom-control .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zoom-level {
+  color: var(--amber);
+  font-weight: 700;
+  font-size: 11px;
+  min-width: 3em;
+  text-align: center;
+}
+
 .position-readout {
   color: var(--accent);
   font-size: 13px;
@@ -1286,6 +1303,8 @@ select {
     --row-height: 40px;
   }
 
+  /* Keep in sync with RESIZE_HANDLE_WIDTH_PX_COARSE in timelineConstants.ts, which bounds the
+     minimum zoom level so a beat is never packed tighter than this handle. */
   .note-block .resize-handle {
     width: 22px;
   }

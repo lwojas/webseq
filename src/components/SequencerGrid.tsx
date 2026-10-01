@@ -3,7 +3,7 @@ import { totalBeats } from "../model/types";
 import { usePlayheadAnimation } from "../hooks/usePlayheadAnimation";
 import { TrackRow } from "./TrackRow";
 import { MasterRow } from "./MasterRow";
-import { BEAT_WIDTH_PX, VIEWPORT_BARS } from "./timelineConstants";
+import { VIEWPORT_BARS } from "./timelineConstants";
 
 interface Props {
   project: Project;
@@ -19,6 +19,9 @@ interface Props {
   /** Beat position within `pattern`, or null if `pattern` isn't the one currently sounding —
    * see Transport.getPlayheadInfo() and usePlayheadAnimation's doc comment. */
   getPlayheadBeat: () => number | null;
+  /** Current timeline zoom level, in pixels per beat — see useTimelineZoom and
+   * timelineConstants.ts's ZOOM_LEVELS_PX_PER_BEAT doc comment (ECS-53). */
+  pxPerBeat: number;
 }
 
 /** The main sequencing surface for one pattern (the one currently selected in PatternBar).
@@ -38,11 +41,12 @@ export function SequencerGrid({
   onMoveNote,
   onLoadSample,
   getPlayheadBeat,
+  pxPerBeat,
 }: Props) {
   const beats = totalBeats(pattern, project.beatsPerBar);
-  const contentWidth = beats * BEAT_WIDTH_PX;
-  const viewportCap = VIEWPORT_BARS * project.beatsPerBar * BEAT_WIDTH_PX;
-  const playheadRef = usePlayheadAnimation(getPlayheadBeat, BEAT_WIDTH_PX);
+  const contentWidth = beats * pxPerBeat;
+  const viewportCap = VIEWPORT_BARS * project.beatsPerBar * pxPerBeat;
+  const playheadRef = usePlayheadAnimation(getPlayheadBeat, pxPerBeat);
 
   return (
     <div className="sequencer" onClick={() => onSelectNote(null)}>
@@ -50,7 +54,7 @@ export function SequencerGrid({
         <div className="timeline-content">
           <div className="grid-header">
             <div className="track-col-label">Track / Sample</div>
-            <div className="beat-ruler" style={{ width: contentWidth, gridTemplateColumns: `repeat(${beats}, ${BEAT_WIDTH_PX}px)` }}>
+            <div className="beat-ruler" style={{ width: contentWidth, gridTemplateColumns: `repeat(${beats}, ${pxPerBeat}px)` }}>
               {Array.from({ length: beats }, (_, i) => (
                 <div key={i} className={`beat-num ${i % project.beatsPerBar === 0 ? "bar-start" : ""}`}>
                   {i + 1}
@@ -74,6 +78,7 @@ export function SequencerGrid({
                   track={track}
                   pattern={pattern}
                   beatsPerBar={project.beatsPerBar}
+                  pxPerBeat={pxPerBeat}
                   selected={selectedTarget === track.id}
                   selectedNoteId={selectedNoteId}
                   onSelectNote={onSelectNote}

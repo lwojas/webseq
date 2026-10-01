@@ -2,13 +2,13 @@ import { useRef } from "react";
 import type { NoteId, Pattern, Track } from "../model/types";
 import { notesForTrack, totalBeats } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
-import { BEAT_WIDTH_PX } from "./timelineConstants";
 
 interface Props {
   index: number;
   track: Track;
   pattern: Pattern;
   beatsPerBar: number;
+  pxPerBeat: number;
   selected: boolean;
   selectedNoteId: NoteId | null;
   onSelectNote: (id: NoteId | null) => void;
@@ -24,6 +24,7 @@ export function TrackRow({
   track,
   pattern,
   beatsPerBar,
+  pxPerBeat,
   selected,
   selectedNoteId,
   onSelectNote,
@@ -36,7 +37,7 @@ export function TrackRow({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const beats = totalBeats(pattern, beatsPerBar);
   const notes = notesForTrack(pattern, track.id);
-  const width = beats * BEAT_WIDTH_PX;
+  const width = beats * pxPerBeat;
 
   return (
     <div className={`track-row ${selected ? "selected" : ""}`}>
@@ -68,7 +69,7 @@ export function TrackRow({
         />
       </div>
       <div className="track-lane" style={{ width }}>
-        <div className="cells" style={{ gridTemplateColumns: `repeat(${beats}, ${BEAT_WIDTH_PX}px)` }}>
+        <div className="cells" style={{ gridTemplateColumns: `repeat(${beats}, ${pxPerBeat}px)` }}>
           {Array.from({ length: beats }, (_, i) => (
             <button
               key={i}

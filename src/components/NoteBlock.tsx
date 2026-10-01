@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import type { Note } from "../model/types";
 import { MIN_NOTE_DURATION } from "../model/notes";
+import { RESIZE_HANDLE_WIDTH_PX } from "./timelineConstants";
 
 interface Props {
   note: Note;
@@ -14,8 +15,6 @@ interface Props {
   onResize: (duration: number, freePlacement: boolean) => void;
   onMove: (start: number, freePlacement: boolean) => void;
 }
-
-const MIN_DRAG_PX_FOR_RESIZE_HANDLE = 8;
 
 /** A single note. Position/size are expressed as CSS percentages of the track lane's
  * width — musical, not pixel, truth still lives in `note.start`/`note.duration` (beats);
@@ -126,7 +125,7 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
       onPointerDown={beginMove}
       title={`start ${note.start}, duration ${note.duration}, velocity ${note.velocity.toFixed(2)}`}
     >
-      <div className="resize-handle" style={{ width: MIN_DRAG_PX_FOR_RESIZE_HANDLE }} onPointerDown={beginResize} />
+      <div className="resize-handle" style={{ width: RESIZE_HANDLE_WIDTH_PX }} onPointerDown={beginResize} />
     </div>
   );
 }

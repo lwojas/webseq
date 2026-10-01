@@ -11,6 +11,9 @@ interface Props {
   fx: import("../model/types").FxInstance[];
   automation: AutomationLaneModel[];
   patternTotalBeats: number;
+  /** Current timeline zoom level, in pixels per beat — threaded through to AutomationLane so
+   * it stays pixel-aligned with the main grid (see timelineConstants.ts, ECS-53). */
+  pxPerBeat: number;
   selectedFxId: FxId | null;
   selectedAutomationParamId: string | null;
   onSelectFx: (id: FxId) => void;
@@ -35,6 +38,7 @@ export function FxPanel({
   fx,
   automation,
   patternTotalBeats,
+  pxPerBeat,
   selectedFxId,
   selectedAutomationParamId,
   onSelectFx,
@@ -71,6 +75,7 @@ export function FxPanel({
               lane={lane}
               paramDef={paramDef}
               totalBeats={patternTotalBeats}
+              pxPerBeat={pxPerBeat}
               onSetPoint={(position, value) => onSetAutomationPoint(selectedFx.id, paramDef.id, position, value)}
               onRemovePoint={(position) => onRemoveAutomationPoint(selectedFx.id, paramDef.id, position)}
               onClear={() => onClearAutomationLane(selectedFx.id, paramDef.id)}
