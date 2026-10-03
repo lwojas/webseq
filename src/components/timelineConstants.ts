@@ -39,3 +39,9 @@ export const MIN_ZOOM_INDEX_FINE = ZOOM_LEVELS_PX_PER_BEAT.findIndex((px) => px 
 export const MIN_ZOOM_INDEX_COARSE = ZOOM_LEVELS_PX_PER_BEAT.findIndex((px) => px >= RESIZE_HANDLE_WIDTH_PX_COARSE);
 export const MAX_ZOOM_INDEX_FINE = ZOOM_LEVELS_PX_PER_BEAT.length - 1;
 export const MAX_ZOOM_INDEX_COARSE = ZOOM_LEVELS_PX_PER_BEAT.length - 2;
+
+/** How many extra beat-columns TrackRow mounts on each side of the scrolled-into-view range
+ * (see useVisibleColumnWindow, ECS-56) before the grid's own content-box boundary clips them.
+ * Covers the gap between one rAF-driven window recompute and the next during a fast scroll
+ * fling, without mounting anywhere near a full pattern's worth of cells. */
+export const COLUMN_OVERSCAN_BEATS = 8;

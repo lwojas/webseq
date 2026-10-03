@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 interface Props {
   width: number;
   selected: boolean;
@@ -8,7 +10,7 @@ interface Props {
 /** The MASTER row: a selectable bus/control row, not a sample-producing track (see project
  * brief section 9) — clicking it shows master FX in the bottom panel exactly like clicking a
  * track shows that track's FX, but it has no sample slot, no notes, and no per-beat cells. */
-export function MasterRow({ width, selected, fxCount, onSelect }: Props) {
+export const MasterRow = memo(function MasterRow({ width, selected, fxCount, onSelect }: Props) {
   return (
     <div className={`track-row master-row ${selected ? "selected" : ""}`} onClick={onSelect}>
       <div className="track-header">
@@ -18,4 +20,4 @@ export function MasterRow({ width, selected, fxCount, onSelect }: Props) {
       <div className="track-lane master-lane" style={{ width }} />
     </div>
   );
-}
+});

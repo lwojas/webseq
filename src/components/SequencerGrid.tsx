@@ -1,9 +1,12 @@
+import { useCallback, useRef } from "react";
 import type { FxTarget, NoteId, Pattern, Project, TrackId } from "../model/types";
 import { totalBeats } from "../model/types";
 import { usePlayheadAnimation } from "../hooks/usePlayheadAnimation";
+import { useVisibleColumnWindow } from "../hooks/useVisibleColumnWindow";
+import { useStableTrackNotes } from "../hooks/useStableTrackNotes";
 import { TrackRow } from "./TrackRow";
 import { MasterRow } from "./MasterRow";
-import { VIEWPORT_BARS } from "./timelineConstants";
+import { COLUMN_OVERSCAN_BEATS, VIEWPORT_BARS } from "./timelineConstants";
 
 interface Props {
   project: Project;
@@ -47,10 +50,24 @@ export function SequencerGrid({
   const contentWidth = beats * pxPerBeat;
   const viewportCap = VIEWPORT_BARS * project.beatsPerBar * pxPerBeat;
   const playheadRef = usePlayheadAnimation(getPlayheadBeat, pxPerBeat);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const visibleColumns = useVisibleColumnWindow(
+    scrollRef,
+    pxPerBeat,
+    beats,
+    COLUMN_OVERSCAN_BEATS,
+    VIEWPORT_BARS * project.beatsPerBar,
+  );
+  const trackNotes = useStableTrackNotes(pattern, project.tracks);
+  const handleSelectMaster = useCallback(() => onSelectTarget("master"), [onSelectTarget]);
 
   return (
     <div className="sequencer" onClick={() => onSelectNote(null)}>
-      <div className="timeline-scroll" style={{ maxWidth: `calc(var(--header-width) + ${viewportCap}px)` }}>
+      <div
+        className="timeline-scroll"
+        ref={scrollRef}
+        style={{ maxWidth: `calc(var(--header-width) + ${viewportCap}px)` }}
+      >
         <div className="timeline-content">
           <div className="grid-header">
             <div className="track-col-label">Track / Sample</div>
@@ -68,7 +85,7 @@ export function SequencerGrid({
                 width={contentWidth}
                 selected={selectedTarget === "master"}
                 fxCount={project.master.fx.length}
-                onSelect={() => onSelectTarget("master")}
+                onSelect={handleSelectMaster}
               />
             </div>
             {project.tracks.map((track, i) => (
@@ -76,17 +93,20 @@ export function SequencerGrid({
                 <TrackRow
                   index={i}
                   track={track}
-                  pattern={pattern}
+                  notes={trackNotes.get(track.id) ?? []}
+                  beats={beats}
                   beatsPerBar={project.beatsPerBar}
                   pxPerBeat={pxPerBeat}
+                  visibleStart={visibleColumns.start}
+                  visibleEnd={visibleColumns.end}
                   selected={selectedTarget === track.id}
                   selectedNoteId={selectedNoteId}
                   onSelectNote={onSelectNote}
-                  onSelectTrack={() => onSelectTarget(track.id)}
-                  onAddNote={(start) => onAddNote(track.id, start)}
+                  onSelectTarget={onSelectTarget}
+                  onAddNote={onAddNote}
                   onResizeNote={onResizeNote}
                   onMoveNote={onMoveNote}
-                  onLoadSample={(file) => onLoadSample(track.id, file)}
+                  onLoadSample={onLoadSample}
                 />
               </div>
             ))}
