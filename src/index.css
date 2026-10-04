@@ -192,6 +192,13 @@ select {
   padding: 3px 6px;
 }
 
+.field select {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 3px 6px;
+}
+
 .zoom-control {
   gap: 4px;
 }
@@ -1289,6 +1296,16 @@ select {
 
   .transport .spacer {
     display: none;
+  }
+
+  .pattern-edit-fields {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    margin-left: 0;
+  }
+
+  .pattern-name-input {
+    width: 100%;
   }
 
   :root {

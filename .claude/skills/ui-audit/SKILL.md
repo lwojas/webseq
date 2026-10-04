@@ -70,6 +70,17 @@ Check new/changed CSS and inline styles against the established conventions:
 - **Spacing** uses small, consistent `gap`/`padding` values (4–16px, usually in 2px/4px
   increments) — flag paddings/gaps that look arbitrary (e.g. `padding: 7px 13px`) next to
   neighboring elements using round values.
+- **Every `<select>`/`<input>`/text-entry control gets explicit house styling, not just the
+  global reset.** The top-of-file `select { font-family: inherit; ... }` rule only normalizes
+  font/color — it does *not* give a control the `--panel-alt` background / `--border-strong`
+  border / `3px` radius / `3px 6px`–ish padding treatment every other control has (see
+  `.midi-panel-row select`, `.field input[type="number"]`, `.project-select`). A bare
+  `<select>`/`<input>` with no class and no matching CSS rule silently renders with the
+  browser's default chrome (e.g. a plain white OS dropdown) even though it reads as "styled"
+  in the JSX. Don't just check that changed CSS rules follow convention — check that every
+  interactive form element *has* a rule at all: grep for `<select`/`<input` in changed
+  component files, then confirm each one is covered by a selector in `index.css` beyond the
+  bare-tag reset (`grep -n "select {" src/index.css` to see what that reset alone provides).
 
 ## Step 3 — Mobile / touch audit
 
