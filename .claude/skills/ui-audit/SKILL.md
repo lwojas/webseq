@@ -1,6 +1,6 @@
 ---
 name: ui-audit
-description: Audits UI changes in this webseq repo against the project's existing dark/monospace style system (src/index.css custom properties, spacing, radius, class naming) and against mobile/touch-friendliness (the max-width:768px and pointer:coarse media queries, the data-mobile-tab single-section layout). Run this automatically right after any task that adds or edits a React component (src/components/**, App.tsx) or touches src/index.css, even if the user didn't ask for an audit — UI drift creeps in silently and this is the check that catches it. Also run it on demand whenever the user says things like "run the UI audit", "check the UI style", "audit mobile", "does this look consistent", or "check for UI clutter". Finds issues and fixes them directly rather than just reporting them.
+description: Audits UI changes in this webseq repo against the project's existing dark/monospace style system (src/index.css custom properties, spacing, radius, class naming), against mobile/touch-friendliness (the max-width:768px and pointer:coarse media queries, the data-mobile-tab single-section layout), and against render performance in hot paths like the sequencer grid (no unbounded re-renders, no expensive CSS on frequently-updated elements). Run this automatically right after any task that adds or edits a React component (src/components/**, App.tsx) or touches src/index.css, even if the user didn't ask for an audit — UI drift creeps in silently and this is the check that catches it. Also run it on demand whenever the user says things like "run the UI audit", "check the UI style", "audit mobile", "does this look consistent", "check for UI clutter", or "check for performance regressions in the UI". Finds issues and fixes them directly rather than just reporting them, while treating render performance as a real budget, not something to spend freely to make a fix prettier.
 ---
 
 # UI audit
@@ -113,20 +113,54 @@ For any new or changed UI, check:
   with `overflow: hidden` and a `min-width: 0` ancestor once the layout narrows — check this
   wasn't just left to clip or overflow silently.
 
-## Step 4 — Fix it
+## Step 4 — Performance check
+
+This project treats render performance in the sequencer as a real constraint, not an
+afterthought — `TrackRow`/`MasterRow` are memoized and the grid's step cells are virtualized
+specifically because this view re-renders constantly during playback (see `b1d7ec6`). A style
+or mobile fix that undoes that cheaply is a regression even if it looks correct. Before (and
+after) applying any fix, check:
+
+- **Don't break memoization.** If a fix touches a memoized component (`TrackRow`, `MasterRow`,
+  or anything wrapped in `React.memo`), make sure it doesn't add a new inline object/array/
+  function prop, a new unstable callback, or a new context read that defeats the memo and makes
+  it re-render every tick again. If the fix needs new data from a parent, thread it in a form
+  that stays referentially stable (e.g. `useCallback`/`useMemo`, or a primitive instead of an
+  object) rather than widening the re-render surface.
+- **Don't undo virtualization.** Changes inside `SequencerGrid`/the step-cell rendering path
+  shouldn't start mapping over the full unvirtualized range again, or add per-cell work that's
+  cheap once but expensive multiplied by every visible step/track.
+- **Be stingy with expensive CSS in hot paths.** On elements that re-render or repaint
+  frequently (step cells, note blocks, track rows, anything during active playback/drag), avoid
+  introducing `box-shadow`/`filter`/`backdrop-filter` with blur, `transition`/`animation` on
+  properties other than `transform`/`opacity`, or other paint-heavy properties purely to match a
+  style nit — these cost real frame time at this update frequency. Static panels, the topbar,
+  mixer chrome, and anything that only changes on user action are a different story and don't
+  need this caution.
+- **Mobile fixes shouldn't add cost disproportionate to the device.** A `pointer: coarse` or
+  `max-width: 768px` tweak is reasonable (that's exactly what those blocks are for); adding
+  heavy shadows/blurs/animations specifically in the mobile path is backwards, since phones are
+  typically the lower-powered target, not a reason to spend more.
+- If a fix is purely additive CSS with no clear perf cost (most color/spacing/radius/typography
+  fixes), none of this applies — this step is about catching the fixes that touch hot
+  components or add paint-heavy styling, not adding friction to ordinary style corrections.
+
+## Step 5 — Fix it
 
 Don't just report findings — apply the fixes, following the conventions above (reuse existing
-tokens/classes, match the surrounding code's patterns). This is a normal part of completing the
-UI task, the same as fixing a type error you introduced.
+tokens/classes, match the surrounding code's patterns, respect the performance constraints from
+Step 4). This is a normal part of completing the UI task, the same as fixing a type error you
+introduced.
 
 **Only stop and ask the user first** if a fix would do more than adjust styling/markup to match
 existing conventions — e.g. it would change component behavior, state, props/interfaces, event
-handling, or something else with a real chance of introducing a functional bug or changing how
-a feature behaves. Pure style/layout/markup corrections (swapping a hex for a token, adding a
-`pointer: coarse` rule, fixing wrapping/truncation, adjusting spacing to match the house scale)
+handling, break memoization/virtualization in a hot path, add paint-heavy styling to a
+frequently-updated element, or something else with a real chance of introducing a functional or
+performance regression. Pure style/layout/markup corrections (swapping a hex for a token, adding
+a `pointer: coarse` rule, fixing wrapping/truncation, adjusting spacing to match the house scale)
 should just be made directly, no confirmation needed.
 
-## Step 5 — Report
+## Step 6 — Report
 
 End with a short summary: what was audited, what was fixed (file:line references), and
 anything left open because it needed confirmation first (with the specific risk explained).
