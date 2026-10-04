@@ -3,7 +3,8 @@
 // anything else without modification. Note-editing operations (notes.ts) are wrapped here so
 // callers never need to manually locate-and-replace a pattern in project.patterns.
 
-import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, Project, Track, TrackId } from "./types";
+import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, Track, TrackId, VoiceMode } from "./types";
+import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE } from "./types";
 import * as notes from "./notes";
 
 export const MIN_BPM = 40;
@@ -39,6 +40,8 @@ export function createInitialTracks(trackCount = DEFAULT_TRACK_COUNT): Track[] {
     volume: DEFAULT_TRACK_VOLUME,
     muted: false,
     soloed: false,
+    playbackMode: DEFAULT_PLAYBACK_MODE,
+    voiceMode: DEFAULT_VOICE_MODE,
   }));
 }
 
@@ -147,6 +150,17 @@ export function setTrackMuted(project: Project, trackId: TrackId, muted: boolean
 
 export function setTrackSoloed(project: Project, trackId: TrackId, soloed: boolean): Project {
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, soloed } : t)) };
+}
+
+// --- playback mode / voice mode (ECS-82/ECS-87 — see types.ts's PlaybackMode/VoiceMode doc
+// comments for the behavior each value produces) ---
+
+export function setTrackPlaybackMode(project: Project, trackId: TrackId, playbackMode: PlaybackMode): Project {
+  return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, playbackMode } : t)) };
+}
+
+export function setTrackVoiceMode(project: Project, trackId: TrackId, voiceMode: VoiceMode): Project {
+  return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, voiceMode } : t)) };
 }
 
 // --- patterns ---

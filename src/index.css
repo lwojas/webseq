@@ -909,6 +909,49 @@ select {
   margin-top: 8px;
 }
 
+/* Track playback mode / voice mode (ECS-82/ECS-88) — same visual language as
+   .module-param .enum-toggle, but not nested under .module-panel since this sits above the FX
+   chain strip rather than inside a single FX's parameter list. */
+.track-mode-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.track-mode-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.track-mode-label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.track-mode-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.track-mode-toggle button {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.track-mode-toggle button.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
 .fx-chain-strip {
   display: flex;
   gap: 6px;
@@ -1420,6 +1463,10 @@ select {
 
   .fx-chip-remove {
     padding: 9px 10px;
+  }
+
+  .track-mode-toggle button {
+    padding: 9px 12px;
   }
 
   .side-panel-tab,

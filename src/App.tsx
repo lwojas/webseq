@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { MASTER_BUS } from "webdsp";
-import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, TrackId } from "./model/types";
+import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { totalBeats, trackById } from "./model/types";
 import { createInitialProject } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
@@ -362,6 +362,16 @@ export function App() {
     [],
   );
 
+  // --- playback mode / voice mode (ECS-82/ECS-87/ECS-88) ---
+  const handleSetTrackPlaybackMode = useCallback(
+    (trackId: TrackId, playbackMode: PlaybackMode) => dispatch({ type: "SET_TRACK_PLAYBACK_MODE", trackId, playbackMode }),
+    [],
+  );
+  const handleSetTrackVoiceMode = useCallback(
+    (trackId: TrackId, voiceMode: VoiceMode) => dispatch({ type: "SET_TRACK_VOICE_MODE", trackId, voiceMode }),
+    [],
+  );
+
   const handleSelectTarget = useCallback((target: FxTarget) => {
     setSelectedTarget(target);
     setSelectedFxId(null);
@@ -634,6 +644,8 @@ export function App() {
                 onSetAutomationPoint={handleSetAutomationPoint}
                 onRemoveAutomationPoint={handleRemoveAutomationPoint}
                 onClearAutomationLane={handleClearAutomationLane}
+                onSetPlaybackMode={handleSetTrackPlaybackMode}
+                onSetVoiceMode={handleSetTrackVoiceMode}
               />
             )}
             {bottomPanelView === "mixer" && (

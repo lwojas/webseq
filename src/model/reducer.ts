@@ -1,4 +1,4 @@
-import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, Project, TrackId } from "./types";
+import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, Project, TrackId, VoiceMode } from "./types";
 import type { Asset } from "./types";
 import * as project from "./project";
 import * as fx from "./fx";
@@ -15,6 +15,8 @@ export type Action =
   | { type: "SET_TRACK_VOLUME"; trackId: TrackId; volume: number }
   | { type: "SET_TRACK_MUTED"; trackId: TrackId; muted: boolean }
   | { type: "SET_TRACK_SOLOED"; trackId: TrackId; soloed: boolean }
+  | { type: "SET_TRACK_PLAYBACK_MODE"; trackId: TrackId; playbackMode: PlaybackMode }
+  | { type: "SET_TRACK_VOICE_MODE"; trackId: TrackId; voiceMode: VoiceMode }
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
   | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
@@ -58,6 +60,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setTrackMuted(state, action.trackId, action.muted);
     case "SET_TRACK_SOLOED":
       return project.setTrackSoloed(state, action.trackId, action.soloed);
+    case "SET_TRACK_PLAYBACK_MODE":
+      return project.setTrackPlaybackMode(state, action.trackId, action.playbackMode);
+    case "SET_TRACK_VOICE_MODE":
+      return project.setTrackVoiceMode(state, action.trackId, action.voiceMode);
     case "ADD_NOTE":
       return project.addNote(state, action.patternId, action.trackId, action.start);
     case "REMOVE_NOTE":

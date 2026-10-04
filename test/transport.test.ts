@@ -3,7 +3,7 @@ import type { AudioRuntime, CaptureHandle, RuntimeCapabilities, SampleMetadata, 
 import { Transport } from "../src/audio/transport";
 import { secondsPerBeat } from "../src/audio/compile";
 import { addAsset, addNote } from "../src/model/project";
-import { addPattern, appendToChain, assignAsset, createInitialProject, setBpm, setSwing } from "../src/model/project";
+import { addPattern, appendToChain, assignAsset, createInitialProject, setBpm, setSwing, setTrackVoiceMode } from "../src/model/project";
 import type { Asset, Project } from "../src/model/types";
 
 // AudioRuntime needs a real browser (AudioContext/AudioWorklet) — not available under
@@ -545,6 +545,47 @@ describe("Transport resampling", () => {
     transport.retime();
     expect(cancelScheduled).not.toHaveBeenCalled();
     expect(transport.getResampleStatus()).toBe("armed"); // untouched, not reset by retime()
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+});
+
+// ECS-82/ECS-87: Track.voiceMode's cross-iteration fallback — same-iteration mono truncation
+// is covered in test/compile.test.ts; this covers what only Transport can see (a mono track's
+// voice from one loop iteration still sounding when the next iteration's is scheduled).
+describe("Transport voice mode", () => {
+  it("mono track: releases the previous iteration's voice the moment the next one is scheduled", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, released, advance } = fakeRuntime();
+    let project = singlePatternProject(); // one note on track-1 at start 0; 1-bar loop = 2s @120bpm
+    project = setTrackVoiceMode(project, "track-1", "mono");
+    const transport = new Transport(runtime, () => project, noBus);
+
+    transport.play();
+    expect(scheduled).toHaveLength(1);
+    expect(released).toHaveLength(0); // nothing to choke yet — this is the first trigger
+
+    advance(2.0); // the next loop iteration becomes due
+    vi.advanceTimersByTime(25);
+    expect(scheduled.length).toBeGreaterThanOrEqual(2);
+    expect(released).toEqual([1]); // handle 1 (the first iteration's voice) was choked
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("poly track (default): never chokes a previous voice on retrigger", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, released, advance } = fakeRuntime();
+    const project = singlePatternProject(); // default voiceMode is poly
+
+    const transport = new Transport(runtime, () => project, noBus);
+    transport.play();
+    advance(2.0);
+    vi.advanceTimersByTime(25);
+    expect(scheduled.length).toBeGreaterThanOrEqual(2);
+    expect(released).toHaveLength(0); // no choke before stop() — stop() itself isn't called yet
 
     transport.stop();
     vi.useRealTimers();

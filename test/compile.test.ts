@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileNote, compilePatternIteration, secondsPerBeat, swingOffsetSeconds } from "../src/audio/compile";
+import { compileNote, compilePatternIteration, compilePatternIterationTracked, secondsPerBeat, swingOffsetSeconds } from "../src/audio/compile";
 import { addNote } from "../src/model/notes";
 import { createInitialTracks } from "../src/model/project";
 import type { Note, Pattern, Track } from "../src/model/types";
@@ -210,6 +210,97 @@ describe("global swing timing", () => {
       const iteration0 = compilePatternIteration(pattern, tracks, 120, 0, () => undefined, 0.75)[0].time;
       const iteration5 = compilePatternIteration(pattern, tracks, 120, 5 * loopDuration, () => undefined, 0.75)[0].time;
       expect(iteration5).toBeCloseTo(iteration0 + 5 * loopDuration, 10);
+    });
+  });
+});
+
+// ECS-82/ECS-87: Track.playbackMode and Track.voiceMode.
+describe("playback mode and voice mode", () => {
+  const baseTrack: Track = { id: "track-1", assetId: 7, name: "kick.wav", fx: [], automation: [], volume: 1, muted: false, soloed: false };
+  const note: Note = { id: "note-1", trackId: "track-1", start: 4, duration: 2, velocity: 1 };
+
+  describe("compileNote: one-shot vs. loop", () => {
+    it("omits `loop` for a track with no playbackMode set (default one-shot, unchanged from before)", () => {
+      const event = compileNote(baseTrack, note, 120, 0);
+      expect(event!.loop).toBeUndefined();
+    });
+
+    it("omits `loop` for a track explicitly set to one-shot", () => {
+      const event = compileNote({ ...baseTrack, playbackMode: "one-shot" }, note, 120, 0);
+      expect(event!.loop).toBeUndefined();
+    });
+
+    it("sets `loop: true` for a loop-mode track, while leaving `duration` as the note's bounded length", () => {
+      const event = compileNote({ ...baseTrack, playbackMode: "loop" }, note, 120, 0);
+      expect(event!.loop).toBe(true);
+      expect(event!.duration).toBeCloseTo(2 * secondsPerBeat(120), 5);
+    });
+  });
+
+  describe("compilePatternIteration: mono voice truncation", () => {
+    const spb = secondsPerBeat(120);
+    // Two notes on one track: unswung, note A (start 5, duration 1) ends exactly where note B
+    // (start 6) begins — zero gap, allowed by notes.ts's non-overlap invariant. But A sits on
+    // an odd (second-of-pair) 16th, so at 75% swing it gets delayed forward by 0.25*spb while
+    // B (even, first-of-pair) doesn't move — producing a genuine overlap once swing is applied
+    // (an odd-duration note is required so A and B land in different-parity slots; an even
+    // duration would shift both identically and never create an overlap to begin with). This
+    // is the swing-vs-grid-invariant edge case mono truncation exists for (see
+    // compilePatternIterationTracked's doc comment).
+    const pattern: Pattern = {
+      id: "p1",
+      name: "Pattern A",
+      bars: 1,
+      notes: {
+        a: { id: "a", trackId: "track-1", start: 5, duration: 1, velocity: 1 },
+        b: { id: "b", trackId: "track-1", start: 6, duration: 2, velocity: 1 },
+      },
+    };
+
+    it("leaves durations untouched for a poly track, even where swing creates an overlap", () => {
+      const tracks = [{ ...baseTrack, voiceMode: "poly" as const }];
+      const events = compilePatternIteration(pattern, tracks, 120, 0, () => undefined, 0.75);
+      expect(events[0].duration).toBeCloseTo(1 * spb, 10);
+      expect(events[1].duration).toBeCloseTo(2 * spb, 10);
+      // The overlap really is there for poly: A's end is after B's start.
+      expect(events[0].time + events[0].duration!).toBeGreaterThan(events[1].time);
+    });
+
+    it("truncates the earlier note's duration for a mono track so it never overlaps the next", () => {
+      const tracks = [{ ...baseTrack, voiceMode: "mono" as const }];
+      const events = compilePatternIteration(pattern, tracks, 120, 0, () => undefined, 0.75);
+      expect(events[0].time + events[0].duration!).toBeCloseTo(events[1].time, 10);
+      expect(events[0].duration!).toBeLessThan(1 * spb);
+      // The last note on a mono track has no following note to truncate against.
+      expect(events[1].duration).toBeCloseTo(2 * spb, 10);
+    });
+
+    it("never extends a note's duration, only shortens it", () => {
+      const roomyPattern: Pattern = {
+        id: "p2",
+        name: "Pattern B",
+        bars: 1,
+        notes: {
+          a: { id: "a", trackId: "track-1", start: 0, duration: 1, velocity: 1 },
+          b: { id: "b", trackId: "track-1", start: 8, duration: 1, velocity: 1 },
+        },
+      };
+      const tracks = [{ ...baseTrack, voiceMode: "mono" as const }];
+      const events = compilePatternIteration(roomyPattern, tracks, 120, 0, () => undefined, 0.5);
+      expect(events[0].duration).toBeCloseTo(1 * spb, 10); // plenty of room; untouched
+    });
+  });
+
+  describe("compilePatternIterationTracked", () => {
+    it("pairs each compiled event with the TrackId that produced it", () => {
+      const tracks = createInitialTracks(2).map((t, i) => ({ ...t, assetId: i + 1 }));
+      let pattern: Pattern = { id: "p1", name: "Pattern A", bars: 1, notes: {} };
+      pattern = addNote(pattern, BEATS_PER_BAR, tracks[0].id, 0);
+      pattern = addNote(pattern, BEATS_PER_BAR, tracks[1].id, 2);
+
+      const results = compilePatternIterationTracked(pattern, tracks, 120, 0);
+      expect(results.find((r) => r.event.sampleId === 1)!.trackId).toBe(tracks[0].id);
+      expect(results.find((r) => r.event.sampleId === 2)!.trackId).toBe(tracks[1].id);
     });
   });
 });

@@ -15,12 +15,14 @@ import {
   setSwing,
   setPatternBars,
   setTrackMuted,
+  setTrackPlaybackMode,
   setTrackSoloed,
+  setTrackVoiceMode,
   setTrackVolume,
 } from "../src/model/project";
 import { addNote, moveNote, removeNote, remapAssetIds, resizeNote } from "../src/model/project";
 import type { Asset } from "../src/model/types";
-import { effectiveTrackGain, notesForTrack, patternById, resolveChainStep, totalBeats } from "../src/model/types";
+import { effectivePlaybackMode, effectiveTrackGain, effectiveVoiceMode, notesForTrack, patternById, resolveChainStep, totalBeats } from "../src/model/types";
 
 function makeAsset(overrides: Partial<Asset> & Pick<Asset, "id" | "name">): Asset {
   return { type: "audio", duration: 1, sampleRate: 48000, channels: 2, origin: "import", ...overrides };
@@ -311,5 +313,40 @@ describe("project model", () => {
     const project = setTrackVolume(createInitialProject(), "track-1", 0.3);
     const track = project.tracks.find((t) => t.id === "track-1")!;
     expect(effectiveTrackGain(project, track)).toBe(0.3);
+  });
+
+  // ECS-82/ECS-87
+  describe("playback mode / voice mode", () => {
+    it("defaults every track to one-shot and poly", () => {
+      const project = createInitialProject();
+      expect(project.tracks.every((t) => effectivePlaybackMode(t) === "one-shot")).toBe(true);
+      expect(project.tracks.every((t) => effectiveVoiceMode(t) === "poly")).toBe(true);
+    });
+
+    it("effectivePlaybackMode/effectiveVoiceMode default a field-less track the same way, for old saved projects with no migration step", () => {
+      const legacyTrack = { ...createInitialProject().tracks[0] };
+      delete (legacyTrack as { playbackMode?: unknown }).playbackMode;
+      delete (legacyTrack as { voiceMode?: unknown }).voiceMode;
+      expect(effectivePlaybackMode(legacyTrack)).toBe("one-shot");
+      expect(effectiveVoiceMode(legacyTrack)).toBe("poly");
+    });
+
+    it("sets a track's playback mode without affecting other tracks", () => {
+      let project = setTrackPlaybackMode(createInitialProject(), "track-1", "loop");
+      expect(project.tracks.find((t) => t.id === "track-1")!.playbackMode).toBe("loop");
+      expect(project.tracks.find((t) => t.id === "track-2")!.playbackMode).toBe("one-shot");
+
+      project = setTrackPlaybackMode(project, "track-1", "one-shot");
+      expect(project.tracks.find((t) => t.id === "track-1")!.playbackMode).toBe("one-shot");
+    });
+
+    it("sets a track's voice mode without affecting other tracks", () => {
+      let project = setTrackVoiceMode(createInitialProject(), "track-1", "mono");
+      expect(project.tracks.find((t) => t.id === "track-1")!.voiceMode).toBe("mono");
+      expect(project.tracks.find((t) => t.id === "track-2")!.voiceMode).toBe("poly");
+
+      project = setTrackVoiceMode(project, "track-1", "poly");
+      expect(project.tracks.find((t) => t.id === "track-1")!.voiceMode).toBe("poly");
+    });
   });
 });

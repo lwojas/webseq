@@ -59,7 +59,33 @@ export interface Track {
    * non-soloed track is silenced (see effectiveTrackGain) — standard multi-solo behavior, not
    * exclusive/single-select. */
   soloed: boolean;
+  /** One-shot vs. loop playback — see audio/compile.ts's compileNote for how this is actually
+   * applied (ECS-82/ECS-87). Optional, not required: there is no persistence migration layer
+   * (see persistence/projectStore.ts's module doc comment), so an older saved project's tracks
+   * simply won't have this field, and every read site must go through effectivePlaybackMode
+   * rather than assuming it's present — that's what lets an old project keep playing exactly
+   * as it always did with zero migration step. */
+  playbackMode?: PlaybackMode;
+  /** Whether this track's own voices may overlap each other — see effectiveVoiceMode,
+   * audio/compile.ts's mono-truncation, and audio/transport.ts's per-track voice choke
+   * (ECS-82/ECS-87). "mono" only ever constrains a track against itself, never other tracks.
+   * Optional for the same missing-field-defaults-safely reason as playbackMode. */
+  voiceMode?: VoiceMode;
 }
+
+/** One-shot: plays through once, bounded by its triggering note's length (today's only
+ * behavior). Loop: the same, but the asset tiles/repeats to fill that note's full length
+ * instead of just playing once — see audio/compile.ts's compileNote. */
+export type PlaybackMode = "one-shot" | "loop";
+export const DEFAULT_PLAYBACK_MODE: PlaybackMode = "one-shot";
+
+/** Poly: a track's triggered voices may overlap (today's only behavior — repeated/rolled hits
+ * stack as independent voices). Mono: a track's voices never overlap each other — a new trigger
+ * always cuts off whatever this same track was already sounding. See audio/compile.ts's
+ * mono-truncation (same-iteration, swing-aware) and audio/transport.ts's per-track voice choke
+ * (cross-iteration / future manual-trigger). */
+export type VoiceMode = "poly" | "mono";
+export const DEFAULT_VOICE_MODE: VoiceMode = "poly";
 
 /** The project-wide master bus. Not a Track (see FxTarget doc comment): it has an FX chain
  * and automation shaped identically to a track's, but no sample/notes of its own — it only
@@ -255,4 +281,16 @@ export function effectiveTrackGain(project: Project, track: Track): number {
   const anySoloed = project.tracks.some((t) => t.soloed);
   if (anySoloed && !track.soloed) return 0;
   return track.volume;
+}
+
+/** `track.playbackMode`, defaulted for a track that predates the field (see its doc comment) —
+ * the one place that default is allowed to be hardcoded; every other call site should go
+ * through this rather than reading `track.playbackMode` directly. */
+export function effectivePlaybackMode(track: Pick<Track, "playbackMode">): PlaybackMode {
+  return track.playbackMode ?? DEFAULT_PLAYBACK_MODE;
+}
+
+/** `track.voiceMode`, defaulted the same way as effectivePlaybackMode. */
+export function effectiveVoiceMode(track: Pick<Track, "voiceMode">): VoiceMode {
+  return track.voiceMode ?? DEFAULT_VOICE_MODE;
 }

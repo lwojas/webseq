@@ -1,5 +1,6 @@
 import { FX_DEFS } from "../model/fx";
-import type { AutomationLane as AutomationLaneModel, FxId, FxTarget, FxType, Track } from "../model/types";
+import type { AutomationLane as AutomationLaneModel, FxId, FxTarget, FxType, PlaybackMode, Track, TrackId, VoiceMode } from "../model/types";
+import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
 import { findLane } from "../model/automation";
 import { FxChainStrip } from "./FxChainStrip";
 import { ModulePanel } from "./ModulePanel";
@@ -25,6 +26,8 @@ interface Props {
   onSetAutomationPoint: (fxId: FxId, parameter: string, position: number, value: number) => void;
   onRemoveAutomationPoint: (fxId: FxId, parameter: string, position: number) => void;
   onClearAutomationLane: (fxId: FxId, parameter: string) => void;
+  onSetPlaybackMode: (trackId: TrackId, mode: PlaybackMode) => void;
+  onSetVoiceMode: (trackId: TrackId, mode: VoiceMode) => void;
 }
 
 /** The bottom module panel, contextual to whatever is currently selected in the timeline — a
@@ -50,6 +53,8 @@ export function FxPanel({
   onSetAutomationPoint,
   onRemoveAutomationPoint,
   onClearAutomationLane,
+  onSetPlaybackMode,
+  onSetVoiceMode,
 }: Props) {
   const selectedFx = fx.find((f) => f.id === selectedFxId) ?? null;
   const title = target === "master" ? "MASTER" : `${track?.name ?? target}`;
@@ -59,6 +64,45 @@ export function FxPanel({
   return (
     <div className="fx-panel">
       <div className="fx-panel-title">{title} — FX CHAIN</div>
+      {/* Contextual to the selected track only (ECS-82/ECS-88) — master has no asset/trigger
+          concept, same rationale as AssetsPanel's "Assign" being disabled for master and
+          TrackRow having no Load button for it. Deliberately not on TrackRow/MixerPanel: those
+          render every track at once, and a per-row control here would be exactly the
+          persistent UI clutter ECS-81 asks to avoid. */}
+      {track && (
+        <div className="track-mode-row">
+          <div className="track-mode-group">
+            <span className="track-mode-label">Mode</span>
+            <div className="track-mode-toggle">
+              {(["one-shot", "loop"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={effectivePlaybackMode(track) === mode ? "active" : ""}
+                  onClick={() => onSetPlaybackMode(track.id, mode)}
+                  title={mode === "loop" ? "Tile the sample to fill this track's note lengths" : "Play through once, bounded by note length"}
+                >
+                  {mode === "one-shot" ? "One-shot" : "Loop"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="track-mode-group">
+            <span className="track-mode-label">Voice</span>
+            <div className="track-mode-toggle">
+              {(["poly", "mono"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={effectiveVoiceMode(track) === mode ? "active" : ""}
+                  onClick={() => onSetVoiceMode(track.id, mode)}
+                  title={mode === "mono" ? "This track's own voices never overlap each other" : "This track's voices may overlap (default)"}
+                >
+                  {mode === "poly" ? "Poly" : "Mono"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
       <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} />
 
       {selectedFx && (
