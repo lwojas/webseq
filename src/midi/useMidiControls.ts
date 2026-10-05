@@ -133,6 +133,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         stepTemplate: "step.{row}.{column}",
         lengthControl: "steps.length",
         muteTemplate: "mute.{track}",
+        trackCountControl: "tracks.count",
         actions,
       });
       for (const role of sequencer.unresolved) appendLog(`unresolved: ${role}`);

@@ -28,6 +28,7 @@ export interface SequencerRegistry extends ControlRegistry {
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
 const MUTE_ID = /^mute\.(\d+)$/;
 const LENGTH_ID = "steps.length";
+const TRACKS_ID = "tracks.count";
 
 function selectedPattern(project: Project, patternId: PatternId): Pattern {
   return project.patterns.find((pattern) => pattern.id === patternId) ?? project.patterns[0]!;
@@ -99,6 +100,31 @@ function createLengthControl(deps: SequencerRegistryDeps): ProjectControl<Numeri
   };
 }
 
+// The track count follows the project. Vertical paging stops at its end (midi-core ECS-95); the application changes it, not the device.
+function createTrackCountControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: TRACKS_ID, label: "Track count", kind: "number", min: 0, max: 1024, default: 0 };
+  const count = (project: Project) => project.tracks.length;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = count(deps.getProject());
+
+  return {
+    def,
+    getValue: () => count(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = count(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
 /** A registry that resolves the sequencer's contract ids against the live project. */
 export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerRegistry {
   const cache = new Map<string, ProjectControl<ControlDef>>();
@@ -122,6 +148,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       if (track) created = liveMuteControl(track.id, deps) as ProjectControl<ControlDef>;
     } else if (id === LENGTH_ID) {
       created = createLengthControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === TRACKS_ID) {
+      created = createTrackCountControl(deps) as ProjectControl<ControlDef>;
     }
 
     if (created) cache.set(id, created);

@@ -54,6 +54,13 @@ describe("sequencer contract: steps", () => {
   });
 });
 
+describe("sequencer contract: tracks", () => {
+  it("reports the project's track count as tracks.count, which bounds vertical paging", () => {
+    const { registry, getProject } = harness();
+    expect(registry.getControl("tracks.count")!.getValue()).toBe(getProject().tracks.length);
+  });
+});
+
 describe("sequencer contract: mutes", () => {
   it("mute.N is track N's mute", () => {
     const { registry, getProject } = harness();
