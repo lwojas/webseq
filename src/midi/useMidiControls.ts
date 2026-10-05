@@ -125,7 +125,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         stop: createAction({ id: "transport.stop", label: "Stop" }, () => transportRef.current.stop()),
       };
 
-      const sequencer = createSequencerBindings(input, device, {
+      const sequencer = createSequencerBindings(input, device.profile, {
         stepTemplate: "step.{row}.{column}",
         lengthControl: "steps.length",
         muteTemplate: "mute.{track}",

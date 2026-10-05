@@ -83,7 +83,7 @@ describe("sequencer contract: the Launchpad configuration drives it", () => {
     const surface = createControlSurface({
       profile: launchpad.profile,
       ports: { inputs: { "midi-in": input }, outputs: { "midi-out": output } },
-      bindingTable: createSequencerBindings(input, launchpad, {
+      bindingTable: createSequencerBindings(input, launchpad.profile, {
         stepTemplate: "step.{row}.{column}",
         lengthControl: "steps.length",
         muteTemplate: "mute.{track}",
