@@ -1,19 +1,22 @@
-// The only place in this app that talks to midi-core's Web MIDI adapter or calls
-// bindControlMapping() -- everything else (App.tsx, the reducer, the model) stays unaware
-// MIDI exists, the same "one bootstrap module, everyone else is an ordinary client" shape
-// useAudioRuntime.ts already uses for webdsp (see its own doc comment). ECS-38's whole point
-// is that this file could be deleted and nothing in src/model/ or the rest of src/components/
-// would need to change.
+// The only place in this app that talks to midi-core's Web MIDI adapter or Control Surface
+// runtime -- everything else (App.tsx, the reducer, the model) stays unaware MIDI exists, the
+// same "one bootstrap module, everyone else is an ordinary client" shape useAudioRuntime.ts
+// already uses for webdsp (see its own doc comment). ECS-38's whole point is that this file
+// could be deleted and nothing in src/model/ or the rest of src/components/ would need to
+// change; ECS-78 keeps that true while replacing this file's own internals -- connect() now
+// builds and attaches a real midi-core `ControlSurface` against surfaceProfile.ts's
+// `DeviceProfile` and mappings.ts's `SurfaceBindingTable`, instead of calling
+// `bindControlMapping()` once per hand-written `ControlMapping`.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MidiInput, MidiMessage, MidiOutput, MidiPortInfo, Unsubscribe } from "midi-core";
+import type { MidiInput, MidiMessage, MidiOutput, MidiPortInfo } from "midi-core";
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
-import { bindControlMapping } from "midi-core/mapping";
-import type { ControlDef } from "midi-core/control-api";
+import { createControlRegistry, createSurfaceContext } from "midi-core/control-api";
+import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { Project } from "../model/types";
-import { createTrack1Bindings } from "./mappings";
-import type { ProjectControl } from "./controlAdapter";
+import { createTrack1Controls, TRACK1_BINDING_TABLE, type Track1Controls } from "./mappings";
+import { WEBSEQ_CONTROLLER_PROFILE } from "./surfaceProfile";
 
 export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "connected" | "error";
 
@@ -26,14 +29,14 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   const [error, setError] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
 
-  // Transport (input/output) and the unsubscribes bindControlMapping() returned -- torn down
-  // together on disconnect() or unmount. A ref, not state: nothing here needs a re-render when
-  // these change, only when `status` does.
+  // The live surface and the raw ports/controls it was built from -- torn down together on
+  // disconnect() or unmount. A ref, not state: nothing here needs a re-render when these
+  // change, only when `status` does.
   const connectionRef = useRef<{
     input: MidiInput;
     output: MidiOutput;
-    unbinds: Unsubscribe[];
-    controls: ProjectControl<ControlDef>[];
+    surface: ControlSurface;
+    controls: Track1Controls;
   } | null>(null);
 
   // Project is read through this ref inside the sync effect below and inside each
@@ -61,8 +64,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   const disconnect = useCallback(async () => {
     const connection = connectionRef.current;
     if (!connection) return;
-    for (const unbind of connection.unbinds) unbind();
-    await Promise.all([connection.input.disconnect(), connection.output.disconnect()]);
+    await connection.surface.detach();
     connectionRef.current = null;
     setStatus("idle");
   }, []);
@@ -86,30 +88,42 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       input.onError((e) => appendLog(`input error: ${e.code} ${e.message}`));
       output.onError((e) => appendLog(`output error: ${e.code} ${e.message}`));
 
-      try {
-        await Promise.all([input.connect(), output.connect()]);
-      } catch (err) {
-        setStatus("error");
-        setError(err instanceof Error ? err.message : String(err));
-        return;
-      }
-
-      // Logs the literal MidiMessage bindControlMapping() hands to output.send() -- channel
-      // included -- rather than a Control's onChange value. The two are not interchangeable:
-      // a mapping with no `feedback` (volume, deliberately -- see mappings.ts) never calls
-      // send() at all, so logging onChange directly as "out:" claimed something went out over
-      // MIDI when nothing did. Wrapping send() itself can't lie about that.
+      // Logs the literal MidiMessage the surface hands to output.send() -- channel included --
+      // rather than a Control's onChange value. The two are not interchangeable: a mapping with
+      // no feedback target never calls send() at all, so logging onChange directly as "out:"
+      // claimed something went out over MIDI when nothing did. Wrapping send() itself can't lie
+      // about that.
       const loggedSend = output.send.bind(output);
       output.send = (message) => {
         appendLog(`out: ${describeMessage(message)}`);
         loggedSend(message);
       };
+      const unlogInput = input.onMessage((message) => appendLog(`in:  ${describeMessage(message)}`));
 
-      const bindings = createTrack1Bindings(() => projectRef.current, dispatch);
-      const unbinds = bindings.map(({ mapping, control }) => bindControlMapping(mapping, input, output, control));
-      unbinds.push(input.onMessage((message) => appendLog(`in:  ${describeMessage(message)}`)));
+      const controls = createTrack1Controls(() => projectRef.current, dispatch);
+      const registry = createControlRegistry([controls.volume, controls.muted]);
 
-      connectionRef.current = { input, output, unbinds, controls: bindings.map(({ control }) => control) };
+      const surface = createControlSurface({
+        profile: WEBSEQ_CONTROLLER_PROFILE,
+        ports: { inputs: { "main-in": input }, outputs: { "main-out": output } },
+        bindingTable: TRACK1_BINDING_TABLE,
+        context: createSurfaceContext(),
+        registry,
+        generate: generateControlMappings,
+        initialNavigation: { mode: "default" },
+      });
+
+      try {
+        await surface.attach();
+      } catch (err) {
+        unlogInput();
+        await surface.detach().catch(() => {}); // best-effort: release whatever attach() connected before it failed
+        setStatus("error");
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+
+      connectionRef.current = { input, output, surface, controls };
       setStatus("connected");
     },
     [access, dispatch, disconnect, appendLog],
@@ -123,7 +137,8 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   useEffect(() => {
     const connection = connectionRef.current;
     if (!connection) return;
-    for (const control of connection.controls) control.syncFromProject(project);
+    connection.controls.volume.syncFromProject(project);
+    connection.controls.muted.syncFromProject(project);
   });
 
   useEffect(() => () => void disconnect(), [disconnect]);

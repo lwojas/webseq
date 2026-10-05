@@ -21,8 +21,8 @@ function portLabel(port: MidiPortInfo): string {
 /** MIDI device connect/status surface — see ECS-38 and src/midi/ for the integration itself.
  * This panel only ever does three things: request Web MIDI access, pick an input+output port
  * pair and connect, and show a short log of what crossed the wire. It has no idea what
- * "track-1 volume" or "CC7" means; src/midi/mappings.ts owns that, same separation the FX
- * panel keeps from applyFx.ts's engine translation. */
+ * "track-1 volume" or "CC7" means; src/midi/surfaceProfile.ts and src/midi/mappings.ts own
+ * that, same separation the FX panel keeps from applyFx.ts's engine translation. */
 export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRequestAccess, onConnect, onDisconnect }: Props) {
   const [inputId, setInputId] = useState("");
   const [outputId, setOutputId] = useState("");
@@ -82,9 +82,10 @@ export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRe
           {error && status === "error" && <div className="midi-status error">{error}</div>}
 
           <div className="midi-panel-hint">
-            Track 1 only: CC7 on channel 0 ↔ volume, pad note 0 ↔ mute. Both send feedback on
-            a non-MIDI change (e.g. this app's own mixer fader) without echoing back to
-            whichever one you just moved — see src/midi/mappings.ts.
+            Track 1 only: CC7 ↔ volume, pad note 0 ↔ mute, via the Control Surface contract
+            (src/midi/surfaceProfile.ts + mappings.ts). Both send feedback on a non-MIDI change
+            (e.g. this app's own mixer fader) without echoing back to whichever one you just
+            moved.
           </div>
 
           <div className="midi-log">
