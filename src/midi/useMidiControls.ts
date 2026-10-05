@@ -40,6 +40,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
     output: MidiOutput;
     surface: ControlSurface;
     registry: SequencerRegistry;
+    unwatchSurface: () => void;
   } | null>(null);
 
   // Project is read through this ref inside the sync effect below and inside each
@@ -58,7 +59,9 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
 
   const requestAccess = useCallback(async () => {
     try {
-      const granted = await requestWebMidiAccess();
+      // SysEx permission is needed up front: the device's setup (Device Inquiry, Programmer mode)
+      // is SysEx, and the browser rejects SysEx sends unless access was requested with it (ECS-94).
+      const granted = await requestWebMidiAccess({ sysex: true });
       setAccess(granted);
       setPorts(granted.discovery.listPorts());
       granted.discovery.onChange(() => setPorts(granted.discovery.listPorts()));
@@ -71,8 +74,9 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   const disconnect = useCallback(async () => {
     const connection = connectionRef.current;
     if (!connection) return;
-    await connection.surface.detach();
+    connection.unwatchSurface();
     connectionRef.current = null;
+    await connection.surface.detach();
     setStatus("idle");
   }, []);
 
@@ -153,7 +157,20 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         return;
       }
 
-      connectionRef.current = { input, output, surface, registry };
+      // midi-core moves the surface to "error" when a connected port drops on its own (the cable
+      // is pulled). Release the device and say so, so the panel offers Connect again instead of
+      // still showing "connected" (ECS-94). The project state is left alone: it is this app's own.
+      const unwatchSurface = surface.onStateChange(({ to }) => {
+        if (to !== "error" || connectionRef.current?.surface !== surface) return;
+        unwatchSurface();
+        connectionRef.current = null;
+        appendLog("device disconnected");
+        setStatus("error");
+        setError(`${inputInfo?.name ?? inputId} disconnected. Plug it back in and connect again.`);
+        surface.detach().catch((err) => appendLog(`release error: ${err instanceof Error ? err.message : String(err)}`));
+      });
+
+      connectionRef.current = { input, output, surface, registry, unwatchSurface };
       setStatus("connected");
     },
     [access, ports, dispatch, disconnect, appendLog],
