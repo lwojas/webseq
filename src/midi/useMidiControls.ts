@@ -1,28 +1,31 @@
 // The only place in this app that talks to midi-core's Web MIDI adapter or Control Surface
-// runtime -- everything else (App.tsx, the reducer, the model) stays unaware MIDI exists, the
-// same "one bootstrap module, everyone else is an ordinary client" shape useAudioRuntime.ts
-// already uses for webdsp (see its own doc comment). ECS-38's whole point is that this file
-// could be deleted and nothing in src/model/ or the rest of src/components/ would need to
-// change; ECS-78 keeps that true while replacing this file's own internals -- connect() now
-// builds and attaches a real midi-core `ControlSurface` against surfaceProfile.ts's
-// `DeviceProfile` and mappings.ts's `SurfaceBindingTable`, instead of calling
-// `bindControlMapping()` once per hand-written `ControlMapping`.
+// runtime -- everything else (App.tsx, the reducer, the model) stays unaware MIDI exists. connect()
+// attaches a midi-core `ControlSurface` for the Launchpad Mini MK3, using midi-core's sequencer
+// configuration (which device control means what, in each mode) against this app's contract
+// (sequencerContract.ts, which names the app's own controls). ECS-89 gap 4: the bindings are not
+// authored here.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MidiInput, MidiMessage, MidiOutput, MidiPortInfo } from "midi-core";
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
-import { createControlRegistry, createSurfaceContext } from "midi-core/control-api";
+import { createAction, createSurfaceContext } from "midi-core/control-api";
+import { LAUNCHPAD_MINI_MK3_PROFILE } from "midi-core/profile";
+import { createLaunchpadSequencerBindings } from "midi-core/configurations";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
-import type { Project } from "../model/types";
-import { createTrack1Controls, TRACK1_BINDING_TABLE, type Track1Controls } from "./mappings";
-import { WEBSEQ_CONTROLLER_PROFILE } from "./surfaceProfile";
+import type { PatternId, Project } from "../model/types";
+import { createSequencerRegistry, type SequencerRegistry } from "./sequencerContract";
+
+export interface TransportCallbacks {
+  readonly play: () => void;
+  readonly stop: () => void;
+}
 
 export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "connected" | "error";
 
 const MAX_LOG_LINES = 20;
 
-export function useMidiControls(project: Project, dispatch: (action: Action) => void) {
+export function useMidiControls(project: Project, dispatch: (action: Action) => void, transport: TransportCallbacks, patternId: PatternId) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [ports, setPorts] = useState<readonly MidiPortInfo[]>([]);
   const [status, setStatus] = useState<MidiConnectionStatus>("idle");
@@ -36,7 +39,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
     input: MidiInput;
     output: MidiOutput;
     surface: ControlSurface;
-    controls: Track1Controls;
+    registry: SequencerRegistry;
   } | null>(null);
 
   // Project is read through this ref inside the sync effect below and inside each
@@ -44,6 +47,10 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   // pattern App.tsx's own projectRef already uses for Transport.
   const projectRef = useRef(project);
   projectRef.current = project;
+  const patternIdRef = useRef(patternId);
+  patternIdRef.current = patternId;
+  const transportRef = useRef(transport);
+  transportRef.current = transport;
 
   const appendLog = useCallback((line: string) => {
     setLog((lines) => [...lines.slice(-(MAX_LOG_LINES - 1)), line]);
@@ -100,17 +107,29 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       };
       const unlogInput = input.onMessage((message) => appendLog(`in:  ${describeMessage(message)}`));
 
-      const controls = createTrack1Controls(() => projectRef.current, dispatch);
-      const registry = createControlRegistry([controls.volume, controls.muted]);
+      const registry = createSequencerRegistry({
+        getProject: () => projectRef.current,
+        getPatternId: () => patternIdRef.current,
+        dispatch,
+      });
+      const actions = {
+        play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),
+        stop: createAction({ id: "transport.stop", label: "Stop" }, () => transportRef.current.stop()),
+      };
 
       const surface = createControlSurface({
-        profile: WEBSEQ_CONTROLLER_PROFILE,
-        ports: { inputs: { "main-in": input }, outputs: { "main-out": output } },
-        bindingTable: TRACK1_BINDING_TABLE,
+        profile: LAUNCHPAD_MINI_MK3_PROFILE,
+        ports: { inputs: { "midi-in": input }, outputs: { "midi-out": output } },
+        bindingTable: createLaunchpadSequencerBindings(input, {
+          stepTemplate: "step.{row}.{column}",
+          lengthControl: "steps.length",
+          muteTemplate: "mute.{track}",
+          actions,
+        }),
         context: createSurfaceContext(),
         registry,
         generate: generateControlMappings,
-        initialNavigation: { mode: "default" },
+        initialNavigation: { mode: "steps", gridOffset: { row: 0, column: 0 } },
       });
 
       try {
@@ -123,7 +142,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         return;
       }
 
-      connectionRef.current = { input, output, surface, controls };
+      connectionRef.current = { input, output, surface, registry };
       setStatus("connected");
     },
     [access, dispatch, disconnect, appendLog],
@@ -137,8 +156,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   useEffect(() => {
     const connection = connectionRef.current;
     if (!connection) return;
-    connection.controls.volume.syncFromProject(project);
-    connection.controls.muted.syncFromProject(project);
+    connection.registry.syncFromProject(project);
   });
 
   useEffect(() => () => void disconnect(), [disconnect]);

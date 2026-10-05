@@ -82,10 +82,10 @@ export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRe
           {error && status === "error" && <div className="midi-status error">{error}</div>}
 
           <div className="midi-panel-hint">
-            Track 1 only: CC7 ↔ volume, pad note 0 ↔ mute, via the Control Surface contract
-            (src/midi/surfaceProfile.ts + mappings.ts). Both send feedback on a non-MIDI change
-            (e.g. this app's own mixer fader) without echoing back to whichever one you just
-            moved.
+            Launchpad Mini MK3: side buttons switch steps / mixer / transport. Steps: the grid
+            is the selected pattern (rows are tracks 1-8, columns are beats); top buttons 95/96
+            page. Mixer: the top pad row mutes tracks 1-8. Transport: top buttons 91/92 play and
+            stop. Which control does what lives in midi-core's configuration.
           </div>
 
           <div className="midi-log">

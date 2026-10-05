@@ -82,7 +82,6 @@ export function App() {
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
   const [gridResolution, setGridResolution] = useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const { pxPerBeat, zoomPercent, canZoomIn, canZoomOut, onZoomIn, onZoomOut } = useTimelineZoom();
-  const midi = useMidiControls(project, dispatch);
   const [savedProjects, setSavedProjects] = useState<{ id: string; name: string }[]>([]);
   const [loadTargetId, setLoadTargetId] = useState<string>("");
   const [resamplePhase, setResamplePhase] = useState<ResamplePhase>("idle");
@@ -170,6 +169,8 @@ export function App() {
     transportRef.current?.stop();
     setStatus(transportRef.current?.getStatus() ?? "stopped");
   }, []);
+
+  const midi = useMidiControls(project, dispatch, { play: () => void handlePlay(), stop: handleStop }, selectedPatternId);
 
   const handleBpmChange = useCallback((bpm: number) => {
     dispatch({ type: "SET_BPM", bpm });
