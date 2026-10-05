@@ -1,16 +1,16 @@
 // The only place in this app that talks to midi-core's Web MIDI adapter or Control Surface
 // runtime -- everything else (App.tsx, the reducer, the model) stays unaware MIDI exists. connect()
-// attaches a midi-core `ControlSurface` for the Launchpad Mini MK3, using midi-core's sequencer
-// configuration (which device control means what, in each mode) against this app's contract
-// (sequencerContract.ts, which names the app's own controls). ECS-89 gap 4: the bindings are not
-// authored here.
+// finds the connected input in midi-core's device registry (ECS-90), then attaches a midi-core
+// `ControlSurface` with that device's profile and sequencer configuration, against this app's
+// contract (sequencerContract.ts, which names the app's own controls). No device is named here: a
+// port no profile matches is refused, not guessed at.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MidiInput, MidiMessage, MidiOutput, MidiPortInfo } from "midi-core";
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
-import { LAUNCHPAD_MINI_MK3_PROFILE } from "midi-core/profile";
-import { createLaunchpadSequencerBindings } from "midi-core/configurations";
+import { createSequencerBindings } from "midi-core/configurations";
+import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
@@ -87,6 +87,14 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       }
 
       await disconnect();
+      const inputInfo = ports.find((port) => port.id === inputId);
+      const device = findDevice({ name: inputInfo?.name ?? null });
+      if (!device) {
+        setStatus("error");
+        setError(`Unsupported device: ${inputInfo?.name ?? inputId}. No device profile matches this input.`);
+        return;
+      }
+
       setStatus("connecting");
       setError(null);
 
@@ -117,15 +125,18 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         stop: createAction({ id: "transport.stop", label: "Stop" }, () => transportRef.current.stop()),
       };
 
+      const sequencer = createSequencerBindings(input, device, {
+        stepTemplate: "step.{row}.{column}",
+        lengthControl: "steps.length",
+        muteTemplate: "mute.{track}",
+        actions,
+      });
+      for (const role of sequencer.unresolved) appendLog(`unresolved: ${role}`);
+
       const surface = createControlSurface({
-        profile: LAUNCHPAD_MINI_MK3_PROFILE,
+        profile: device.profile,
         ports: { inputs: { "midi-in": input }, outputs: { "midi-out": output } },
-        bindingTable: createLaunchpadSequencerBindings(input, {
-          stepTemplate: "step.{row}.{column}",
-          lengthControl: "steps.length",
-          muteTemplate: "mute.{track}",
-          actions,
-        }),
+        bindingTable: sequencer.bindings,
         context: createSurfaceContext(),
         registry,
         generate: generateControlMappings,
@@ -145,7 +156,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       connectionRef.current = { input, output, surface, registry };
       setStatus("connected");
     },
-    [access, dispatch, disconnect, appendLog],
+    [access, ports, dispatch, disconnect, appendLog],
   );
 
   // Keeps every connected control's cached value (and therefore its feedback) in sync with

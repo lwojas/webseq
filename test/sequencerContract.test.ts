@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { createMockDevice } from "midi-core/adapters/mock";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
-import { createLaunchpadSequencerBindings } from "midi-core/configurations";
-import { LAUNCHPAD_MINI_MK3_PROFILE } from "midi-core/profile";
+import { createSequencerBindings } from "midi-core/configurations";
+import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings } from "midi-core/surface";
 import { createInitialProject } from "../src/model/project";
 import { projectReducer, type Action } from "../src/model/reducer";
@@ -79,15 +79,16 @@ describe("sequencer contract: the Launchpad configuration drives it", () => {
     };
 
     const noop = createAction({ id: "noop", label: "noop" }, () => {});
+    const launchpad = findDevice({ name: "Launchpad Mini MK3" })!;
     const surface = createControlSurface({
-      profile: LAUNCHPAD_MINI_MK3_PROFILE,
+      profile: launchpad.profile,
       ports: { inputs: { "midi-in": input }, outputs: { "midi-out": output } },
-      bindingTable: createLaunchpadSequencerBindings(input, {
+      bindingTable: createSequencerBindings(input, launchpad, {
         stepTemplate: "step.{row}.{column}",
         lengthControl: "steps.length",
         muteTemplate: "mute.{track}",
         actions: { play: noop, stop: noop },
-      }),
+      }).bindings,
       context: createSurfaceContext(),
       registry,
       generate: generateControlMappings,

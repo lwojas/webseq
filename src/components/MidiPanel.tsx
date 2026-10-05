@@ -1,4 +1,5 @@
 import type { MidiPortInfo } from "midi-core";
+import { findDevice } from "midi-core/devices";
 import { useState } from "react";
 import type { MidiConnectionStatus } from "../midi/useMidiControls";
 
@@ -21,12 +22,15 @@ function portLabel(port: MidiPortInfo): string {
 /** MIDI device connect/status surface — see ECS-38 and src/midi/ for the integration itself.
  * This panel only ever does three things: request Web MIDI access, pick an input+output port
  * pair and connect, and show a short log of what crossed the wire. It has no idea what
- * "track-1 volume" or "CC7" means; src/midi/surfaceProfile.ts and src/midi/mappings.ts own
- * that, same separation the FX panel keeps from applyFx.ts's engine translation. */
+ * "track-1 volume" or "CC7" means, and no idea which devices exist: midi-core's device registry
+ * (ECS-90) names the device for the selected input, and src/midi/useMidiControls.ts connects it. */
 export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRequestAccess, onConnect, onDisconnect }: Props) {
   const [inputId, setInputId] = useState("");
   const [outputId, setOutputId] = useState("");
   const connected = status === "connected" || status === "connecting";
+  const selectedInput = inputs.find((port) => port.id === inputId);
+  const device = selectedInput ? findDevice(selectedInput) : undefined;
+  const unsupported = selectedInput !== undefined && device === undefined;
 
   return (
     <div className="midi-panel">
@@ -66,9 +70,15 @@ export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRe
             </select>
           </div>
 
+          {selectedInput && (
+            <div className={unsupported ? "midi-status error" : "midi-status connected"}>
+              {device ? `Device: ${device.label}` : `Unsupported device: ${portLabel(selectedInput)}. No device profile matches this input.`}
+            </div>
+          )}
+
           <div className="midi-panel-row">
             {!connected ? (
-              <button className="btn small" disabled={!inputId || !outputId} onClick={() => onConnect(inputId, outputId)}>
+              <button className="btn small" disabled={!inputId || !outputId || unsupported} onClick={() => onConnect(inputId, outputId)}>
                 Connect
               </button>
             ) : (
@@ -81,12 +91,7 @@ export function MidiPanel({ status, hasAccess, error, inputs, outputs, log, onRe
 
           {error && status === "error" && <div className="midi-status error">{error}</div>}
 
-          <div className="midi-panel-hint">
-            Launchpad Mini MK3: side buttons switch steps / mixer / transport. Steps: the grid
-            is the selected pattern (rows are tracks 1-8, columns are beats); top buttons 95/96
-            page. Mixer: the top pad row mutes tracks 1-8. Transport: top buttons 91/92 play and
-            stop. Which control does what lives in midi-core's configuration.
-          </div>
+          {device && <div className="midi-panel-hint">{device.help}</div>}
 
           <div className="midi-log">
             {log.length === 0 && <span className="chain-empty">no messages yet</span>}
