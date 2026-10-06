@@ -6,7 +6,7 @@
 
 import type { BusId, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
-import { effectivePlaybackMode, effectiveVoiceMode, notesForTrack } from "../model/types";
+import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
 
 /** Seconds per grid beat (a sixteenth note in 4/4) at a given BPM. Deliberately independent
  * of Project.beatsPerBar/Pattern.bars — growing a pattern to more bars, or adding more
@@ -104,10 +104,11 @@ export function compilePatternIterationTracked(
   swing = 0.5,
 ): { event: ScheduledEvent; trackId: TrackId }[] {
   const results: { event: ScheduledEvent; trackId: TrackId }[] = [];
+  const notesByTrack = groupNotesByTrack(pattern);
   for (const track of tracks) {
     const busId = busIdFor(track.id);
     const trackEvents: ScheduledEvent[] = [];
-    for (const note of notesForTrack(pattern, track.id)) {
+    for (const note of notesByTrack.get(track.id) ?? []) {
       const event = compileNote(track, note, bpm, stepStartTime, busId, swing);
       if (event) trackEvents.push(event);
     }
@@ -121,4 +122,18 @@ export function compilePatternIterationTracked(
     for (const event of trackEvents) results.push({ event, trackId: track.id });
   }
   return results;
+}
+
+/** One pass over the pattern, instead of one scan per track: with 64 tracks, a scan per track
+ * costs 64 full passes over the notes on every pattern iteration. Each list is sorted by start,
+ * the same order notesForTrack gives. */
+function groupNotesByTrack(pattern: Pattern): Map<TrackId, Note[]> {
+  const byTrack = new Map<TrackId, Note[]>();
+  for (const note of Object.values(pattern.notes)) {
+    const list = byTrack.get(note.trackId);
+    if (list) list.push(note);
+    else byTrack.set(note.trackId, [note]);
+  }
+  for (const list of byTrack.values()) list.sort((a, b) => a.start - b.start);
+  return byTrack;
 }

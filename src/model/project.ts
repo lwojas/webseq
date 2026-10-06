@@ -10,7 +10,11 @@ import * as notes from "./notes";
 export const MIN_BPM = 40;
 export const MAX_BPM = 240;
 export const DEFAULT_BPM = 120;
-export const DEFAULT_TRACK_COUNT = 16;
+/** Pads per bank and number of banks (ECS-84). Banks are a view over the flat `tracks` list, not
+ * stored state: bank N holds tracks [N * BANK_SIZE, (N + 1) * BANK_SIZE). */
+export const BANK_SIZE = 16;
+export const BANK_COUNT = 4;
+export const DEFAULT_TRACK_COUNT = BANK_SIZE * BANK_COUNT;
 export const DEFAULT_BEATS_PER_BAR = 16;
 
 // 0.5 = straight (no-op), 0.75 = strong swing — see types.ts's Project.swing doc comment.
@@ -43,6 +47,65 @@ export function createInitialTracks(trackCount = DEFAULT_TRACK_COUNT): Track[] {
     playbackMode: DEFAULT_PLAYBACK_MODE,
     voiceMode: DEFAULT_VOICE_MODE,
   }));
+}
+
+/** Adds any default tracks a project is missing. A project saved before banks existed has only
+ * track-1..track-16. Existing tracks are kept exactly as they are. Track ids are fixed (see
+ * createInitialTracks), so the appended ids are the ones the rest of the app expects. */
+export function withMissingTracks(project: Project): Project {
+  const present = new Set(project.tracks.map((t) => t.id));
+  const missing = createInitialTracks(DEFAULT_TRACK_COUNT).filter((t) => !present.has(t.id));
+  if (missing.length === 0) return project;
+  return { ...project, tracks: [...project.tracks, ...missing] };
+}
+
+/** Bank (0-based) that the track at `index` in `project.tracks` belongs to. */
+export function bankOfTrackIndex(index: number): number {
+  return Math.floor(index / BANK_SIZE);
+}
+
+export function tracksInBank(project: Project, bank: number): Track[] {
+  return project.tracks.slice(bank * BANK_SIZE, (bank + 1) * BANK_SIZE);
+}
+
+/** What the bank tabs show for one bank: how many of its tracks are looping right now, and
+ * whether the selected pattern has any notes on one of its tracks. */
+export interface BankSummary {
+  loopCount: number;
+  hasNotes: boolean;
+}
+
+export function summarizeBanks(project: Project, pattern: Pattern, loopingTrackIds: TrackId[]): BankSummary[] {
+  const summaries: BankSummary[] = Array.from({ length: BANK_COUNT }, () => ({ loopCount: 0, hasNotes: false }));
+  project.tracks.forEach((track, index) => {
+    const summary = summaries[bankOfTrackIndex(index)];
+    if (!summary) return;
+    if (loopingTrackIds.includes(track.id)) summary.loopCount++;
+  });
+  const bankOfTrack = new Map(project.tracks.map((t, i) => [t.id, bankOfTrackIndex(i)] as const));
+  for (const note of Object.values(pattern.notes)) {
+    const bank = bankOfTrack.get(note.trackId);
+    if (bank !== undefined && summaries[bank]) summaries[bank].hasNotes = true;
+  }
+  return summaries;
+}
+
+/** Rough engine memory for one asset's decoded audio: float32 per channel per frame. The engine
+ * stores decoded PCM in this format (webdsp's SampleStore), so this is the number that counts
+ * against the sample budget. */
+export function estimateDecodedBytes(asset: Pick<Asset, "duration" | "sampleRate" | "channels">): number {
+  return Math.round(asset.duration * asset.sampleRate * asset.channels * 4);
+}
+
+const MB = 1024 * 1024;
+/** Soft ceiling on decoded sample memory (ECS-84). Above it the Assets panel warns; nothing is
+ * blocked. The coarse-pointer figure is a lower default for touch devices, where per-tab memory
+ * is tighter. Both are assumptions, not measured on devices. */
+export const SAMPLE_BUDGET_FINE_BYTES = 256 * MB;
+export const SAMPLE_BUDGET_COARSE_BYTES = 128 * MB;
+
+export function sampleBudgetBytes(coarsePointer: boolean): number {
+  return coarsePointer ? SAMPLE_BUDGET_COARSE_BYTES : SAMPLE_BUDGET_FINE_BYTES;
 }
 
 export function createEmptyPattern(name: string, bars = 1): Pattern {

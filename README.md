@@ -1,6 +1,6 @@
 # webseq
 
-A 16-track tracker/sequencer app that consumes [`webdsp`](https://github.com/lwojas/webdsp) —
+A 64-track (four 16-pad banks) tracker/sequencer app that consumes [`webdsp`](https://github.com/lwojas/webdsp) —
 a standalone WASM/AudioWorklet audio engine — as an ordinary external dependency, purely
 through its public API. This repo exists partly to be a usable tracker and partly to prove
 that `webdsp` is genuinely reusable by an application it knows nothing about: nothing here

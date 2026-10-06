@@ -100,7 +100,12 @@ export class Transport {
     private readonly getProject: () => Project,
     private readonly getBusId: (target: FxTarget) => BusId | undefined,
     private readonly playback: Playback,
-  ) {}
+  ) {
+    // Forget each sequenced voice once the engine reports it ended. activeVoices then holds only
+    // voices that may still sound, which is all haltAudio needs to release. Without this the set
+    // grew by one entry per note for the whole playback session (ECS-84).
+    runtime.onVoiceEnded((voice) => this.activeVoices.delete(voice));
+  }
 
   getStatus(): PlaybackStatus {
     return this.status;
@@ -366,6 +371,11 @@ export class Transport {
         project.swing,
       );
       if (compiled.length > 0) {
+        // Sort by time before handing events to the engine. Compiling per track leaves them out
+        // of time order, and the engine's queue insertion is linear for each out-of-order event
+        // (webdsp scheduler.h). Sorted input appends. The handles stay aligned with `compiled`
+        // because both are sorted together (ECS-84).
+        compiled.sort((a, b) => a.event.time - b.event.time);
         const handles = this.runtime.schedule(compiled.map((c) => c.event));
         handles.forEach((handle, i) => {
           this.activeVoices.add(handle);

@@ -604,6 +604,88 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
+/* --- Track banks (ECS-84): four tabs above the sequencer, each showing one 16-track bank --- */
+
+.bank-bar {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.bank-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.bank-tab:hover {
+  color: var(--text);
+}
+
+.bank-tab.active {
+  background: var(--panel-alt);
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.bank-tab-letter {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bank-tab-range {
+  font-variant-numeric: tabular-nums;
+}
+
+.bank-tab-loops {
+  color: var(--amber);
+}
+
+.bank-tab-notes {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+}
+
+.bank-tab.active .bank-tab-notes {
+  background: var(--accent);
+}
+
+@media (max-width: 768px) {
+  .bank-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 6px;
+  }
+
+  .bank-tab-range {
+    display: none;
+  }
+}
+
+/* --- Assets panel: estimated sample memory against the soft budget (ECS-84) --- */
+
+.assets-budget {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.assets-budget.over {
+  color: var(--amber);
+}
+
 /* Caps the visible viewport to ~VIEWPORT_BARS bars (see timelineConstants.ts) and scrolls
    for anything longer — horizontally for a pattern wider than the viewport, vertically for
    more tracks than fit — instead of stretching to fill available space. This is `.sequencer`'s
@@ -1506,6 +1588,7 @@ select {
 
   .side-panel-tab,
   .bottom-panel-tab,
+  .bank-tab,
   .mobile-tab {
     padding: 12px 8px;
   }

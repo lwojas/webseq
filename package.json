@@ -17,7 +17,7 @@
     "midi-core": "github:lwojas/midi-core",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "webdsp": "github:lwojas/webdsp"
+    "webdsp": "github:lwojas/webdsp#8eb0e62af91bf4945b5f24a003ee5ad4391b6d95"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

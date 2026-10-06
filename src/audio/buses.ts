@@ -9,9 +9,9 @@
 // at MAX_TRACK_BUSES (32) — there is no releaseBus()/freeBus() call, ever. This mapping must
 // therefore live for the entire lifetime of one AudioRuntime, not be thrown away and rebuilt
 // per project: every project in this app has the same fixed, deterministic track ids
-// (project.ts's createInitialTracks — "track-1".."track-16", no add/remove-track feature), so
+// (project.ts's createInitialTracks — "track-1".."track-64", no add/remove-track feature), so
 // App.tsx intentionally keeps one TrackBusMap across New/Load rather than resetting it (a
-// reset used to make ensureTrackBuses request a fresh set of 16 buses on every load, which
+// reset used to make ensureTrackBuses request a fresh set of buses on every load, which
 // exhausted the pool and crashed after just two loads).
 import { MASTER_BUS, type AudioRuntime, type BusId } from "webdsp";
 import type { FxTarget, TrackId } from "../model/types";

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { MASTER_BUS, type AudioRuntime } from "webdsp";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { AudioRuntime } from "webdsp";
 import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { totalBeats, trackById } from "./model/types";
-import { createInitialProject } from "./model/project";
+import { createInitialProject, summarizeBanks, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
@@ -10,8 +10,7 @@ import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { Transport, type PlaybackStatus } from "./audio/transport";
 import { Playback, type ManualPlaybackSnapshot } from "./audio/playback";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
-import { applyFxChain } from "./audio/applyFx";
-import { applyTrackVolume } from "./audio/mixer";
+import { syncBuses, type ConfiguredBuses } from "./audio/busSync";
 import { encodeWav } from "./audio/wav";
 import { saveProject, loadProject, listProjects, deleteProject } from "./persistence/projectStore";
 import { remapAssetIds } from "./model/project";
@@ -57,6 +56,13 @@ const MOBILE_TABS: { id: MobileTab; label: string }[] = [
   { id: "assets", label: "Assets" },
 ];
 
+/** Frees every sample the engine holds. New and Load replace the whole project, so the previous
+ * project's decoded audio would otherwise stay resident for the rest of the session (ECS-84).
+ * Callers stop the transport first, which silences any voice still reading one. */
+function releaseEngineSamples(rt: AudioRuntime): void {
+  for (const sample of rt.listSamples()) rt.removeSample(sample.id);
+}
+
 export function App() {
   const { runtime, error, init } = useAudioRuntime();
   const [project, dispatch] = useReducer(projectReducer, undefined, () => createInitialProject());
@@ -69,6 +75,7 @@ export function App() {
   projectRef.current = project;
 
   const trackBusesRef = useRef<TrackBusMap>({});
+  const configuredBusesRef = useRef<ConfiguredBuses>(new Set());
   const assetDataRef = useRef<Map<AssetId, ArrayBuffer>>(new Map());
   const transportRef = useRef<Transport | null>(null);
   const playbackRef = useRef<Playback | null>(null);
@@ -85,6 +92,8 @@ export function App() {
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
   const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
+  // Which bank of 16 tracks the sequencer shows (ECS-84). View state only, not saved with the project.
+  const [activeBank, setActiveBank] = useState(0);
   const [gridResolution, setGridResolution] = useState<GridResolution>(DEFAULT_GRID_RESOLUTION);
   const { pxPerBeat, zoomPercent, canZoomIn, canZoomOut, onZoomIn, onZoomOut } = useTimelineZoom();
   const [savedProjects, setSavedProjects] = useState<{ id: string; name: string }[]>([]);
@@ -134,13 +143,7 @@ export function App() {
   // path for volume/mute/solo as for FX params — no separate mixer update mechanism.
   useEffect(() => {
     if (!runtime) return;
-    applyFxChain(runtime, MASTER_BUS, project.master.fx);
-    for (const track of project.tracks) {
-      const busId = trackBusesRef.current[track.id];
-      if (busId === undefined) continue;
-      applyFxChain(runtime, busId, track.fx);
-      applyTrackVolume(runtime, busId, project, track);
-    }
+    syncBuses(runtime, project, trackBusesRef.current, configuredBusesRef.current);
   }, [runtime, project]);
 
   // Keep the pattern selection valid: jump to a newly-added pattern, or off a removed one.
@@ -168,13 +171,7 @@ export function App() {
     const rt = await init();
     if (!rt) return null;
     trackBusesRef.current = ensureTrackBuses(rt, projectRef.current.tracks.map((t) => t.id), trackBusesRef.current);
-    applyFxChain(rt, MASTER_BUS, projectRef.current.master.fx);
-    for (const track of projectRef.current.tracks) {
-      const busId = trackBusesRef.current[track.id];
-      if (busId === undefined) continue;
-      applyFxChain(rt, busId, track.fx);
-      applyTrackVolume(rt, busId, projectRef.current, track);
-    }
+    syncBuses(rt, projectRef.current, trackBusesRef.current, configuredBusesRef.current);
     const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt));
     transportRef.current = t;
     return t;
@@ -301,7 +298,17 @@ export function App() {
     },
     [ensureTransport],
   );
-  const handleRemoveAsset = useCallback((assetId: AssetId) => dispatch({ type: "REMOVE_ASSET", assetId }), []);
+  // The engine stops any voice still playing this asset before freeing its PCM (webdsp's
+  // Engine::removeSample), so removing an asset mid-playback is safe. Its raw bytes are dropped
+  // here as well, so they don't stay in memory for the rest of the session (ECS-84).
+  const handleRemoveAsset = useCallback(
+    (assetId: AssetId) => {
+      runtime?.removeSample(assetId);
+      assetDataRef.current.delete(assetId);
+      dispatch({ type: "REMOVE_ASSET", assetId });
+    },
+    [runtime],
+  );
 
   const handleResample = useCallback(async () => {
     const transport = transportRef.current;
@@ -469,6 +476,7 @@ export function App() {
     if (!runtimeInstance) return;
 
     transportRef.current?.stop();
+    releaseEngineSamples(runtimeInstance);
     const idMap = new Map<AssetId, AssetId>();
     assetDataRef.current = new Map();
     for (const asset of loaded.project.assets) {
@@ -478,12 +486,12 @@ export function App() {
       idMap.set(asset.id, meta.id);
       assetDataRef.current.set(meta.id, data);
     }
-    const remapped = remapAssetIds(loaded.project, idMap);
+    const remapped = withMissingTracks(remapAssetIds(loaded.project, idMap));
     // Deliberately NOT resetting trackBusesRef here: webdsp's createBus() hands buses out
     // from a one-way counter (MAX_TRACK_BUSES = 32) with no release call, so wiping this map
     // on every load would force a brand-new set of buses per load and exhaust the pool after
     // just two — see ensureTrackBuses' doc comment. Every project has the same fixed,
-    // deterministic track ids (createInitialTracks: "track-1".."track-16" — there is no add/
+    // deterministic track ids (createInitialTracks: "track-1".."track-64" — there is no add/
     // remove-track feature), so the existing id -> bus mapping is still correct for whatever
     // project is loaded next; ensureTrackBuses only ever allocates for an id it hasn't seen.
     dispatch({ type: "LOAD_PROJECT", project: remapped });
@@ -492,13 +500,14 @@ export function App() {
 
   const handleNewProject = useCallback(() => {
     transportRef.current?.stop();
+    if (runtime) releaseEngineSamples(runtime);
     assetDataRef.current = new Map();
     // See handleLoadProject's comment just above: trackBusesRef is intentionally kept, not
     // reset, since webdsp has no way to release a bus and every project shares the same
     // track ids.
     dispatch({ type: "LOAD_PROJECT", project: createInitialProject() });
     setStatus("stopped");
-  }, []);
+  }, [runtime]);
 
   const handleDeleteProject = useCallback(async () => {
     if (!loadTargetId) return;
@@ -508,6 +517,10 @@ export function App() {
   }, [loadTargetId, refreshSavedProjects]);
 
   const selectedPattern = project.patterns.find((p) => p.id === selectedPatternId) ?? project.patterns[0];
+  const bankSummaries = useMemo(
+    () => summarizeBanks(project, selectedPattern, manual.loopingTrackIds),
+    [project, selectedPattern, manual.loopingTrackIds],
+  );
   const fxOwner = selectedTarget === "master" ? project.master : trackById(project, selectedTarget);
   const playheadInfo = transportRef.current?.getPlayheadInfo();
 
@@ -656,6 +669,9 @@ export function App() {
             onResizeNote={handleResizeNote}
             onMoveNote={handleMoveNote}
             onLoadSample={handleImportAndAssignToTrack}
+            bank={activeBank}
+            bankSummaries={bankSummaries}
+            onSelectBank={setActiveBank}
             loopingTrackIds={manual.loopingTrackIds}
             triggerDisabled={resamplePhase === "pending"}
             onTriggerTrack={handleTriggerTrack}

@@ -1,5 +1,9 @@
 import { useRef } from "react";
 import type { Asset, AssetId, FxTarget, TrackId } from "../model/types";
+import { estimateDecodedBytes, sampleBudgetBytes } from "../model/project";
+
+const MB = 1024 * 1024;
+const formatMB = (bytes: number) => `${(bytes / MB).toFixed(1)}`;
 
 interface Props {
   assets: Asset[];
@@ -35,11 +39,23 @@ export function AssetsPanel({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canAssign = selectedTarget !== "master";
+  // Estimated engine memory for every asset in the bin, against a soft budget (ECS-84). Nothing
+  // is blocked. The panel only tells the user when they are past it.
+  const totalBytes = assets.reduce((sum, asset) => sum + estimateDecodedBytes(asset), 0);
+  const coarsePointer = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
+  const budgetBytes = sampleBudgetBytes(coarsePointer);
+  const overBudget = totalBytes > budgetBytes;
 
   return (
     <div className="assets-panel">
       <div className="assets-panel-header">
         <span className="pattern-bar-label">Assets</span>
+        <span
+          className={`assets-budget ${overBudget ? "over" : ""}`}
+          title={overBudget ? "Over the soft sample budget. Loading more may be slow on this device." : "Estimated decoded sample memory"}
+        >
+          {formatMB(totalBytes)} / {formatMB(budgetBytes)} MB
+        </span>
         <button className="btn small" onClick={() => fileInputRef.current?.click()}>
           + Import
         </button>

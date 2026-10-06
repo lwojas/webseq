@@ -1,11 +1,13 @@
 import { useCallback, useRef } from "react";
 import type { FxTarget, NoteId, Pattern, Project, TrackId } from "../model/types";
 import { totalBeats } from "../model/types";
+import { BANK_SIZE, tracksInBank, type BankSummary } from "../model/project";
 import { usePlayheadAnimation } from "../hooks/usePlayheadAnimation";
 import { useVisibleColumnWindow } from "../hooks/useVisibleColumnWindow";
 import { useStableTrackNotes } from "../hooks/useStableTrackNotes";
 import { TrackRow } from "./TrackRow";
 import { MasterRow } from "./MasterRow";
+import { BankBar } from "./BankBar";
 import { COLUMN_OVERSCAN_BEATS, VIEWPORT_BARS } from "./timelineConstants";
 
 interface Props {
@@ -19,6 +21,10 @@ interface Props {
   onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onLoadSample: (trackId: TrackId, file: File) => void;
+  /** Which bank of 16 tracks is shown (see model/project.ts's BANK_SIZE). */
+  bank: number;
+  bankSummaries: BankSummary[];
+  onSelectBank: (bank: number) => void;
   /** Tracks whose manual loop is sounding (see audio/playback.ts). */
   loopingTrackIds: TrackId[];
   /** True while a resample is armed or capturing — the selected track's trigger is disabled then. */
@@ -48,6 +54,9 @@ export function SequencerGrid({
   onResizeNote,
   onMoveNote,
   onLoadSample,
+  bank,
+  bankSummaries,
+  onSelectBank,
   loopingTrackIds,
   triggerDisabled,
   onTriggerTrack,
@@ -71,6 +80,7 @@ export function SequencerGrid({
 
   return (
     <div className="sequencer" onClick={() => onSelectNote(null)}>
+      <BankBar activeBank={bank} summaries={bankSummaries} onSelect={onSelectBank} />
       <div
         className="timeline-scroll"
         ref={scrollRef}
@@ -96,10 +106,10 @@ export function SequencerGrid({
                 onSelect={handleSelectMaster}
               />
             </div>
-            {project.tracks.map((track, i) => (
+            {tracksInBank(project, bank).map((track, i) => (
               <div key={track.id} onClick={(e) => e.stopPropagation()}>
                 <TrackRow
-                  index={i}
+                  index={bank * BANK_SIZE + i}
                   track={track}
                   notes={trackNotes.get(track.id) ?? []}
                   beats={beats}

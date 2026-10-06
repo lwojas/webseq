@@ -7,6 +7,11 @@ import { AudioRuntime, type RuntimeCapabilities } from "webdsp";
 import { defaultWorkletUrl } from "webdsp/worklet-url";
 import { useCallback, useRef, useState } from "react";
 
+/** Voice pool size passed to webdsp. Sixty-four pads with loop voices, plus sequencer voices,
+ * can exhaust webdsp's default of 64. Once the pool is full, a new trigger steals the quietest
+ * sounding voice, which drops a sound silently (ECS-84). */
+export const VOICE_POOL_SIZE = 128;
+
 export function useAudioRuntime() {
   const [runtime, setRuntime] = useState<AudioRuntime | null>(null);
   const [capabilities, setCapabilities] = useState<RuntimeCapabilities | null>(null);
@@ -19,7 +24,7 @@ export function useAudioRuntime() {
     if (runtime || initializing.current) return runtime;
     initializing.current = true;
     try {
-      const rt = await AudioRuntime.create({ workletModuleUrl: defaultWorkletUrl });
+      const rt = await AudioRuntime.create({ workletModuleUrl: defaultWorkletUrl, maxVoices: VOICE_POOL_SIZE });
       await rt.resume();
       setCapabilities(rt.getCapabilities());
       setRuntime(rt);

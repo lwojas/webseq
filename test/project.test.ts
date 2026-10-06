@@ -29,9 +29,9 @@ function makeAsset(overrides: Partial<Asset> & Pick<Asset, "id" | "name">): Asse
 }
 
 describe("project model", () => {
-  it("creates 16 tracks and a single 1-bar pattern with a one-entry chain by default", () => {
+  it("creates 64 tracks (four banks of 16) and a single 1-bar pattern with a one-entry chain by default", () => {
     const project = createInitialProject();
-    expect(project.tracks).toHaveLength(16);
+    expect(project.tracks).toHaveLength(64);
     expect(project.beatsPerBar).toBe(16);
     expect(project.patterns).toHaveLength(1);
     expect(project.patternChain).toHaveLength(1);
