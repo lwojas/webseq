@@ -10,7 +10,7 @@ import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
 import { createSequencerBindings, sequencerFaderCount, type SequencerDevices } from "midi-core/configurations";
-import { findDawPorts, findDevice } from "midi-core/devices";
+import { findDawPorts, requiresOutput, resolveDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
@@ -37,7 +37,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   // change, only when `status` does.
   const connectionRef = useRef<{
     input: MidiInput;
-    output: MidiOutput;
+    output: MidiOutput | undefined;
     surface: ControlSurface;
     registry: SequencerRegistry;
     unwatchSurface: () => void;
@@ -86,28 +86,29 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
     async (inputId: string, outputId: string) => {
       if (!access) return;
       const rawInput = access.getInput(inputId);
-      const rawOutput = access.getOutput(outputId);
-      if (!rawInput || !rawOutput) {
-        setError("Select both an input and an output port.");
+      const rawOutput = outputId ? access.getOutput(outputId) : null;
+      if (!rawInput) {
+        setError("Select an input port.");
+        return;
+      }
+      // A device that matches no registry entry connects generically on its input alone (ECS-106). The output is asked for
+      // only when the device's profile needs one.
+      const inputInfo = ports.find((port) => port.id === inputId);
+      const device = resolveDevice({ name: inputInfo?.name ?? null });
+      if (requiresOutput(device) && !rawOutput) {
+        setError(`${device.label} needs an output port. Select one.`);
         return;
       }
 
       await disconnect();
-      const inputInfo = ports.find((port) => port.id === inputId);
-      const device = findDevice({ name: inputInfo?.name ?? null });
-      if (!device) {
-        setStatus("error");
-        setError(`Unsupported device: ${inputInfo?.name ?? inputId}. No device profile matches this input.`);
-        return;
-      }
 
       setStatus("connecting");
       setError(null);
 
       const input = createMidiInput(rawInput);
-      const output = createMidiOutput(rawOutput);
+      const output = rawOutput ? createMidiOutput(rawOutput) : undefined;
       input.onError((e) => appendLog(`input error: ${e.code} ${e.message}`));
-      output.onError((e) => appendLog(`output error: ${e.code} ${e.message}`));
+      output?.onError((e) => appendLog(`output error: ${e.code} ${e.message}`));
 
       // The device's DAW pair, found by the registry's port names from its MIDI pair (ECS-96, ECS-103). The mixer's fader modes
       // need it; a device with no DAW ports, or one the system doesn't report them for, has no fader modes, and the rest of
@@ -124,11 +125,13 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       // no feedback target never calls send() at all, so logging onChange directly as "out:"
       // claimed something went out over MIDI when nothing did. Wrapping send() itself can't lie
       // about that.
-      const loggedSend = output.send.bind(output);
-      output.send = (message) => {
-        appendLog(`out: ${describeMessage(message)}`);
-        loggedSend(message);
-      };
+      if (output) {
+        const loggedSend = output.send.bind(output);
+        output.send = (message) => {
+          appendLog(`out: ${describeMessage(message)}`);
+          loggedSend(message);
+        };
+      }
       const unlogInput = input.onMessage((message) => appendLog(`in:  ${describeMessage(message)}`));
 
       // The device's fader count sets the size of a fader page (ECS-102). A device with no fader banks has 0, and then no
@@ -162,9 +165,10 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
 
       // The DAW ports the system has. Whether they connect is the surface's to report: a fader mode whose port fails to
       // connect is refused when entered (ECS-104).
-      const devices: SequencerDevices = dawInput && dawOutput
-        ? { outputs: { "midi-out": output, "daw-out": dawOutput }, inputs: { "daw-in": dawInput } }
-        : { outputs: { "midi-out": output }, inputs: {} };
+      const devices: SequencerDevices = {
+        outputs: { ...(output ? { "midi-out": output } : {}), ...(dawInput && dawOutput ? { "daw-out": dawOutput } : {}) },
+        inputs: dawInput && dawOutput ? { "daw-in": dawInput } : {},
+      };
 
       const sequencer = createSequencerBindings(
         input,
@@ -186,7 +190,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         profile: device.profile,
         ports: {
           inputs: { "midi-in": input, ...(dawInput ? { "daw-in": dawInput } : {}) },
-          outputs: { "midi-out": output, ...(dawOutput ? { "daw-out": dawOutput } : {}) },
+          outputs: { ...(output ? { "midi-out": output } : {}), ...(dawOutput ? { "daw-out": dawOutput } : {}) },
         },
         bindingTable: sequencer.bindings,
         context: createSurfaceContext(),
