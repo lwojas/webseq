@@ -61,6 +61,14 @@ describe("the volume faders on the registry (ECS-96)", () => {
     expect(registry.getControl("mixer.volume.0")!.getValue()).toBe(0.4);
   });
 
+  it("a repaint notifies every fader, even when its level has not changed, so the device's colours are set again", () => {
+    const { registry } = harness(16);
+    const seen: number[] = [];
+    registry.getControl("mixer.volume.0")!.onChange((value) => seen.push(value as number));
+    registry.repaintFaders();
+    expect(seen).toEqual([1]);
+  });
+
   it("a fader with no track on the page reads 0, which is the device's off colour, and ignores writes", () => {
     const { registry, getProject, setPage } = harness(10);
     setPage(1); // tracks 9 and 10 only

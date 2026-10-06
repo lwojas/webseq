@@ -151,6 +151,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         const lastPage = Math.max(0, Math.ceil(tracks / FADER_PAGE_SIZE) - 1);
         faderPageRef.current = Math.min(lastPage, Math.max(0, faderPageRef.current + delta));
         connectionRef.current?.registry.syncFromProject(projectRef.current);
+        connectionRef.current?.registry.repaintFaders();
       };
       const faderActions = {
         pageLeft: createAction({ id: "faders.pageLeft", label: "Fader page left" }, () => turnFaderPage(-1)),

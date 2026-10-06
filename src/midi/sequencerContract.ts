@@ -26,6 +26,8 @@ export interface SequencerRegistryDeps {
 
 export interface SequencerRegistry extends ControlRegistry {
   syncFromProject(project: Project): void;
+  /** Repaints every fader from its current track, after a fader page turn (ECS-96). */
+  repaintFaders(): void;
 }
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
@@ -136,7 +138,9 @@ function createTrackCountControl(deps: SequencerRegistryDeps): ProjectControl<Nu
  * `page * 8 + index`. A fader with no track on the page reads 0, which is the device's off colour, and ignores writes.
  * The track's volume is the application's own linear gain (0 to 1.5), so midi-core scales the CC range onto it.
  */
-function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+type FaderVolumeControl = ProjectControl<NumericControlDef> & { repaint(): void };
+
+function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): FaderVolumeControl {
   const def: NumericControlDef = {
     id: `mixer.volume.${index}`,
     label: `Volume, fader ${index + 1}`,
@@ -161,13 +165,20 @@ function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): P
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    // Called on every project change and on every fader page turn, so the fader's colour follows its track.
+    // Called on every project change, so the fader's colour follows its track.
     syncFromProject(project) {
       const next = read(project);
       if (next === last) return;
       const previous = last;
       last = next;
       for (const listener of listeners) listener(next, previous);
+    },
+    // Called on a page turn: the device has been sent its bank again and forgot its colours, so every fader repaints
+    // even when its own level happens to be unchanged.
+    repaint() {
+      const next = read(deps.getProject());
+      last = next;
+      for (const listener of listeners) listener(next, next);
     },
   };
 }
@@ -212,6 +223,11 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     onChange: () => () => {},
     syncFromProject(project) {
       for (const control of cache.values()) control.syncFromProject(project);
+    },
+    repaintFaders() {
+      for (const [id, control] of cache) {
+        if (FADER_VOLUME_ID.test(id)) (control as FaderVolumeControl).repaint();
+      }
     },
   };
 }
