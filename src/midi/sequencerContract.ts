@@ -20,8 +20,10 @@ export interface SequencerRegistryDeps {
   readonly getProject: () => Project;
   readonly getPatternId: () => PatternId;
   readonly dispatch: (action: Action) => void;
-  /** The fader page: which group of eight tracks the mixer faders show, 0-based (ECS-96). Omitted means page 0. */
+  /** The fader page: which group of tracks the mixer faders show, 0-based (ECS-96). Omitted means page 0. */
   readonly getFaderPage?: () => number;
+  /** How many tracks one fader page shows: the device's fader count, from midi-core's sequencerFaderCount (ECS-102). */
+  readonly faderPageSize: number;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -32,9 +34,7 @@ export interface SequencerRegistry extends ControlRegistry {
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
 const MUTE_ID = /^mute\.(\d+)$/;
-const FADER_VOLUME_ID = /^mixer\.volume\.([0-7])$/;
-/** How many tracks one fader bank shows: a page is eight tracks, one per fader (ECS-96). */
-export const FADER_PAGE_SIZE = 8;
+const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 
@@ -134,8 +134,8 @@ function createTrackCountControl(deps: SequencerRegistryDeps): ProjectControl<Nu
 }
 
 /**
- * The volume fader at `index` (0-7) on the current fader page (ECS-96): fader `index` shows and sets the volume of track
- * `page * 8 + index`. A fader with no track on the page reads 0, which is the device's off colour, and ignores writes.
+ * The volume fader at `index` (below the device's fader count) on the current fader page (ECS-96): fader `index` shows and
+ * sets the volume of track `page * faderPageSize + index` (ECS-102). A fader with no track on the page reads 0, which is the device's off colour, and ignores writes.
  * The track's volume is the application's own linear gain (0 to 1.5), so midi-core scales the CC range onto it.
  */
 type FaderVolumeControl = ProjectControl<NumericControlDef> & { repaint(): void };
@@ -149,7 +149,7 @@ function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): F
     max: MAX_TRACK_VOLUME,
     default: DEFAULT_TRACK_VOLUME,
   };
-  const track = (project: Project) => project.tracks[(deps.getFaderPage?.() ?? 0) * FADER_PAGE_SIZE + index];
+  const track = (project: Project) => project.tracks[(deps.getFaderPage?.() ?? 0) * deps.faderPageSize + index];
   const read = (project: Project) => track(project)?.volume ?? 0;
   const listeners = new Set<(value: number, previous: number) => void>();
   let last = read(deps.getProject());
@@ -210,7 +210,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createTrackCountControl(deps) as ProjectControl<ControlDef>;
     } else {
       const fader = FADER_VOLUME_ID.exec(id);
-      if (fader) created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
+      // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.
+      if (fader && Number(fader[1]) < deps.faderPageSize) created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
     }
 
     if (created) cache.set(id, created);

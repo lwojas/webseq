@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { createMockDevice } from "midi-core/adapters/mock";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
-import { createSequencerBindings } from "midi-core/configurations";
+import { createSequencerBindings, sequencerFaderCount } from "midi-core/configurations";
 import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings } from "midi-core/surface";
 import { createInitialProject } from "../src/model/project";
@@ -16,7 +16,8 @@ function harness() {
     project = projectReducer(project, action);
   };
   const patternId = project.patterns[0]!.id;
-  const registry = createSequencerRegistry({ getProject: () => project, getPatternId: () => patternId, dispatch });
+  const faderPageSize = sequencerFaderCount(findDevice({ name: "Launchpad Mini MK3 MIDI" })!.profile);
+  const registry = createSequencerRegistry({ getProject: () => project, getPatternId: () => patternId, dispatch, faderPageSize });
   return { registry, dispatch, getProject: () => project, patternId };
 }
 

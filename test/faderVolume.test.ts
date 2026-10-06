@@ -3,13 +3,16 @@ import { createMidiInput, createMidiOutput } from "midi-core";
 import { MockMidiInput } from "midi-core/adapters/mock";
 import { MockMidiOutput } from "midi-core/adapters/mock";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
-import { createSequencerBindings, type SequencerContract } from "midi-core/configurations";
+import { createSequencerBindings, sequencerFaderCount, type SequencerContract } from "midi-core/configurations";
 import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings } from "midi-core/surface";
 import { createInitialProject } from "../src/model/project";
 import { projectReducer, type Action } from "../src/model/reducer";
 import type { Project } from "../src/model/types";
 import { createSequencerRegistry } from "../src/midi/sequencerContract";
+
+/** The Launchpad's fader count, from midi-core: how many tracks one fader page shows (ECS-102). */
+const PAGE_SIZE = sequencerFaderCount(findDevice({ name: "Launchpad Mini MK3 MIDI" })!.profile);
 
 /** A registry over a project that the test can change, with the fader page as the test's own state (ECS-96). */
 function harness(trackCount: number) {
@@ -24,6 +27,7 @@ function harness(trackCount: number) {
     getPatternId: () => patternId,
     dispatch,
     getFaderPage: () => page,
+    faderPageSize: PAGE_SIZE,
   });
   return {
     registry,
@@ -93,9 +97,9 @@ describe("the volume faders through midi-core's surface (ECS-96)", () => {
     };
     const patternId = project.patterns[0]!.id;
     let page = 0;
-    const registry = createSequencerRegistry({ getProject: () => project, getPatternId: () => patternId, dispatch, getFaderPage: () => page });
+    const registry = createSequencerRegistry({ getProject: () => project, getPatternId: () => patternId, dispatch, getFaderPage: () => page, faderPageSize: PAGE_SIZE });
     const turnPage = (delta: number) => {
-      const lastPage = Math.ceil(project.tracks.length / 8) - 1;
+      const lastPage = Math.ceil(project.tracks.length / PAGE_SIZE) - 1;
       page = Math.min(lastPage, Math.max(0, page + delta));
       registry.syncFromProject(project);
     };

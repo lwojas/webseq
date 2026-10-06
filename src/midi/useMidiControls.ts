@@ -9,12 +9,12 @@ import type { MidiInput, MidiMessage, MidiOutput, MidiPortInfo } from "midi-core
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
-import { createSequencerBindings, type SequencerDevices } from "midi-core/configurations";
+import { createSequencerBindings, sequencerFaderCount, type SequencerDevices } from "midi-core/configurations";
 import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
-import { createSequencerRegistry, FADER_PAGE_SIZE, type SequencerRegistry } from "./sequencerContract";
+import { createSequencerRegistry, type SequencerRegistry } from "./sequencerContract";
 
 export interface TransportCallbacks {
   readonly play: () => void;
@@ -51,7 +51,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   const patternIdRef = useRef(patternId);
   patternIdRef.current = patternId;
   const transportRef = useRef(transport);
-  // The fader page (ECS-96): which group of eight tracks the mixer faders show. Owned here, not by the device.
+  // The fader page (ECS-96): which group of tracks the mixer faders show. Owned here, not by the device.
   const faderPageRef = useRef(0);
   transportRef.current = transport;
 
@@ -133,11 +133,15 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       };
       const unlogInput = input.onMessage((message) => appendLog(`in:  ${describeMessage(message)}`));
 
+      // The device's fader count sets the size of a fader page (ECS-102). A device with no fader banks has 0, and then no
+      // fader page exists.
+      const faderPageSize = sequencerFaderCount(device.profile);
       const registry = createSequencerRegistry({
         getProject: () => projectRef.current,
         getPatternId: () => patternIdRef.current,
         dispatch,
         getFaderPage: () => faderPageRef.current,
+        faderPageSize,
       });
       const actions = {
         play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),
@@ -145,10 +149,10 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       };
 
       faderPageRef.current = 0;
-      // A fader page turn moves the faders to the next or previous group of eight tracks, clamped to the project's tracks.
+      // A fader page turn moves the faders to the next or previous group of tracks, clamped to the project's tracks.
       const turnFaderPage = (delta: number) => {
         const tracks = projectRef.current.tracks.length;
-        const lastPage = Math.max(0, Math.ceil(tracks / FADER_PAGE_SIZE) - 1);
+        const lastPage = faderPageSize === 0 ? 0 : Math.max(0, Math.ceil(tracks / faderPageSize) - 1);
         faderPageRef.current = Math.min(lastPage, Math.max(0, faderPageRef.current + delta));
         connectionRef.current?.registry.syncFromProject(projectRef.current);
         connectionRef.current?.registry.repaintFaders();
