@@ -160,13 +160,11 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         pageRight: createAction({ id: "faders.pageRight", label: "Fader page right" }, () => turnFaderPage(1)),
       };
 
+      // The DAW ports the system has. Whether they connect is the surface's to report: a fader mode whose port fails to
+      // connect is refused when entered (ECS-104).
       const devices: SequencerDevices = dawInput && dawOutput
-        ? {
-            outputs: { "midi-out": output, "daw-out": dawOutput },
-            inputs: { "daw-in": dawInput },
-            connectedPortIds: ["midi-in", "midi-out", "daw-in", "daw-out"],
-          }
-        : { outputs: { "midi-out": output }, inputs: {}, connectedPortIds: ["midi-in", "midi-out"] };
+        ? { outputs: { "midi-out": output, "daw-out": dawOutput }, inputs: { "daw-in": dawInput } }
+        : { outputs: { "midi-out": output }, inputs: {} };
 
       const sequencer = createSequencerBindings(
         input,
@@ -210,6 +208,8 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       // midi-core moves the surface to "error" when a connected port drops on its own (the cable
       // is pulled). Release the device and say so, so the panel offers Connect again instead of
       // still showing "connected" (ECS-94). The project state is left alone: it is this app's own.
+      // A refused mode switch (a fader mode whose port isn't connected, ECS-104) is reported here, so it isn't silent.
+      surface.onError((error) => appendLog(`surface error [${error.code}]: ${error.message}`));
       const unwatchSurface = surface.onStateChange(({ to }) => {
         if (to !== "error" || connectionRef.current?.surface !== surface) return;
         unwatchSurface();

@@ -126,7 +126,6 @@ describe("the volume faders through midi-core's surface (ECS-96)", () => {
     const devices = {
       outputs: { "midi-out": createMidiOutput(midiOut), "daw-out": createMidiOutput(dawOut) },
       inputs: { "daw-in": createMidiInput(dawIn) },
-      connectedPortIds: ["midi-in", "midi-out", "daw-in", "daw-out"],
     };
     const { bindings } = createSequencerBindings(createMidiInput(midiIn), device.profile, contract, devices);
 
