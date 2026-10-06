@@ -17,11 +17,12 @@
 // fresh every tick, so an edit changes what the *next* playthrough of that pattern compiles
 // to, never what's already been scheduled.
 import type { AudioRuntime, BusId, SampleMetadata, VoiceHandle } from "webdsp";
-import type { AutomationLane, FxInstance, FxTarget, PatternId, Project, TrackId } from "../model/types";
+import type { AutomationLane, FxInstance, FxTarget, PatternId, Project } from "../model/types";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
 import { compilePatternIterationTracked, secondsPerBeat } from "./compile";
 import { valueAtBeat } from "../model/automation";
 import { applyAutomatedParam } from "./applyFx";
+import type { Playback } from "./playback";
 
 const LOOKAHEAD_SECONDS = 0.15;
 const TICK_INTERVAL_MS = 25;
@@ -79,18 +80,14 @@ export class Transport {
   private stepWindows: StepWindow[] = [];
 
   private activeVoices = new Set<VoiceHandle>();
-  // Last voice handle triggered per mono track (ECS-82/ECS-87) — release()d the moment a new
-  // one is scheduled for that same track, which is what makes Track.voiceMode "mono" actually
-  // choke rather than just overlap. release() on an already-finished handle is a documented
-  // no-op, so it's safe to call unconditionally. Only covers what compile.ts's own
-  // same-iteration mono truncation can't see (a mono track's last note bleeding into the next
-  // iteration, or a future ECS-83 manual trigger) — see compilePatternIterationTracked's doc
-  // comment. Known, accepted imprecision: because tick() schedules up to LOOKAHEAD_SECONDS
-  // ahead, this can release the previous voice up to that long before the new one's actual
-  // start — webdsp's release() has no scheduled-time parameter, so there's no way to make this
-  // sample-accurate from here. Not worth a JS-timer workaround: that would undermine the
-  // lookahead scheduler's sample-accuracy guarantee for a rare edge case.
-  private monoLastVoice = new Map<TrackId, VoiceHandle>();
+  // Mono choke (ECS-82/ECS-87) lives in playback.ts, shared with manual triggers (ECS-83):
+  // every mono voice scheduled here is registered there, so a mono track's last note bleeding
+  // into the next iteration is released by the same table a manual trigger uses. Known,
+  // accepted imprecision: because tick() schedules up to LOOKAHEAD_SECONDS ahead, that release
+  // can land up to that long before the new voice's actual start — webdsp's release() has no
+  // scheduled-time parameter, so there's no way to make this sample-accurate from here. Not
+  // worth a JS-timer workaround: that would undermine the lookahead scheduler's
+  // sample-accuracy guarantee for a rare edge case.
   // Last automated value actually pushed per (bus, fx, parameter), so polling only calls
   // into webdsp when a value has actually changed rather than every tick.
   private lastAutomationValues = new Map<string, number>();
@@ -102,6 +99,7 @@ export class Transport {
     private readonly runtime: AudioRuntime,
     private readonly getProject: () => Project,
     private readonly getBusId: (target: FxTarget) => BusId | undefined,
+    private readonly playback: Playback,
   ) {}
 
   getStatus(): PlaybackStatus {
@@ -124,7 +122,7 @@ export class Transport {
     this.audibleFrom = now + LEAD_IN_SECONDS;
     this.stepWindows = [];
     this.lastAutomationValues.clear();
-    this.monoLastVoice.clear();
+    this.playback.dropSequencerVoices();
     this.status = "playing";
 
     this.timerId = setInterval(() => this.tick(), TICK_INTERVAL_MS);
@@ -140,8 +138,11 @@ export class Transport {
     this.status = "paused";
   }
 
-  /** Stops playback and resets position to the start of the pattern chain. */
+  /** Stops playback and resets position to the start of the pattern chain. Also silences
+   * manual voices (auditions, track loops), and does so even when already stopped, so Stop is
+   * always the universal silence control (ECS-83). */
   stop(): void {
+    this.playback.stopAll();
     if (this.status === "stopped") return;
     this.haltAudio();
     this.pausedPosition = this.chainStart(this.getProject());
@@ -175,7 +176,7 @@ export class Transport {
     this.runtime.cancelScheduled();
     for (const voice of this.activeVoices) this.runtime.release(voice);
     this.activeVoices.clear();
-    this.monoLastVoice.clear();
+    this.playback.dropSequencerVoices();
     this.stepWindows = [];
     this.cancelResample(new Error("Resample cancelled: transport stopped or paused."));
   }
@@ -288,6 +289,9 @@ export class Transport {
     const result = new Promise<ResampleCaptureResult>((resolve, reject) => {
       this.resampleState = { status: "armed", targetPatternId: patternId, resolve, reject };
     });
+    // Manual voices already sounding would be captured too, since the capture records master
+    // output. Silence them now; new manual starts are refused until the capture completes.
+    this.playback.stopAll();
     return { ok: true, patternId, result };
   }
 
@@ -367,11 +371,7 @@ export class Transport {
           this.activeVoices.add(handle);
           const { trackId } = compiled[i];
           const track = trackById(project, trackId);
-          if (track && effectiveVoiceMode(track) === "mono") {
-            const previous = this.monoLastVoice.get(trackId);
-            if (previous !== undefined) this.runtime.release(previous);
-            this.monoLastVoice.set(trackId, handle);
-          }
+          if (track && effectiveVoiceMode(track) === "mono") this.playback.registerMonoVoice(trackId, handle, "sequencer");
         });
       }
       const stepEndTime = stepStartTime + beats * spb;

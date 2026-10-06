@@ -3,7 +3,7 @@
 Investigation for ECS-83 (parent ECS-81). Recommends one playback path shared by asset
 auditioning and manual track triggering, defines the interaction contracts, and lists the
 risks, edge cases, deferrals, and decisions still needed before any implementation issue is
-scoped. No behaviour is implemented here.
+scoped. The decisions are recorded under "Decisions" and implemented in the same change.
 
 ## Current state
 
@@ -189,26 +189,44 @@ from the user before implementation (see "Open decisions").
 - Recording a manual performance into a pattern (a live-to-notes feature).
 - Velocity or per-trigger gain for manual triggers.
 
-## Open decisions
+## Decisions
 
-1. **Stop semantics.** Recommended: Stop silences auditions and manual loops as well as the
-   sequencer. Alternative: Stop only affects the sequencer.
-2. **Loop trigger.** Recommended: toggle. Alternative: hold-to-play.
-3. **Track trigger placement.** Recommended: a button on the selected track's header.
-   Alternatives: a keyboard key while a track is selected, or a long-press on the track name
-   (rejected for now, as it conflicts with selecting a track on mobile).
-4. **Audition button placement.** Recommended: a small play icon on each asset chip.
-   Alternative: tap the chip's name, which conflicts with rename, so not recommended.
-5. **Resample during manual playback.** Recommended: block manual triggers and auditions
-   while a resample is armed or capturing. Alternative: allow them and accept capture contamination.
-6. **Muted tracks.** Recommended: manual trigger is silent, as in the sequencer. Alternative:
-   manual trigger bypasses mute, which would make a muted track easier to audition but
-   inconsistent with playback.
+All six recommendations were accepted and implemented (see "Implementation" below).
 
-## Proposed follow-up issues
+1. **Stop silences everything.** Stop silences auditions and manual loops, as well as the
+   sequencer. Pause does not: it stops the sequencer only, and manual loops keep sounding.
+   Starting a resample also silences any audition already sounding.
+2. **Loop trigger is a toggle** (press to start, press to stop), not hold-to-play.
+3. **Track trigger is a button on the selected track's header.** Keyboard access is native
+   button focus (Enter), with no global shortcut.
+4. **Audition is a play/stop button on each asset chip.**
+5. **Resample guard blocks manual starts** while a resample is armed or capturing. Stopping
+   a running loop or audition is still allowed.
+6. **Muted tracks are silent for manual triggers**, because track triggers go through the
+   track's bus.
 
-Not created yet. Creating them now would be speculative, and decisions 1-6 change their scope.
-Once those are answered, the work splits cleanly into:
+## Implementation
+
+- `src/audio/playback.ts`: `Playback`. Owns every manual `runtime.trigger()` call, the
+  audition slot, the per-track manual loops, and the mono-choke table that the sequencer
+  now shares (`registerMonoVoice`, `dropSequencerVoices`).
+- `src/audio/transport.ts`: the private `monoLastVoice` map is replaced by `Playback`.
+  `stop()` calls `stopAll()` even when already stopped. `armResample()` silences sounding
+  manual voices.
+- `src/components/AssetsPanel.tsx`: per-chip audition button, with active state.
+- `src/components/TrackRow.tsx`: trigger button in the header, shown only on the selected
+  track. Its click does not reach the select handler.
+- `src/App.tsx`: constructs `Playback` before `Transport`, subscribes to its snapshot for
+  active states, and reconciles it on project change.
+- Tests: `test/playback.test.ts` (audition, one-shot and loop, shared choke, reconcile, Stop,
+  resample guard); `test/transport.test.ts` now passes a `Playback` into `Transport`.
+
+Not verified: a manual browser run. The header now holds one more control at phone width,
+so the track name truncates more there. Check that visually.
+
+## Proposed follow-up issues (superseded)
+
+The four items below were folded into the single implementation above. Kept for reference:
 
 1. Playback module: shared mono map and manual-voice ownership, moving the Transport
    per-track mono logic into it. No UI change. Covered by Transport tests.

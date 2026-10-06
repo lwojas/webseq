@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { MASTER_BUS } from "webdsp";
+import { MASTER_BUS, type AudioRuntime } from "webdsp";
 import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { totalBeats, trackById } from "./model/types";
 import { createInitialProject } from "./model/project";
@@ -8,6 +8,7 @@ import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { Transport, type PlaybackStatus } from "./audio/transport";
+import { Playback, type ManualPlaybackSnapshot } from "./audio/playback";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
 import { applyFxChain } from "./audio/applyFx";
 import { applyTrackVolume } from "./audio/mixer";
@@ -70,8 +71,12 @@ export function App() {
   const trackBusesRef = useRef<TrackBusMap>({});
   const assetDataRef = useRef<Map<AssetId, ArrayBuffer>>(new Map());
   const transportRef = useRef<Transport | null>(null);
+  const playbackRef = useRef<Playback | null>(null);
 
   const [status, setStatus] = useState<PlaybackStatus>("stopped");
+  // Which asset is auditioning and which tracks are looping (ECS-83). Written only when the
+  // Playback actually changes, so this re-renders on starts/stops/ends, not per tick.
+  const [manual, setManual] = useState<ManualPlaybackSnapshot>({ auditionAssetId: null, loopingTrackIds: [] });
   const [selectedPatternId, setSelectedPatternId] = useState(project.patterns[0].id);
   const [sidePanelView, setSidePanelView] = useState<SidePanelView>("assets");
   const [bottomPanelView, setBottomPanelView] = useState<BottomPanelView>("fx");
@@ -91,15 +96,36 @@ export function App() {
 
   const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
 
+  // Manual voices (ECS-83) and Transport share one Playback, which must exist before Transport
+  // is built: Transport registers its mono voices with it. Refuses manual starts while a
+  // resample is armed or capturing, the same guard as the Transport's own resample state.
+  const ensurePlayback = useCallback(
+    (rt: AudioRuntime): Playback => {
+      if (!playbackRef.current) {
+        const playback = new Playback(rt, getBusId, () => (transportRef.current?.getResampleStatus() ?? "idle") !== "idle");
+        playback.subscribe(setManual);
+        playbackRef.current = playback;
+      }
+      return playbackRef.current;
+    },
+    [getBusId],
+  );
+
   // Keep every track's bus assignment up to date (idempotent — see ensureTrackBuses) whenever
   // the runtime is ready or the track list changes, and construct Transport once.
   useEffect(() => {
     if (!runtime) return;
     trackBusesRef.current = ensureTrackBuses(runtime, project.tracks.map((t) => t.id), trackBusesRef.current);
     if (!transportRef.current) {
-      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId);
+      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId, ensurePlayback(runtime));
     }
-  }, [runtime, project.tracks, getBusId]);
+  }, [runtime, project.tracks, getBusId, ensurePlayback]);
+
+  // Manual voices whose track or asset changed under them (reassigned, removed) are released
+  // here. Cheap: it scans at most one entry per track.
+  useEffect(() => {
+    playbackRef.current?.reconcile(project);
+  }, [project]);
 
   // Push the full FX + mixer state to the engine on every project change — covers live
   // parameter edits (including volume/mute/solo drags), FX add/remove, and a freshly-loaded
@@ -149,10 +175,10 @@ export function App() {
       applyFxChain(rt, busId, track.fx);
       applyTrackVolume(rt, busId, projectRef.current, track);
     }
-    const t = new Transport(rt, () => projectRef.current, getBusId);
+    const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt));
     transportRef.current = t;
     return t;
-  }, [init, getBusId]);
+  }, [init, getBusId, ensurePlayback]);
 
   const handlePlay = useCallback(async () => {
     const transport = await ensureTransport();
@@ -256,6 +282,25 @@ export function App() {
     [],
   );
   const handleRenameAsset = useCallback((assetId: AssetId, name: string) => dispatch({ type: "RENAME_ASSET", assetId, name }), []);
+
+  // Manual playback (ECS-83). Each one makes sure the runtime, buses and Playback exist first,
+  // since the first click may be the one that initialises audio. That await is still inside
+  // the user gesture, the same as Play.
+  const handleAuditionAsset = useCallback(
+    async (assetId: AssetId) => {
+      await ensureTransport();
+      playbackRef.current?.auditionAsset(assetId);
+    },
+    [ensureTransport],
+  );
+  const handleTriggerTrack = useCallback(
+    async (trackId: TrackId) => {
+      await ensureTransport();
+      const track = trackById(projectRef.current, trackId);
+      if (track) playbackRef.current?.pressTrack(track);
+    },
+    [ensureTransport],
+  );
   const handleRemoveAsset = useCallback((assetId: AssetId) => dispatch({ type: "REMOVE_ASSET", assetId }), []);
 
   const handleResample = useCallback(async () => {
@@ -578,6 +623,9 @@ export function App() {
                 onAssign={handleAssignAsset}
                 onRename={handleRenameAsset}
                 onRemove={handleRemoveAsset}
+                auditioningAssetId={manual.auditionAssetId}
+                onAudition={handleAuditionAsset}
+                auditionDisabled={resamplePhase === "pending"}
               />
             )}
             {sidePanelView === "midi" && (
@@ -608,6 +656,9 @@ export function App() {
             onResizeNote={handleResizeNote}
             onMoveNote={handleMoveNote}
             onLoadSample={handleImportAndAssignToTrack}
+            loopingTrackIds={manual.loopingTrackIds}
+            triggerDisabled={resamplePhase === "pending"}
+            onTriggerTrack={handleTriggerTrack}
             getPlayheadBeat={getPlayheadBeat}
             pxPerBeat={pxPerBeat}
           />

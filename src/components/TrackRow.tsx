@@ -1,5 +1,6 @@
 import { memo, useRef } from "react";
 import type { FxTarget, Note, NoteId, Track, TrackId } from "../model/types";
+import { effectivePlaybackMode } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
 
 interface Props {
@@ -26,6 +27,11 @@ interface Props {
   onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onLoadSample: (trackId: TrackId, file: File) => void;
+  /** This track's manual loop is sounding (see audio/playback.ts). A primitive, so the memo still holds. */
+  looping: boolean;
+  /** Disables the trigger while a resample is armed or capturing. */
+  triggerDisabled: boolean;
+  onTrigger: (trackId: TrackId) => void;
 }
 
 export const TrackRow = memo(function TrackRow({
@@ -45,8 +51,12 @@ export const TrackRow = memo(function TrackRow({
   onResizeNote,
   onMoveNote,
   onLoadSample,
+  looping,
+  triggerDisabled,
+  onTrigger,
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const loopTrack = effectivePlaybackMode(track) === "loop";
   const width = beats * pxPerBeat;
   // Defensive clamp: the visible window is recomputed on its own rAF cadence (see
   // useVisibleColumnWindow) and can lag a frame behind a `beats` change (e.g. switching to a
@@ -62,6 +72,22 @@ export const TrackRow = memo(function TrackRow({
           {track.assetId == null ? "— empty —" : track.name}
         </span>
         {track.fx.length > 0 && <span className="track-fx-badge">{track.fx.length}FX</span>}
+        {selected && track.assetId != null && (
+          // Only on the selected track, so the header stays uncluttered (ECS-83). Its click must
+          // not reach the header's select handler.
+          <button
+            className={`track-trigger ${looping ? "active" : ""}`}
+            disabled={triggerDisabled}
+            title={triggerDisabled ? "Unavailable while resampling" : looping ? "Stop loop" : loopTrack ? "Start loop" : "Play"}
+            aria-label={looping ? `Stop ${track.name} loop` : loopTrack ? `Start ${track.name} loop` : `Play ${track.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTrigger(track.id);
+            }}
+          >
+            {looping ? "■" : "▶"}
+          </button>
+        )}
         <button
           className="load-btn"
           onClick={(e) => {

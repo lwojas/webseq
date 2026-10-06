@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AudioRuntime, CaptureHandle, RuntimeCapabilities, SampleMetadata, ScheduledEvent, VoiceHandle } from "webdsp";
+import type { AudioRuntime, CaptureHandle, RuntimeCapabilities, SampleMetadata, ScheduledEvent, TriggerParams, VoiceHandle } from "webdsp";
 import { Transport } from "../src/audio/transport";
+import { Playback } from "../src/audio/playback";
 import { secondsPerBeat } from "../src/audio/compile";
 import { addAsset, addNote } from "../src/model/project";
 import { addPattern, appendToChain, assignAsset, createInitialProject, setBpm, setSwing, setTrackVoiceMode } from "../src/model/project";
@@ -19,8 +20,18 @@ function fakeRuntime(maxCaptureSeconds = 30) {
   // Each armCapture() call gets its own controllable pending promise, so a test can settle
   // (or leave hanging) exactly the capture it cares about without racing unrelated ones.
   const pendingArmCaptures: { resolve: (r: { metadata: SampleMetadata; channelData: ArrayBuffer[] }) => void; reject: (e: Error) => void }[] = [];
+  const triggered: TriggerParams[] = [];
+  const voiceEndedListeners: ((v: VoiceHandle) => void)[] = [];
   const runtime = {
     getCurrentTime: () => time,
+    trigger: vi.fn((params: TriggerParams) => {
+      triggered.push(params);
+      return nextHandle++;
+    }),
+    onVoiceEnded: vi.fn((fn: (v: VoiceHandle) => void) => {
+      voiceEndedListeners.push(fn);
+      return () => {};
+    }),
     schedule: vi.fn((events: ScheduledEvent[]) => {
       scheduled.push(...events);
       return events.map(() => nextHandle++);
@@ -47,6 +58,8 @@ function fakeRuntime(maxCaptureSeconds = 30) {
     runtime: runtime as unknown as AudioRuntime,
     scheduled,
     released,
+    triggered,
+    endVoice: (h: VoiceHandle) => voiceEndedListeners.forEach((fn) => fn(h)),
     armCaptureCalls,
     resolveLastArmCapture: (meta: SampleMetadata, channelData: ArrayBuffer[] = []) =>
       pendingArmCaptures[pendingArmCaptures.length - 1]?.resolve({ metadata: meta, channelData }),
@@ -57,6 +70,12 @@ function fakeRuntime(maxCaptureSeconds = 30) {
 }
 
 const noBus = () => undefined;
+
+/** Transport needs a Playback sharing the same runtime. Its capture guard is off here: these
+ * tests only exercise Transport, and Transport.getResampleStatus() is the real source of truth. */
+function playbackFor(runtime: AudioRuntime, isCaptureBusy = () => false) {
+  return new Playback(runtime, noBus, isCaptureBusy);
+}
 
 function makeAsset(id: number, name: string): Asset {
   return { id, name, type: "audio", duration: 1, sampleRate: 48000, channels: 2, origin: "import" };
@@ -87,7 +106,7 @@ describe("Transport", () => {
     vi.useFakeTimers();
     const { runtime, scheduled } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     expect(scheduled).toHaveLength(1);
@@ -101,7 +120,7 @@ describe("Transport", () => {
     vi.useFakeTimers();
     const { runtime, scheduled, advance } = fakeRuntime();
     const project = singlePatternProject(); // one loop = 16 * 0.125s = 2s
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     expect(scheduled).toHaveLength(1);
@@ -126,7 +145,7 @@ describe("Transport", () => {
     project = addNote(project, patternB, "track-1", 0);
     project = appendToChain(project, patternB); // chain: [A, B]
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     expect(scheduled).toHaveLength(1); // only step A's note is within the initial lookahead
 
@@ -149,7 +168,7 @@ describe("Transport", () => {
     const patternA = project.patterns[0].id;
     project = addNote(project, patternA, "track-1", 0);
     // chain already has one A entry by default; leave it as a 1-step chain that loops on A.
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     advance(2.0);
@@ -175,7 +194,7 @@ describe("Transport", () => {
     project = addNote(project, patternB, "track-1", 4);
 
     let liveProject = project; // chain: [A] only, so far
-    const transport = new Transport(runtime, () => liveProject, noBus);
+    const transport = new Transport(runtime, () => liveProject, noBus, playbackFor(runtime));
 
     transport.play();
     expect(scheduled).toHaveLength(1); // A's step 0 already committed
@@ -199,7 +218,7 @@ describe("Transport", () => {
     const { runtime, scheduled, cancelScheduled, advance } = fakeRuntime();
     let project = singlePatternProject();
     let liveProject = project;
-    const transport = new Transport(runtime, () => liveProject, noBus);
+    const transport = new Transport(runtime, () => liveProject, noBus, playbackFor(runtime));
 
     transport.play();
     expect(scheduled).toHaveLength(1);
@@ -220,7 +239,7 @@ describe("Transport", () => {
     vi.useFakeTimers();
     const { runtime, advance } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     const LEAD_IN = 0.05;
     transport.play();
@@ -239,7 +258,7 @@ describe("Transport", () => {
     vi.useFakeTimers();
     const { runtime, cancelScheduled, released } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     transport.stop();
@@ -256,7 +275,7 @@ describe("Transport", () => {
     vi.useFakeTimers();
     const { runtime, advance } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     advance(0.05 + 0.5); // past the 0.05s lead-in, then 4 beats in
@@ -284,7 +303,7 @@ describe("Transport swing", () => {
     project = assignAsset(project, "track-1", 1);
     project = addNote(project, project.patterns[0].id, "track-1", 1); // odd step -> would be swung if swing != 50%
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spb, 10);
 
@@ -301,7 +320,7 @@ describe("Transport swing", () => {
     project = assignAsset(project, "track-1", 1);
     project = addNote(project, project.patterns[0].id, "track-1", 1);
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spb + spb * (2 / 3 - 0.5), 10);
 
@@ -318,7 +337,7 @@ describe("Transport swing", () => {
     project = assignAsset(project, "track-1", 1);
     project = addNote(project, project.patterns[0].id, "track-1", 4); // even step -> first of its pair
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     expect(scheduled[0].time).toBeCloseTo(0.05 + 4 * spb, 10);
 
@@ -335,7 +354,7 @@ describe("Transport swing", () => {
     project = assignAsset(project, "track-1", 1);
     project = addNote(project, project.patterns[0].id, "track-1", 1); // 1 bar @16 beats/bar = 2s loop @120bpm
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     expect(scheduled).toHaveLength(1);
 
@@ -359,7 +378,7 @@ describe("Transport swing", () => {
     project = assignAsset(project, "track-1", 1);
     project = addNote(project, project.patterns[0].id, "track-1", 1);
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     const spbSlow = secondsPerBeat(60);
     expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spbSlow + spbSlow * 0.25, 10);
@@ -376,7 +395,7 @@ describe("Transport swing", () => {
     project = assignAsset(project, "track-1", 1);
     project = addNote(project, project.patterns[0].id, "track-1", 1);
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     expect(scheduled[0].time).toBeCloseTo(0.05 + 1 * spb, 10); // default swing is 50% (straight)
 
@@ -394,7 +413,7 @@ describe("Transport swing", () => {
 describe("Transport resampling", () => {
   it("armResample() refuses when nothing is playing", () => {
     const { runtime } = fakeRuntime();
-    const transport = new Transport(runtime, () => singlePatternProject(), noBus);
+    const transport = new Transport(runtime, () => singlePatternProject(), noBus, playbackFor(runtime));
     const result = transport.armResample();
     expect(result.ok).toBe(false);
   });
@@ -403,7 +422,7 @@ describe("Transport resampling", () => {
     vi.useFakeTimers();
     const { runtime } = fakeRuntime(/* maxCaptureSeconds */ 1); // pattern is 2s
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     const result = transport.armResample();
@@ -418,7 +437,7 @@ describe("Transport resampling", () => {
     vi.useFakeTimers();
     const { runtime } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     const first = transport.armResample();
@@ -434,7 +453,7 @@ describe("Transport resampling", () => {
     vi.useFakeTimers();
     const { runtime, armCaptureCalls, advance } = fakeRuntime();
     const project = singlePatternProject(); // 1 bar @120bpm = 2s per loop
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play(); // already scheduled this loop's iteration before we arm below
     const armed = transport.armResample();
@@ -474,7 +493,7 @@ describe("Transport resampling", () => {
     project = appendToChain(project, c); // [A, A, B, C]
     project = appendToChain(project, b); // [A, A, B, C, B]
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play(); // schedules step 0 (A)
 
     // Advance a little past each 2s boundary (not exactly onto it) since every step's window
@@ -510,7 +529,7 @@ describe("Transport resampling", () => {
     vi.useFakeTimers();
     const { runtime, advance, resolveLastArmCapture } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     const armed = transport.armResample();
@@ -535,7 +554,7 @@ describe("Transport resampling", () => {
     vi.useFakeTimers();
     const { runtime, cancelScheduled } = fakeRuntime();
     const project = singlePatternProject();
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     const armed = transport.armResample();
@@ -560,7 +579,7 @@ describe("Transport voice mode", () => {
     const { runtime, scheduled, released, advance } = fakeRuntime();
     let project = singlePatternProject(); // one note on track-1 at start 0; 1-bar loop = 2s @120bpm
     project = setTrackVoiceMode(project, "track-1", "mono");
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
 
     transport.play();
     expect(scheduled).toHaveLength(1);
@@ -580,7 +599,7 @@ describe("Transport voice mode", () => {
     const { runtime, scheduled, released, advance } = fakeRuntime();
     const project = singlePatternProject(); // default voiceMode is poly
 
-    const transport = new Transport(runtime, () => project, noBus);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
     transport.play();
     advance(2.0);
     vi.advanceTimersByTime(25);

@@ -92,8 +92,9 @@ export function compilePatternIteration(
  * already-swung, already-compiled `time`s rather than re-deriving grid positions, and only
  * ever shortens a voice's duration to close that gap, never extends one past its authored
  * length. This only ever reaches within a single iteration; a mono track's last note bleeding
- * into the *next* iteration (or a future manual trigger landing mid-voice — see ECS-83) isn't
- * visible here and is instead handled by Transport's own last-voice-per-track release(). */
+ * into the *next* iteration (or a manual trigger landing mid-voice — see ECS-83) isn't
+ * visible here and is instead handled by the shared last-voice-per-track table in
+ * audio/playback.ts, which Transport registers every mono voice with. */
 export function compilePatternIterationTracked(
   pattern: Pattern,
   tracks: Track[],

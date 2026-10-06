@@ -19,6 +19,11 @@ interface Props {
   onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onLoadSample: (trackId: TrackId, file: File) => void;
+  /** Tracks whose manual loop is sounding (see audio/playback.ts). */
+  loopingTrackIds: TrackId[];
+  /** True while a resample is armed or capturing — the selected track's trigger is disabled then. */
+  triggerDisabled: boolean;
+  onTriggerTrack: (trackId: TrackId) => void;
   /** Beat position within `pattern`, or null if `pattern` isn't the one currently sounding —
    * see Transport.getPlayheadInfo() and usePlayheadAnimation's doc comment. */
   getPlayheadBeat: () => number | null;
@@ -43,6 +48,9 @@ export function SequencerGrid({
   onResizeNote,
   onMoveNote,
   onLoadSample,
+  loopingTrackIds,
+  triggerDisabled,
+  onTriggerTrack,
   getPlayheadBeat,
   pxPerBeat,
 }: Props) {
@@ -107,6 +115,9 @@ export function SequencerGrid({
                   onResizeNote={onResizeNote}
                   onMoveNote={onMoveNote}
                   onLoadSample={onLoadSample}
+                  looping={loopingTrackIds.includes(track.id)}
+                  triggerDisabled={triggerDisabled}
+                  onTrigger={onTriggerTrack}
                 />
               </div>
             ))}
