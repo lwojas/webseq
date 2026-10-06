@@ -10,7 +10,7 @@ import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
 import { createSequencerBindings, sequencerFaderCount, type SequencerDevices } from "midi-core/configurations";
-import { findDevice } from "midi-core/devices";
+import { findDawPorts, findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
@@ -109,14 +109,12 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       input.onError((e) => appendLog(`input error: ${e.code} ${e.message}`));
       output.onError((e) => appendLog(`output error: ${e.code} ${e.message}`));
 
-      // The device's DAW pair, found by name from its MIDI pair (ECS-96). The mixer's fader modes need it; without it the
-      // device has no fader modes, and the rest of the surface works as before.
-      const dawInfo = (portName: string | null | undefined, type: "input" | "output", from: string, to: string) =>
-        portName ? ports.find((port) => port.type === type && port.name === portName.replace(from, to)) : undefined;
-      const dawInputInfo = dawInfo(inputInfo?.name, "input", "MIDI Out", "DAW Out");
-      const dawOutputInfo = dawInfo(ports.find((port) => port.id === outputId)?.name, "output", "MIDI In", "DAW In");
-      const rawDawInput = dawInputInfo ? access.getInput(dawInputInfo.id) : null;
-      const rawDawOutput = dawOutputInfo ? access.getOutput(dawOutputInfo.id) : null;
+      // The device's DAW pair, found by the registry's port names from its MIDI pair (ECS-96, ECS-103). The mixer's fader modes
+      // need it; a device with no DAW ports, or one the system doesn't report them for, has no fader modes, and the rest of
+      // the surface works as before.
+      const daw = findDawPorts(device, ports, { input: inputInfo?.name, output: ports.find((port) => port.id === outputId)?.name });
+      const rawDawInput = daw.input ? access.getInput(daw.input.id) : null;
+      const rawDawOutput = daw.output ? access.getOutput(daw.output.id) : null;
       const dawInput = rawDawInput ? createMidiInput(rawDawInput) : undefined;
       const dawOutput = rawDawOutput ? createMidiOutput(rawDawOutput) : undefined;
       dawInput?.onMessage((message) => appendLog(`daw in:  ${describeMessage(message)}`));
