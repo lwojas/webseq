@@ -13,12 +13,15 @@ import type { BooleanControlDef, Control, ControlDef, ControlRegistry, NumericCo
 import { totalBeats, trackById } from "../model/types";
 import type { Pattern, PatternId, Project, Track, TrackId } from "../model/types";
 import type { Action } from "../model/reducer";
+import { MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
 import { createTrackMutedControl, type ProjectControl } from "./controlAdapter";
 
 export interface SequencerRegistryDeps {
   readonly getProject: () => Project;
   readonly getPatternId: () => PatternId;
   readonly dispatch: (action: Action) => void;
+  /** The fader page: which group of eight tracks the mixer faders show, 0-based (ECS-96). Omitted means page 0. */
+  readonly getFaderPage?: () => number;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -27,6 +30,9 @@ export interface SequencerRegistry extends ControlRegistry {
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
 const MUTE_ID = /^mute\.(\d+)$/;
+const FADER_VOLUME_ID = /^mixer\.volume\.([0-7])$/;
+/** How many tracks one fader bank shows: a page is eight tracks, one per fader (ECS-96). */
+export const FADER_PAGE_SIZE = 8;
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 
@@ -125,6 +131,47 @@ function createTrackCountControl(deps: SequencerRegistryDeps): ProjectControl<Nu
   };
 }
 
+/**
+ * The volume fader at `index` (0-7) on the current fader page (ECS-96): fader `index` shows and sets the volume of track
+ * `page * 8 + index`. A fader with no track on the page reads 0, which is the device's off colour, and ignores writes.
+ * The track's volume is the application's own linear gain (0 to 1.5), so midi-core scales the CC range onto it.
+ */
+function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = {
+    id: `mixer.volume.${index}`,
+    label: `Volume, fader ${index + 1}`,
+    kind: "number",
+    min: MIN_TRACK_VOLUME,
+    max: MAX_TRACK_VOLUME,
+    default: DEFAULT_TRACK_VOLUME,
+  };
+  const track = (project: Project) => project.tracks[(deps.getFaderPage?.() ?? 0) * FADER_PAGE_SIZE + index];
+  const read = (project: Project) => track(project)?.volume ?? 0;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = read(deps.getProject());
+
+  return {
+    def,
+    getValue: () => read(deps.getProject()),
+    setValue(value) {
+      const current = track(deps.getProject());
+      if (current) deps.dispatch({ type: "SET_TRACK_VOLUME", trackId: current.id, volume: value });
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    // Called on every project change and on every fader page turn, so the fader's colour follows its track.
+    syncFromProject(project) {
+      const next = read(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
 /** A registry that resolves the sequencer's contract ids against the live project. */
 export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerRegistry {
   const cache = new Map<string, ProjectControl<ControlDef>>();
@@ -150,6 +197,9 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createLengthControl(deps) as ProjectControl<ControlDef>;
     } else if (id === TRACKS_ID) {
       created = createTrackCountControl(deps) as ProjectControl<ControlDef>;
+    } else {
+      const fader = FADER_VOLUME_ID.exec(id);
+      if (fader) created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
     }
 
     if (created) cache.set(id, created);

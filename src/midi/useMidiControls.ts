@@ -9,12 +9,12 @@ import type { MidiInput, MidiMessage, MidiOutput, MidiPortInfo } from "midi-core
 import { createMidiInput, createMidiOutput } from "midi-core";
 import { requestWebMidiAccess, type WebMidiAccess } from "midi-core/adapters/web-midi";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
-import { createSequencerBindings } from "midi-core/configurations";
+import { createSequencerBindings, type SequencerDevices } from "midi-core/configurations";
 import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
-import { createSequencerRegistry, type SequencerRegistry } from "./sequencerContract";
+import { createSequencerRegistry, FADER_PAGE_SIZE, type SequencerRegistry } from "./sequencerContract";
 
 export interface TransportCallbacks {
   readonly play: () => void;
@@ -51,6 +51,8 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   const patternIdRef = useRef(patternId);
   patternIdRef.current = patternId;
   const transportRef = useRef(transport);
+  // The fader page (ECS-96): which group of eight tracks the mixer faders show. Owned here, not by the device.
+  const faderPageRef = useRef(0);
   transportRef.current = transport;
 
   const appendLog = useCallback((line: string) => {
@@ -107,6 +109,18 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       input.onError((e) => appendLog(`input error: ${e.code} ${e.message}`));
       output.onError((e) => appendLog(`output error: ${e.code} ${e.message}`));
 
+      // The device's DAW pair, found by name from its MIDI pair (ECS-96). The mixer's fader modes need it; without it the
+      // device has no fader modes, and the rest of the surface works as before.
+      const dawInfo = (portName: string | null | undefined, type: "input" | "output", from: string, to: string) =>
+        portName ? ports.find((port) => port.type === type && port.name === portName.replace(from, to)) : undefined;
+      const dawInputInfo = dawInfo(inputInfo?.name, "input", "MIDI Out", "DAW Out");
+      const dawOutputInfo = dawInfo(ports.find((port) => port.id === outputId)?.name, "output", "MIDI In", "DAW In");
+      const rawDawInput = dawInputInfo ? access.getInput(dawInputInfo.id) : null;
+      const rawDawOutput = dawOutputInfo ? access.getOutput(dawOutputInfo.id) : null;
+      const dawInput = rawDawInput ? createMidiInput(rawDawInput) : undefined;
+      const dawOutput = rawDawOutput ? createMidiOutput(rawDawOutput) : undefined;
+      dawInput?.onMessage((message) => appendLog(`daw in:  ${describeMessage(message)}`));
+
       // Logs the literal MidiMessage the surface hands to output.send() -- channel included --
       // rather than a Control's onChange value. The two are not interchangeable: a mapping with
       // no feedback target never calls send() at all, so logging onChange directly as "out:"
@@ -123,24 +137,56 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         getProject: () => projectRef.current,
         getPatternId: () => patternIdRef.current,
         dispatch,
+        getFaderPage: () => faderPageRef.current,
       });
       const actions = {
         play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),
         stop: createAction({ id: "transport.stop", label: "Stop" }, () => transportRef.current.stop()),
       };
 
-      const sequencer = createSequencerBindings(input, device.profile, {
-        stepTemplate: "step.{row}.{column}",
-        lengthControl: "steps.length",
-        muteTemplate: "mute.{track}",
-        trackCountControl: "tracks.count",
-        actions,
-      });
+      faderPageRef.current = 0;
+      // A fader page turn moves the faders to the next or previous group of eight tracks, clamped to the project's tracks.
+      const turnFaderPage = (delta: number) => {
+        const tracks = projectRef.current.tracks.length;
+        const lastPage = Math.max(0, Math.ceil(tracks / FADER_PAGE_SIZE) - 1);
+        faderPageRef.current = Math.min(lastPage, Math.max(0, faderPageRef.current + delta));
+        connectionRef.current?.registry.syncFromProject(projectRef.current);
+      };
+      const faderActions = {
+        pageLeft: createAction({ id: "faders.pageLeft", label: "Fader page left" }, () => turnFaderPage(-1)),
+        pageRight: createAction({ id: "faders.pageRight", label: "Fader page right" }, () => turnFaderPage(1)),
+      };
+
+      const devices: SequencerDevices = dawInput && dawOutput
+        ? {
+            outputs: { "midi-out": output, "daw-out": dawOutput },
+            inputs: { "daw-in": dawInput },
+            connectedPortIds: ["midi-in", "midi-out", "daw-in", "daw-out"],
+          }
+        : { outputs: { "midi-out": output }, inputs: {}, connectedPortIds: ["midi-in", "midi-out"] };
+
+      const sequencer = createSequencerBindings(
+        input,
+        device.profile,
+        {
+          stepTemplate: "step.{row}.{column}",
+          lengthControl: "steps.length",
+          muteTemplate: "mute.{track}",
+          trackCountControl: "tracks.count",
+          actions,
+          faderActions,
+          faderTemplates: { volume: "mixer.volume.{index}" },
+        },
+        devices,
+      );
       for (const role of sequencer.unresolved) appendLog(`unresolved: ${role}`);
 
       const surface = createControlSurface({
         profile: device.profile,
-        ports: { inputs: { "midi-in": input }, outputs: { "midi-out": output } },
+        ports: {
+          inputs: { "midi-in": input, ...(dawInput ? { "daw-in": dawInput } : {}) },
+          outputs: { "midi-out": output, ...(dawOutput ? { "daw-out": dawOutput } : {}) },
+        },
         bindingTable: sequencer.bindings,
         context: createSurfaceContext(),
         registry,
