@@ -175,11 +175,12 @@ export function useMidiControls(
         pageRight: createAction({ id: "faders.pageRight", label: "Fader page right" }, () => turnFaderPage(1)),
       };
 
-      // The DAW ports the system has. Whether they connect is the surface's to report: a fader mode whose port fails to
-      // connect is refused when entered (ECS-104).
+      // The DAW ports the system has. Each is passed on its own: the DAW input carries the bank arrows on any device that has one
+      // (ECS-114), and midi-core builds a fader mode only when both of its required ports are here. Whether they connect is the
+      // surface's to report: a fader mode whose port fails to connect is refused when entered (ECS-104).
       const devices: SequencerDevices = {
-        outputs: { ...(output ? { "midi-out": output } : {}), ...(dawInput && dawOutput ? { "daw-out": dawOutput } : {}) },
-        inputs: dawInput && dawOutput ? { "daw-in": dawInput } : {},
+        outputs: { ...(output ? { "midi-out": output } : {}), ...(dawOutput ? { "daw-out": dawOutput } : {}) },
+        inputs: dawInput ? { "daw-in": dawInput } : {},
       };
 
       const sequencer = createSequencerBindings(
