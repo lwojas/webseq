@@ -17,7 +17,7 @@ import { remapAssetIds } from "./model/project";
 import { TransportBar, type ResamplePhase } from "./components/TransportBar";
 import { PatternBar } from "./components/PatternBar";
 import { ChainEditor } from "./components/ChainEditor";
-import { AssetsPanel } from "./components/AssetsPanel";
+import { AssetsPanel, type ImportBatchResult } from "./components/AssetsPanel";
 import { MidiPanel } from "./components/MidiPanel";
 import { SequencerGrid } from "./components/SequencerGrid";
 import { FxPanel } from "./components/FxPanel";
@@ -102,6 +102,7 @@ export function App() {
   const [resampleError, setResampleError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [importBatchResult, setImportBatchResult] = useState<ImportBatchResult | null>(null);
 
   const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
 
@@ -244,8 +245,9 @@ export function App() {
 
   // Decodes a local file via the runtime (unchanged mechanism — see the project brief's "the
   // existing ability to load and play local audio must continue working") and adds it to the
-  // Asset Bin. Shared by the Assets panel's "+ Import" (import only) and each track's "Load"
-  // button (import, then immediately assign — see handleImportAndAssignToTrack).
+  // Asset Bin. Shared by the Assets panel's batch "+ Import" (import only, see importAssets
+  // below) and each track's "Load" button (import, then immediately assign — see
+  // handleImportAndAssignToTrack).
   const importAsset = useCallback(
     async (file: File): Promise<Asset | null> => {
       const runtimeInstance = runtime ?? (await init());
@@ -268,7 +270,26 @@ export function App() {
     [runtime, init],
   );
 
-  const handleImportAsset = useCallback((file: File) => void importAsset(file), [importAsset]);
+  // Multi-file import for the Asset Bin's "+ Import" (ECS-130). Sequential, not Promise.all —
+  // each call allocates the next engine sample id and mutates the shared assetDataRef, same
+  // ordering concern as handleLoadProject's per-asset loop below. One file failing to decode
+  // doesn't stop the rest; the result is surfaced as a single end-of-batch summary rather than
+  // per-file UI, since importAsset itself had no error feedback before this.
+  const importAssets = useCallback(
+    async (files: File[]) => {
+      const failed: { name: string; message: string }[] = [];
+      for (const file of files) {
+        try {
+          const asset = await importAsset(file);
+          if (!asset) failed.push({ name: file.name, message: "Audio engine unavailable" });
+        } catch (err) {
+          failed.push({ name: file.name, message: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      setImportBatchResult({ total: files.length, failed });
+    },
+    [importAsset],
+  );
 
   const handleImportAndAssignToTrack = useCallback(
     async (trackId: TrackId, file: File) => {
@@ -636,7 +657,8 @@ export function App() {
               <AssetsPanel
                 assets={project.assets}
                 selectedTarget={selectedTarget}
-                onImport={handleImportAsset}
+                onImport={importAssets}
+                importStatus={importBatchResult}
                 onAssign={handleAssignAsset}
                 onRename={handleRenameAsset}
                 onRemove={handleRemoveAsset}

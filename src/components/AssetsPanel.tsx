@@ -5,13 +5,21 @@ import { estimateDecodedBytes, sampleBudgetBytes } from "../model/project";
 const MB = 1024 * 1024;
 const formatMB = (bytes: number) => `${(bytes / MB).toFixed(1)}`;
 
+/** Result of the most recent import batch (one file counts as a batch of one), for the
+ * import-status line — see ECS-130. Replaced wholesale by the next import; never accumulates. */
+export interface ImportBatchResult {
+  total: number;
+  failed: { name: string; message: string }[];
+}
+
 interface Props {
   assets: Asset[];
   /** Whichever track/master is currently selected elsewhere in the UI (see App.tsx's
    * selectedTarget) — "Assign" targets this track, and is disabled when it's "master" (master
    * has no sample slot to assign into, same rationale as MasterRow having no Load button). */
   selectedTarget: FxTarget;
-  onImport: (file: File) => void;
+  onImport: (files: File[]) => void;
+  importStatus: ImportBatchResult | null;
   onAssign: (trackId: TrackId, assetId: AssetId) => void;
   onRename: (assetId: AssetId, name: string) => void;
   onRemove: (assetId: AssetId) => void;
@@ -30,6 +38,7 @@ export function AssetsPanel({
   assets,
   selectedTarget,
   onImport,
+  importStatus,
   onAssign,
   onRename,
   onRemove,
@@ -45,6 +54,18 @@ export function AssetsPanel({
   const coarsePointer = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
   const budgetBytes = sampleBudgetBytes(coarsePointer);
   const overBudget = totalBytes > budgetBytes;
+  // Only worth a status line when there's something to say: a failure, or more than one file
+  // (a lone successful import is already visible as a new chip, so no extra line for it).
+  const succeeded = importStatus ? importStatus.total - importStatus.failed.length : 0;
+  const showImportStatus = importStatus !== null && (importStatus.failed.length > 0 || importStatus.total > 1);
+  // The visible label is always a fixed shape (numbers only) — like `.save-status`'s "Save
+  // failed", never raw filenames — since text-transform: uppercase would mangle arbitrary
+  // content. Per-file detail goes in the title tooltip instead (see below).
+  const importStatusText = importStatus
+    ? importStatus.failed.length === 0
+      ? `Imported ${importStatus.total}`
+      : `Imported ${succeeded}/${importStatus.total} — ${importStatus.failed.length} failed`
+    : null;
 
   return (
     <div className="assets-panel">
@@ -63,14 +84,20 @@ export function AssetsPanel({
           ref={fileInputRef}
           type="file"
           accept="audio/*"
+          multiple
           className="hidden-input"
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onImport(file);
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 0) onImport(files);
             e.target.value = "";
           }}
         />
       </div>
+      {showImportStatus && (
+        <div className={`import-status ${importStatus!.failed.length > 0 ? "error" : ""}`} title={importStatus!.failed.map((f) => `${f.name}: ${f.message}`).join("\n") || undefined}>
+          {importStatusText}
+        </div>
+      )}
       <div className="asset-chips">
         {assets.length === 0 && <span className="chain-empty">empty — import or resample something</span>}
         {assets.map((asset) => {

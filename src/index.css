@@ -448,6 +448,19 @@ select {
   flex-shrink: 0;
 }
 
+.import-status {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin: 4px 0;
+}
+
+.import-status.error {
+  color: var(--danger);
+}
+
 .asset-chips {
   display: flex;
   flex-direction: column;
