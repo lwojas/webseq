@@ -237,6 +237,10 @@ export function App() {
       }),
     [selectedPatternId, gridResolution],
   );
+  const handleRemoveNote = useCallback(
+    (noteId: NoteId) => dispatch({ type: "REMOVE_NOTE", patternId: selectedPatternId, noteId }),
+    [selectedPatternId],
+  );
 
   // Decodes a local file via the runtime (unchanged mechanism — see the project brief's "the
   // existing ability to load and play local audio must continue working") and adds it to the
@@ -668,6 +672,7 @@ export function App() {
             onAddNote={handleAddNote}
             onResizeNote={handleResizeNote}
             onMoveNote={handleMoveNote}
+            onRemoveNote={handleRemoveNote}
             onLoadSample={handleImportAndAssignToTrack}
             bank={activeBank}
             bankSummaries={bankSummaries}

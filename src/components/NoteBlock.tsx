@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { Note } from "../model/types";
 import { MIN_NOTE_DURATION } from "../model/notes";
-import { RESIZE_HANDLE_WIDTH_PX } from "./timelineConstants";
+import { RESIZE_HANDLE_WIDTH_PX, TAP_MOVE_THRESHOLD_PX } from "./timelineConstants";
 
 interface Props {
   note: Note;
@@ -14,6 +14,9 @@ interface Props {
    * the toolbar grid resolution when this is true). */
   onResize: (duration: number, freePlacement: boolean) => void;
   onMove: (start: number, freePlacement: boolean) => void;
+  /** A completed touch tap (movement under TAP_MOVE_THRESHOLD_PX) on the note body removes it
+   * instead of moving it — see beginMove and ECS-129. Never triggered for mouse/pen. */
+  onRemove: () => void;
 }
 
 /** A single note. Position/size are expressed as CSS percentages of the track lane's
@@ -31,7 +34,7 @@ interface Props {
  * those two elements so scrolling elsewhere in the timeline is untouched. A pointercancel
  * (the browser reclaiming the gesture for its own purposes) drops the in-progress edit
  * instead of committing it, since the user didn't deliberately finish the gesture. */
-export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMove }: Props) {
+export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMove, onRemove }: Props) {
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   const left = (note.start / totalBeats) * 100;
@@ -47,10 +50,13 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
     const laneWidth = lane.getBoundingClientRect().width;
     const startX = e.clientX;
     const pointerId = e.pointerId;
+    const pointerType = e.pointerType;
+    let maxMovePx = 0;
     el.setPointerCapture(pointerId);
 
     const onPointerMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
+      maxMovePx = Math.max(maxMovePx, Math.abs(ev.clientX - startX));
       const deltaBeats = ((ev.clientX - startX) / laneWidth) * totalBeats;
       el.style.transform = `translateX(${(deltaBeats / totalBeats) * 100}%)`;
     };
@@ -63,6 +69,14 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
     };
     const onPointerUp = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
+      // A completed tap (negligible movement) on touch removes the note instead of moving it —
+      // see timelineConstants.ts's TAP_MOVE_THRESHOLD_PX doc comment and ECS-129. Mouse/pen keep
+      // their existing no-op-move-on-zero-movement behavior.
+      if (pointerType === "touch" && maxMovePx < TAP_MOVE_THRESHOLD_PX) {
+        cleanup();
+        onRemove();
+        return;
+      }
       const deltaBeats = ((ev.clientX - startX) / laneWidth) * totalBeats;
       cleanup();
       onMove(note.start + deltaBeats, ev.altKey);

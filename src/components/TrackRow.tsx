@@ -26,6 +26,7 @@ interface Props {
   onAddNote: (trackId: TrackId, start: number) => void;
   onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
+  onRemoveNote: (noteId: NoteId) => void;
   onLoadSample: (trackId: TrackId, file: File) => void;
   /** This track's manual loop is sounding (see audio/playback.ts). A primitive, so the memo still holds. */
   looping: boolean;
@@ -50,6 +51,7 @@ export const TrackRow = memo(function TrackRow({
   onAddNote,
   onResizeNote,
   onMoveNote,
+  onRemoveNote,
   onLoadSample,
   looping,
   triggerDisabled,
@@ -133,6 +135,7 @@ export const TrackRow = memo(function TrackRow({
             onSelect={() => onSelectNote(note.id)}
             onResize={(duration, freePlacement) => onResizeNote(note.id, duration, freePlacement)}
             onMove={(start, freePlacement) => onMoveNote(note.id, start, freePlacement)}
+            onRemove={() => onRemoveNote(note.id)}
           />
         ))}
       </div>

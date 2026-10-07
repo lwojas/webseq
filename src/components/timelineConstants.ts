@@ -35,6 +35,12 @@ export const DEFAULT_ZOOM_INDEX = ZOOM_LEVELS_PX_PER_BEAT.indexOf(28);
 export const RESIZE_HANDLE_WIDTH_PX = 8;
 export const RESIZE_HANDLE_WIDTH_PX_COARSE = 22;
 
+/** Touch tap-to-remove (ECS-129): on `pointerup`, a touch gesture whose total movement since
+ * `pointerdown` stayed under this threshold is treated as a tap (removing the note) rather
+ * than a drag (moving it). Mouse and pen are unaffected — they keep the existing no-op-move-
+ * on-zero-movement behavior; see NoteBlock.tsx's `beginMove`. */
+export const TAP_MOVE_THRESHOLD_PX = 10;
+
 export const MIN_ZOOM_INDEX_FINE = ZOOM_LEVELS_PX_PER_BEAT.findIndex((px) => px >= RESIZE_HANDLE_WIDTH_PX);
 export const MIN_ZOOM_INDEX_COARSE = ZOOM_LEVELS_PX_PER_BEAT.findIndex((px) => px >= RESIZE_HANDLE_WIDTH_PX_COARSE);
 export const MAX_ZOOM_INDEX_FINE = ZOOM_LEVELS_PX_PER_BEAT.length - 1;
