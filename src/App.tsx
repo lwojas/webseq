@@ -193,7 +193,7 @@ export function App() {
     setStatus(transportRef.current?.getStatus() ?? "stopped");
   }, []);
 
-  const midi = useMidiControls(project, dispatch, { play: () => void handlePlay(), stop: handleStop }, selectedPatternId);
+  const midi = useMidiControls(project, dispatch, { play: () => void handlePlay(), stop: handleStop }, selectedPatternId, activeBank);
 
   const handleBpmChange = useCallback((bpm: number) => {
     dispatch({ type: "SET_BPM", bpm });

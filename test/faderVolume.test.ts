@@ -9,7 +9,7 @@ import { createControlSurface, generateControlMappings } from "midi-core/surface
 import { createInitialProject } from "../src/model/project";
 import { projectReducer, type Action } from "../src/model/reducer";
 import type { Project } from "../src/model/types";
-import { createSequencerRegistry } from "../src/midi/sequencerContract";
+import { createSequencerRegistry, faderPagesPerBank, faderTrackIndex } from "../src/midi/sequencerContract";
 
 /** The Launchpad's fader count, from midi-core: how many tracks one fader page shows (ECS-102). */
 const PAGE_SIZE = sequencerFaderCount(findDevice({ name: "Launchpad Mini MK3 MIDI" })!.profile);
@@ -165,5 +165,51 @@ describe("the volume faders through midi-core's surface (ECS-96)", () => {
     expect(project.tracks[0]!.volume).toBeCloseTo(1.5, 5);
 
     await surface.detach();
+  });
+});
+
+describe("fader paging stays within the selected bank (ECS-113)", () => {
+  it("maps fader n to the selected bank's tracks, not the project's first tracks", () => {
+    let project: Project = createInitialProject("Test", 64);
+    let bank = 1;
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch: (action: Action) => {
+        project = projectReducer(project, action);
+      },
+      getBank: () => bank,
+      faderPageSize: 8,
+    });
+    project = projectReducer(project, { type: "SET_TRACK_VOLUME", trackId: "track-17", volume: 0.5 });
+    expect(registry.getControl("mixer.volume.0")!.getValue()).toBeCloseTo(0.5, 5);
+
+    bank = 0;
+    registry.syncFromProject(project);
+    expect(registry.getControl("mixer.volume.0")!.getValue()).toBeCloseTo(1, 5);
+  });
+});
+
+describe("faderTrackIndex and faderPagesPerBank (ECS-113)", () => {
+  it("counts pages per bank from the fader count", () => {
+    expect(faderPagesPerBank(16)).toBe(1);
+    expect(faderPagesPerBank(8)).toBe(2);
+    expect(faderPagesPerBank(4)).toBe(4);
+    expect(faderPagesPerBank(5)).toBe(4);
+    expect(faderPagesPerBank(0)).toBe(1);
+  });
+
+  it("offsets by the bank, then by the page, within that bank", () => {
+    expect(faderTrackIndex(0, 0, 0, 8)).toBe(0);
+    expect(faderTrackIndex(1, 0, 0, 8)).toBe(16);
+    expect(faderTrackIndex(0, 1, 3, 8)).toBe(11);
+    expect(faderTrackIndex(3, 1, 7, 8)).toBe(63);
+  });
+
+  it("gives no track past the bank's last track, and none for a device with no faders", () => {
+    expect(faderTrackIndex(0, 2, 0, 8)).toBeUndefined();
+    expect(faderTrackIndex(0, 3, 4, 5)).toBeUndefined();
+    expect(faderTrackIndex(0, 3, 0, 5)).toBe(15);
+    expect(faderTrackIndex(0, 0, 0, 0)).toBeUndefined();
   });
 });

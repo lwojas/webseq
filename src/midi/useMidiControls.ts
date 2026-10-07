@@ -14,7 +14,7 @@ import { findDawPorts, requiresOutput, resolveDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
-import { createSequencerRegistry, type SequencerRegistry } from "./sequencerContract";
+import { createSequencerRegistry, faderPagesPerBank, type SequencerRegistry } from "./sequencerContract";
 
 export interface TransportCallbacks {
   readonly play: () => void;
@@ -25,7 +25,13 @@ export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "conn
 
 const MAX_LOG_LINES = 20;
 
-export function useMidiControls(project: Project, dispatch: (action: Action) => void, transport: TransportCallbacks, patternId: PatternId) {
+export function useMidiControls(
+  project: Project,
+  dispatch: (action: Action) => void,
+  transport: TransportCallbacks,
+  patternId: PatternId,
+  activeBank: number,
+) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [ports, setPorts] = useState<readonly MidiPortInfo[]>([]);
   const [status, setStatus] = useState<MidiConnectionStatus>("idle");
@@ -51,9 +57,11 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
   const patternIdRef = useRef(patternId);
   patternIdRef.current = patternId;
   const transportRef = useRef(transport);
-  // The fader page (ECS-96): which group of tracks the mixer faders show. Owned here, not by the device.
+  // The fader page (ECS-96): which group of the selected bank's tracks the faders show. Owned here, not by the device.
   const faderPageRef = useRef(0);
   transportRef.current = transport;
+  const bankRef = useRef(activeBank);
+  bankRef.current = activeBank;
 
   const appendLog = useCallback((line: string) => {
     setLog((lines) => [...lines.slice(-(MAX_LOG_LINES - 1)), line]);
@@ -142,6 +150,7 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
         getPatternId: () => patternIdRef.current,
         dispatch,
         getFaderPage: () => faderPageRef.current,
+        getBank: () => bankRef.current,
         faderPageSize,
       });
       const actions = {
@@ -150,10 +159,9 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
       };
 
       faderPageRef.current = 0;
-      // A fader page turn moves the faders to the next or previous group of tracks, clamped to the project's tracks.
+      // A fader page turn moves the faders to the next or previous group of the selected bank's tracks, clamped to that bank (ECS-113).
       const turnFaderPage = (delta: number) => {
-        const tracks = projectRef.current.tracks.length;
-        const lastPage = faderPageSize === 0 ? 0 : Math.max(0, Math.ceil(tracks / faderPageSize) - 1);
+        const lastPage = faderPagesPerBank(faderPageSize) - 1;
         faderPageRef.current = Math.min(lastPage, Math.max(0, faderPageRef.current + delta));
         connectionRef.current?.registry.syncFromProject(projectRef.current);
         connectionRef.current?.registry.repaintFaders();
@@ -240,6 +248,14 @@ export function useMidiControls(project: Project, dispatch: (action: Action) => 
     if (!connection) return;
     connection.registry.syncFromProject(project);
   });
+
+  // Switching bank returns the faders to that bank's first page (ECS-113), so they start on the
+  // tracks the screen shows at the bank's start rather than a page further in.
+  useEffect(() => {
+    faderPageRef.current = 0;
+    connectionRef.current?.registry.syncFromProject(projectRef.current);
+    connectionRef.current?.registry.repaintFaders();
+  }, [activeBank]);
 
   useEffect(() => () => void disconnect(), [disconnect]);
 

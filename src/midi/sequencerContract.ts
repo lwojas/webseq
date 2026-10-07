@@ -13,15 +13,17 @@ import type { BooleanControlDef, Control, ControlDef, ControlRegistry, NumericCo
 import { totalBeats, trackById } from "../model/types";
 import type { Pattern, PatternId, Project, Track, TrackId } from "../model/types";
 import type { Action } from "../model/reducer";
-import { MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
+import { BANK_SIZE, MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
 import { createTrackMutedControl, type ProjectControl } from "./controlAdapter";
 
 export interface SequencerRegistryDeps {
   readonly getProject: () => Project;
   readonly getPatternId: () => PatternId;
   readonly dispatch: (action: Action) => void;
-  /** The fader page: which group of tracks the mixer faders show, 0-based (ECS-96). Omitted means page 0. */
+  /** The fader page: which group of the bank's tracks the faders show, 0-based (ECS-96). Omitted means page 0. */
   readonly getFaderPage?: () => number;
+  /** The selected bank, 0-based. The faders drive that bank's 16 tracks only (ECS-113). Omitted means bank 0. */
+  readonly getBank?: () => number;
   /** How many tracks one fader page shows: the device's fader count, from midi-core's sequencerFaderCount (ECS-102). */
   readonly faderPageSize: number;
 }
@@ -133,9 +135,27 @@ function createTrackCountControl(deps: SequencerRegistryDeps): ProjectControl<Nu
   };
 }
 
+/** Pages one bank needs for a device with `faderPageSize` faders: 16 tracks on 8 faders is 2 pages, on 4 faders 4 pages. */
+export function faderPagesPerBank(faderPageSize: number): number {
+  return faderPageSize <= 0 ? 1 : Math.ceil(BANK_SIZE / faderPageSize);
+}
+
+/**
+ * The project track index that fader `index` drives: `bank * BANK_SIZE + page * faderPageSize + index` (ECS-113). Faders only
+ * reach within the selected bank, so a fader past the bank's last track (possible when the fader count doesn't divide 16) has
+ * no track and returns undefined.
+ */
+export function faderTrackIndex(bank: number, page: number, index: number, faderPageSize: number): number | undefined {
+  if (faderPageSize <= 0) return undefined;
+  const withinBank = page * faderPageSize + index;
+  if (withinBank >= BANK_SIZE) return undefined;
+  return bank * BANK_SIZE + withinBank;
+}
+
 /**
  * The volume fader at `index` (below the device's fader count) on the current fader page (ECS-96): fader `index` shows and
- * sets the volume of track `page * faderPageSize + index` (ECS-102). A fader with no track on the page reads 0, which is the device's off colour, and ignores writes.
+ * sets the volume of the track `faderTrackIndex` gives for the selected bank and page (ECS-102, ECS-113). A fader with no track
+ * reads 0, which is the device's off colour, and ignores writes.
  * The track's volume is the application's own linear gain (0 to 1.5), so midi-core scales the CC range onto it.
  */
 type FaderVolumeControl = ProjectControl<NumericControlDef> & { repaint(): void };
@@ -149,7 +169,10 @@ function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): F
     max: MAX_TRACK_VOLUME,
     default: DEFAULT_TRACK_VOLUME,
   };
-  const track = (project: Project) => project.tracks[(deps.getFaderPage?.() ?? 0) * deps.faderPageSize + index];
+  const track = (project: Project) => {
+    const trackIndex = faderTrackIndex(deps.getBank?.() ?? 0, deps.getFaderPage?.() ?? 0, index, deps.faderPageSize);
+    return trackIndex === undefined ? undefined : project.tracks[trackIndex];
+  };
   const read = (project: Project) => track(project)?.volume ?? 0;
   const listeners = new Set<(value: number, previous: number) => void>();
   let last = read(deps.getProject());
