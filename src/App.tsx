@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { AudioRuntime } from "webdsp";
 import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { totalBeats, trackById } from "./model/types";
-import { createInitialProject, summarizeBanks, withMissingTracks } from "./model/project";
+import { BANK_SIZE, createInitialProject, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
@@ -718,7 +718,8 @@ export function App() {
             )}
             {bottomPanelView === "mixer" && (
               <MixerPanel
-                tracks={project.tracks}
+                tracks={tracksInBank(project, activeBank)}
+                trackNumberOffset={activeBank * BANK_SIZE}
                 onSetVolume={handleSetTrackVolume}
                 onSetMuted={handleSetTrackMuted}
                 onSetSoloed={handleSetTrackSoloed}
