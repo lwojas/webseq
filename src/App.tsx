@@ -390,11 +390,33 @@ export function App() {
         if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) return;
         dispatch({ type: "REMOVE_NOTE", patternId: selectedPatternId, noteId: selectedNoteId });
         setSelectedNoteId(null);
+        return;
+      }
+      // ECS-128: Space toggles the existing transport, but only once the gesture veil is
+      // already dismissed (runtime truthy) — before that, Start must be an explicit click, not
+      // a key first pressed before the engine exists. `e.repeat` guards against holding the key
+      // down re-firing play/stop on every repeat event. Checks transportRef directly (as
+      // useMidiControls' isPlaying already does for ECS-131) rather than the `status` state, so
+      // this closure can't act on a stale play/stop value.
+      if (e.code === "Space" && runtime && !e.repeat) {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target.tagName))
+        ) {
+          return;
+        }
+        e.preventDefault();
+        if (transportRef.current?.getStatus() === "playing") {
+          handleStop();
+        } else {
+          void handlePlay();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNoteId, selectedPatternId]);
+  }, [selectedNoteId, selectedPatternId, runtime, handlePlay, handleStop]);
 
   const getPositionText = useCallback(() => {
     const info = transportRef.current?.getPlayheadInfo();
