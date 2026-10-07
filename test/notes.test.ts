@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addNote,
+  clearTrackNotes,
   fitsWithoutOverlap,
   FREE_PLACEMENT_RESOLUTION,
   moveNote,
@@ -57,6 +58,24 @@ describe("note operations over a single pattern", () => {
     expect(notesForTrack(pattern, "track-1")).toHaveLength(1);
     expect(notesForTrack(pattern, "track-2")).toHaveLength(1);
     expect(notesForTrack(pattern, "track-1")[0].id).not.toBe(notesForTrack(pattern, "track-2")[0].id);
+  });
+
+  // ECS-107: whole-track clear, distinct from single-note removal above.
+  it("clears every note on the target track, preserving other tracks", () => {
+    let pattern = emptyPattern();
+    pattern = addNote(pattern, BEATS_PER_BAR, "track-1", 0);
+    pattern = addNote(pattern, BEATS_PER_BAR, "track-1", 4);
+    pattern = addNote(pattern, BEATS_PER_BAR, "track-2", 0);
+    pattern = clearTrackNotes(pattern, "track-1");
+    expect(notesForTrack(pattern, "track-1")).toHaveLength(0);
+    expect(notesForTrack(pattern, "track-2")).toHaveLength(1);
+  });
+
+  it("is a no-op, identity-preserving, when the track already has no notes", () => {
+    let pattern = emptyPattern();
+    pattern = addNote(pattern, BEATS_PER_BAR, "track-2", 0);
+    const cleared = clearTrackNotes(pattern, "track-1");
+    expect(cleared).toBe(pattern);
   });
 
   it("resizes a note's duration", () => {

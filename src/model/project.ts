@@ -282,6 +282,10 @@ export function removeNote(project: Project, patternId: PatternId, noteId: NoteI
   return updatePattern(project, patternId, (p) => notes.removeNote(p, noteId));
 }
 
+export function clearTrackNotes(project: Project, patternId: PatternId, trackId: TrackId): Project {
+  return updatePattern(project, patternId, (p) => notes.clearTrackNotes(p, trackId));
+}
+
 export function resizeNote(
   project: Project,
   patternId: PatternId,

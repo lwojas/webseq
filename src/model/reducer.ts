@@ -19,6 +19,7 @@ export type Action =
   | { type: "SET_TRACK_VOICE_MODE"; trackId: TrackId; voiceMode: VoiceMode }
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
+  | { type: "CLEAR_TRACK_NOTES"; patternId: PatternId; trackId: TrackId }
   | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
   | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
   | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
@@ -68,6 +69,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.addNote(state, action.patternId, action.trackId, action.start);
     case "REMOVE_NOTE":
       return project.removeNote(state, action.patternId, action.noteId);
+    case "CLEAR_TRACK_NOTES":
+      return project.clearTrackNotes(state, action.patternId, action.trackId);
     case "RESIZE_NOTE":
       return project.resizeNote(state, action.patternId, action.noteId, action.duration, action.resolution);
     case "MOVE_NOTE":

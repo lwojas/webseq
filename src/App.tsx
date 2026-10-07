@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
 import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
-import { totalBeats, trackById } from "./model/types";
+import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
 import { projectReducer } from "./model/reducer";
@@ -255,6 +255,14 @@ export function App() {
     (noteId: NoteId) => dispatch({ type: "REMOVE_NOTE", patternId: selectedPatternId, noteId }),
     [selectedPatternId],
   );
+  // Deliberate whole-track clear (ECS-107). Only ever called with an explicit trackId — the
+  // keydown handler below gates it on selectedTarget already being a track (not "master"), and
+  // TrackRow's header button only renders for the selected track — so a highlighted track alone
+  // never clears by itself without a second, explicit action.
+  const handleClearTrack = useCallback(
+    (trackId: TrackId) => dispatch({ type: "CLEAR_TRACK_NOTES", patternId: selectedPatternId, trackId }),
+    [selectedPatternId],
+  );
 
   // Decodes a local file via the runtime (unchanged mechanism — see the project brief's "the
   // existing ability to load and play local audio must continue working") and adds it to the
@@ -385,11 +393,24 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.key === "Backspace" || e.key === "Delete") && selectedNoteId) {
+      if (e.key === "Backspace" || e.key === "Delete") {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) return;
-        dispatch({ type: "REMOVE_NOTE", patternId: selectedPatternId, noteId: selectedNoteId });
-        setSelectedNoteId(null);
+        // ECS-107: an individually selected step always takes precedence over whole-track
+        // clearing — merely having a track highlighted (selectedTarget, used for the FX panel)
+        // must never escalate a step deletion into a track clear.
+        if (selectedNoteId) {
+          dispatch({ type: "REMOVE_NOTE", patternId: selectedPatternId, noteId: selectedNoteId });
+          setSelectedNoteId(null);
+          return;
+        }
+        // No step selected: an explicitly selected track (not "master", which has no sequence)
+        // clears that track's notes in the current pattern only. Requires two deliberate
+        // actions — select the track, then press Delete/Backspace — the same explicitness
+        // TrackRow's equivalent header button requires for touch (see ECS-107's investigation).
+        if (selectedTarget !== "master") {
+          dispatch({ type: "CLEAR_TRACK_NOTES", patternId: selectedPatternId, trackId: selectedTarget });
+        }
         return;
       }
       // ECS-128: Space toggles the existing transport, but only once the gesture veil is
@@ -416,7 +437,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNoteId, selectedPatternId, runtime, handlePlay, handleStop]);
+  }, [selectedNoteId, selectedPatternId, selectedTarget, runtime, handlePlay, handleStop]);
 
   const getPositionText = useCallback(() => {
     const info = transportRef.current?.getPlayheadInfo();
@@ -582,6 +603,10 @@ export function App() {
     [project, selectedPattern, manual.loopingTrackIds],
   );
   const fxOwner = selectedTarget === "master" ? project.master : trackById(project, selectedTarget);
+  // ECS-107: whether FxPanel's "Clear sequence" control has anything to clear — master has no
+  // sequence, so this is always false for it. Checked here (not inside FxPanel) so the panel
+  // stays a pure render of what it's given, consistent with its existing props.
+  const selectedTrackHasNotes = selectedTarget !== "master" && notesForTrack(selectedPattern, selectedTarget).length > 0;
   const playheadInfo = transportRef.current?.getPlayheadInfo();
 
   return (
@@ -776,6 +801,8 @@ export function App() {
                 onClearAutomationLane={handleClearAutomationLane}
                 onSetPlaybackMode={handleSetTrackPlaybackMode}
                 onSetVoiceMode={handleSetTrackVoiceMode}
+                hasNotes={selectedTrackHasNotes}
+                onClearTrack={handleClearTrack}
               />
             )}
             {bottomPanelView === "mixer" && (

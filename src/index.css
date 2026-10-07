@@ -1081,6 +1081,23 @@ select {
   color: #eafffa;
 }
 
+/* Whole-track clear (ECS-107) — same shape as .track-mode-toggle button, but --danger since
+   it's a destructive, no-undo action; sits in its own .track-mode-group so it wraps onto its
+   own line with the rest of .track-mode-row on narrow viewports. */
+.track-clear-btn {
+  background: var(--panel);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.track-clear-btn:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+
 .fx-chain-strip {
   display: flex;
   gap: 6px;
@@ -1595,7 +1612,8 @@ select {
     padding: 9px 10px;
   }
 
-  .track-mode-toggle button {
+  .track-mode-toggle button,
+  .track-clear-btn {
     padding: 9px 12px;
   }
 

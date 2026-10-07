@@ -28,6 +28,10 @@ interface Props {
   onClearAutomationLane: (fxId: FxId, parameter: string) => void;
   onSetPlaybackMode: (trackId: TrackId, mode: PlaybackMode) => void;
   onSetVoiceMode: (trackId: TrackId, mode: VoiceMode) => void;
+  /** Whether the selected track has any notes in the currently shown pattern — hides the
+   * "Clear sequence" control below when there's nothing to clear (ECS-107). */
+  hasNotes: boolean;
+  onClearTrack: (trackId: TrackId) => void;
 }
 
 /** The bottom module panel, contextual to whatever is currently selected in the timeline — a
@@ -55,6 +59,8 @@ export function FxPanel({
   onClearAutomationLane,
   onSetPlaybackMode,
   onSetVoiceMode,
+  hasNotes,
+  onClearTrack,
 }: Props) {
   const selectedFx = fx.find((f) => f.id === selectedFxId) ?? null;
   const title = target === "master" ? "MASTER" : `${track?.name ?? target}`;
@@ -101,6 +107,22 @@ export function FxPanel({
               ))}
             </div>
           </div>
+          {hasNotes && (
+            // Deliberate whole-track clear (ECS-107): this, and the Delete/Backspace shortcut
+            // with the track selected (App.tsx's keydown handler), are the only two ways to
+            // trigger it — no persistent control, and this row already wraps on narrow
+            // viewports (see .track-mode-row), so it's also the mobile-safe surface, unlike
+            // TrackRow's header column which has no room to spare.
+            <div className="track-mode-group">
+              <button
+                className="track-clear-btn"
+                onClick={() => onClearTrack(track.id)}
+                title={`Remove every note from ${track.name}'s sequence in this pattern — no undo`}
+              >
+                Clear sequence
+              </button>
+            </div>
+          )}
         </div>
       )}
       <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} />

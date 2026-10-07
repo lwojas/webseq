@@ -98,6 +98,20 @@ export function removeNote(pattern: Pattern, noteId: NoteId): Pattern {
   return { ...pattern, notes };
 }
 
+/** Deliberate whole-track clear (ECS-107): removes every note belonging to `trackId` in this
+ * one Pattern only — other tracks, other patterns, assets and track configuration are untouched
+ * by design (see App.tsx's keydown handler and TrackRow's header button, the only two call
+ * sites, which both require an explicit track selection first). Identity-preserving when the
+ * track already has no notes here, same as removeNote above. */
+export function clearTrackNotes(pattern: Pattern, trackId: TrackId): Pattern {
+  if (notesForTrack(pattern, trackId).length === 0) return pattern;
+  const notes: Pattern["notes"] = {};
+  for (const [id, note] of Object.entries(pattern.notes)) {
+    if (note.trackId !== trackId) notes[id] = note;
+  }
+  return { ...pattern, notes };
+}
+
 /** Resizes a note's duration (dragging its right edge), snapped to `resolution` (a toolbar
  * grid resolution, or FREE_PLACEMENT_RESOLUTION while Alt/Option overrides snapping — see
  * NoteBlock/App.tsx), clamped to at least MIN_NOTE_DURATION beat and to whatever room the

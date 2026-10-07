@@ -20,7 +20,7 @@ import {
   setTrackVoiceMode,
   setTrackVolume,
 } from "../src/model/project";
-import { addNote, moveNote, removeNote, remapAssetIds, resizeNote } from "../src/model/project";
+import { addNote, clearTrackNotes, moveNote, removeNote, remapAssetIds, resizeNote } from "../src/model/project";
 import type { Asset } from "../src/model/types";
 import { effectivePlaybackMode, effectiveTrackGain, effectiveVoiceMode, notesForTrack, patternById, resolveChainStep, totalBeats } from "../src/model/types";
 
@@ -160,6 +160,34 @@ describe("project model", () => {
     const project = createInitialProject();
     const result = removePattern(project, project.patterns[0].id);
     expect(result.patterns).toHaveLength(1);
+  });
+
+  // ECS-107: whole-track clear is bounded to one track, in one pattern — everything else
+  // (other patterns' same-track notes, other tracks, assets, track config) is untouched.
+  it("clearTrackNotes only clears the target track within the target pattern", () => {
+    let project = createInitialProject();
+    const patternA = project.patterns[0].id;
+    project = addPattern(project, "Pattern B", 1);
+    const patternB = project.patterns[1].id;
+    project = addNote(project, patternA, "track-1", 0);
+    project = addNote(project, patternA, "track-2", 0);
+    project = addNote(project, patternB, "track-1", 0);
+    project = addAsset(project, makeAsset({ id: 1, name: "Kick" }));
+    project = assignAsset(project, "track-1", 1);
+
+    project = clearTrackNotes(project, patternA, "track-1");
+
+    expect(notesForTrack(patternById(project, patternA)!, "track-1")).toHaveLength(0);
+    expect(notesForTrack(patternById(project, patternA)!, "track-2")).toHaveLength(1); // other track, same pattern
+    expect(notesForTrack(patternById(project, patternB)!, "track-1")).toHaveLength(1); // same track, other pattern
+    expect(project.tracks.find((t) => t.id === "track-1")?.assetId).toBe(1); // track config untouched
+  });
+
+  it("clearTrackNotes is a no-op when the track already has no notes in that pattern", () => {
+    const project = createInitialProject();
+    const patternId = project.patterns[0].id;
+    const result = clearTrackNotes(project, patternId, "track-1");
+    expect(patternById(result, patternId)).toBe(patternById(project, patternId));
   });
 
   it("removing a pattern also removes it from the chain", () => {
