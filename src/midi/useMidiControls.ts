@@ -31,6 +31,7 @@ export function useMidiControls(
   transport: TransportCallbacks,
   patternId: PatternId,
   activeBank: number,
+  selectBank: (bank: number) => void,
 ) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [ports, setPorts] = useState<readonly MidiPortInfo[]>([]);
@@ -62,6 +63,8 @@ export function useMidiControls(
   transportRef.current = transport;
   const bankRef = useRef(activeBank);
   bankRef.current = activeBank;
+  const selectBankRef = useRef(selectBank);
+  selectBankRef.current = selectBank;
 
   const appendLog = useCallback((line: string) => {
     setLog((lines) => [...lines.slice(-(MAX_LOG_LINES - 1)), line]);
@@ -151,6 +154,7 @@ export function useMidiControls(
         dispatch,
         getFaderPage: () => faderPageRef.current,
         getBank: () => bankRef.current,
+        setBank: (bank) => selectBankRef.current(bank),
         faderPageSize,
       });
       const actions = {

@@ -13,7 +13,7 @@ import type { BooleanControlDef, Control, ControlDef, ControlRegistry, NumericCo
 import { totalBeats, trackById } from "../model/types";
 import type { Pattern, PatternId, Project, Track, TrackId } from "../model/types";
 import type { Action } from "../model/reducer";
-import { BANK_SIZE, MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
+import { BANK_COUNT, BANK_SIZE, MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
 import { createTrackMutedControl, type ProjectControl } from "./controlAdapter";
 
 export interface SequencerRegistryDeps {
@@ -24,6 +24,8 @@ export interface SequencerRegistryDeps {
   readonly getFaderPage?: () => number;
   /** The selected bank, 0-based. The faders drive that bank's 16 tracks only (ECS-113). Omitted means bank 0. */
   readonly getBank?: () => number;
+  /** Selects a bank, 0-based (ECS-113). The application owns the bank; the device only asks for one. Omitted means no bank control can change it. */
+  readonly setBank?: (bank: number) => void;
   /** How many tracks one fader page shows: the device's fader count, from midi-core's sequencerFaderCount (ECS-102). */
   readonly faderPageSize: number;
 }
@@ -39,6 +41,7 @@ const MUTE_ID = /^mute\.(\d+)$/;
 const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
+const BANK_ID = "bank.active";
 
 function selectedPattern(project: Project, patternId: PatternId): Pattern {
   return project.patterns.find((pattern) => pattern.id === patternId) ?? project.patterns[0]!;
@@ -127,6 +130,34 @@ function createTrackCountControl(deps: SequencerRegistryDeps): ProjectControl<Nu
     },
     syncFromProject(project) {
       const next = count(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+// The active bank (ECS-113). Its value is the selected bank index, so a device can light the button of the bank on screen. Setting it
+// selects that bank; a value outside A-D is clamped to the nearest bank. The bank is view state: setting it changes no track.
+function createBankControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: BANK_ID, label: "Active bank", kind: "number", min: 0, max: BANK_COUNT - 1, default: 0 };
+  const bank = () => deps.getBank?.() ?? 0;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = bank();
+
+  return {
+    def,
+    getValue: bank,
+    setValue(value) {
+      deps.setBank?.(Math.min(BANK_COUNT - 1, Math.max(0, Math.round(value))));
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject() {
+      const next = bank();
       if (next === last) return;
       const previous = last;
       last = next;
@@ -231,6 +262,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createLengthControl(deps) as ProjectControl<ControlDef>;
     } else if (id === TRACKS_ID) {
       created = createTrackCountControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === BANK_ID) {
+      created = createBankControl(deps) as ProjectControl<ControlDef>;
     } else {
       const fader = FADER_VOLUME_ID.exec(id);
       // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.

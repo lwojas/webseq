@@ -113,3 +113,58 @@ describe("sequencer contract: the Launchpad configuration drives it", () => {
     await surface.detach();
   });
 });
+
+describe("sequencer contract: bank (ECS-113)", () => {
+  function bankHarness() {
+    let project: Project = createInitialProject("Test", 64);
+    let bank = 0;
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      getBank: () => bank,
+      setBank: (next) => {
+        bank = next;
+      },
+      faderPageSize: 8,
+    });
+    return { registry, dispatch, getProject: () => project, getBankValue: () => bank };
+  }
+
+  it("bank.active reports the selected bank, so a device can light its button", () => {
+    const { registry, getBankValue } = bankHarness();
+    expect(registry.getControl("bank.active")!.getValue()).toBe(getBankValue());
+    registry.getControl("bank.active")!.setValue(1);
+    expect(registry.getControl("bank.active")!.getValue()).toBe(1);
+  });
+
+  it("setting bank.active selects that bank, and clamps a value outside A-D", () => {
+    const { registry, getBankValue } = bankHarness();
+    const bank = registry.getControl("bank.active")!;
+
+    bank.setValue(2);
+    expect(getBankValue()).toBe(2);
+    expect(bank.getValue()).toBe(2);
+
+    bank.setValue(9);
+    expect(getBankValue()).toBe(3);
+    bank.setValue(-1);
+    expect(getBankValue()).toBe(0);
+  });
+
+  it("a bank switch changes no track's volume or mute", () => {
+    const { registry, dispatch, getProject, getBankValue } = bankHarness();
+    dispatch({ type: "SET_TRACK_VOLUME", trackId: "track-1", volume: 0.3 });
+    dispatch({ type: "SET_TRACK_VOLUME", trackId: "track-20", volume: 1.2 });
+    registry.getControl("mute.3")!.setValue(true);
+    const before = getProject().tracks.map(({ volume, muted }) => ({ volume, muted }));
+
+    registry.getControl("bank.active")!.setValue(3);
+    expect(getBankValue()).toBe(3);
+
+    expect(getProject().tracks.map(({ volume, muted }) => ({ volume, muted }))).toEqual(before);
+  });
+});
