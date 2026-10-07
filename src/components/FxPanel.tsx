@@ -40,6 +40,14 @@ interface Props {
   clipboardStatus: string | null;
   onCopyTrack: (trackId: TrackId) => void;
   onPasteTrack: () => void;
+  /** Whether the selected track has any reusable configuration worth copying (ECS-124) —
+   * hides "Copy config" when there's nothing to copy, same rationale as hasNotes/hasConfig. */
+  hasConfig: boolean;
+  /** Whether there's a copied track-config clipboard to paste (ECS-124) — a separate clipboard
+   * from canPaste/noteClipboard above, see App.tsx's trackConfigClipboard doc comment. */
+  canPasteConfig: boolean;
+  onCopyTrackConfig: (trackId: TrackId) => void;
+  onPasteTrackConfig: () => void;
 }
 
 /** The bottom module panel, contextual to whatever is currently selected in the timeline — a
@@ -73,6 +81,10 @@ export function FxPanel({
   clipboardStatus,
   onCopyTrack,
   onPasteTrack,
+  hasConfig,
+  canPasteConfig,
+  onCopyTrackConfig,
+  onPasteTrackConfig,
 }: Props) {
   const selectedFx = fx.find((f) => f.id === selectedFxId) ?? null;
   const title = target === "master" ? "MASTER" : `${track?.name ?? target}`;
@@ -152,6 +164,28 @@ export function FxPanel({
               title={`Remove every note from ${track.name}'s sequence in this pattern — no undo`}
             >
               Clear sequence
+            </button>
+          )}
+          {/* Reusable track-configuration copy/paste (ECS-124) — asset reference, FX chain,
+              automation, playback/voice mode. A separate clipboard from Copy/Paste sequence
+              above (see App.tsx's trackConfigClipboard doc comment); same per-button wrapping
+              approach. */}
+          {hasConfig && (
+            <button
+              className="track-copy-btn"
+              onClick={() => onCopyTrackConfig(track.id)}
+              title={`Copy ${track.name}'s asset/FX/automation/playback config to the clipboard`}
+            >
+              Copy config
+            </button>
+          )}
+          {canPasteConfig && (
+            <button
+              className="track-paste-btn"
+              onClick={onPasteTrackConfig}
+              title={`Paste the copied config onto ${track.name} — replaces its asset/FX/automation/playback config, no undo`}
+            >
+              Paste config
             </button>
           )}
           {clipboardStatus && <div className="clipboard-status">{clipboardStatus}</div>}

@@ -4,6 +4,7 @@ import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, Trac
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
+import { copyTrackConfig, hasTrackConfig, type CopiedTrackConfig } from "./model/trackConfig";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
@@ -115,6 +116,13 @@ export function App() {
   // plain data (CopiedNote has no id/trackId — see notes.ts's doc comment), cleared on
   // New/Load so a stale "copied from Track X" label can never outlive the project it names.
   const [noteClipboard, setNoteClipboard] = useState<{ sourceTrackId: TrackId; notes: CopiedNote[] } | null>(null);
+  // ECS-124: a separate clipboard slot, not a combined payload with noteClipboard above — a
+  // reusable-configuration copy and a sequence copy answer different questions ("what does
+  // this track sound like" vs. "what does it play"), and keeping them separate avoids having
+  // to decide what a single Cmd+C should mean. Deliberately button-only (no keyboard shortcut
+  // of its own): Cmd/Ctrl+C/V are already the note clipboard's, and reusing them for a second,
+  // different payload would make what gets copied ambiguous.
+  const [trackConfigClipboard, setTrackConfigClipboard] = useState<CopiedTrackConfig | null>(null);
   const [clipboardStatus, setClipboardStatus] = useState<string | null>(null);
 
   const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
@@ -313,6 +321,29 @@ export function App() {
         : `${label} · ${preview.pasted}/${preview.pasted + preview.skipped} notes — ${preview.skipped} skipped (no room)`,
     );
   }, [noteClipboard, selectedTarget, selectedPatternId, project]);
+
+  // ECS-124: reusable track-configuration copy/paste — asset reference, FX chain, automation,
+  // playback/voice mode. Button-only (see trackConfigClipboard's doc comment above for why
+  // there's no keyboard shortcut). Paste always replaces the destination's configuration
+  // atomically (see trackConfig.ts's pasteTrackConfig doc comment for why a merge isn't safe).
+  const handleCopyTrackConfig = useCallback(
+    (trackId: TrackId) => {
+      const track = trackById(project, trackId);
+      if (!track || !hasTrackConfig(track)) return;
+      setTrackConfigClipboard(copyTrackConfig(track));
+      setClipboardStatus(`${trackLabel(project.tracks, trackId)} · config copied`);
+    },
+    [project],
+  );
+  const handlePasteTrackConfig = useCallback(() => {
+    if (!trackConfigClipboard || selectedTarget === "master") return;
+    const assetStale =
+      trackConfigClipboard.assetId != null && !project.assets.some((a) => a.id === trackConfigClipboard.assetId);
+    dispatch({ type: "PASTE_TRACK_CONFIG", trackId: selectedTarget, config: trackConfigClipboard });
+    const label = trackLabel(project.tracks, selectedTarget);
+    setClipboardStatus(assetStale ? `${label} · config pasted — copied asset no longer exists` : `${label} · config pasted`);
+  }, [trackConfigClipboard, selectedTarget, project]);
+
   // Clears the transient clipboard feedback after a couple seconds — same pattern as
   // saveStatus's own timer above.
   useEffect(() => {
@@ -668,9 +699,11 @@ export function App() {
     dispatch({ type: "LOAD_PROJECT", project: remapped });
     setStatus("stopped");
     // Not a correctness fix (track ids are fixed/deterministic across every project, so the
-    // clipboard's positions would still make sense) — just avoids a copy from a previous
-    // project session confusingly outliving it (ECS-112).
+    // clipboard's positions would still make sense, and a stale copied assetId already falls
+    // back to null on paste — see trackConfig.ts) — just avoids a copy from a previous
+    // project session confusingly outliving it (ECS-112/ECS-124).
     setNoteClipboard(null);
+    setTrackConfigClipboard(null);
   }, [loadTargetId, runtime, init]);
 
   const handleNewProject = useCallback(() => {
@@ -683,6 +716,7 @@ export function App() {
     dispatch({ type: "LOAD_PROJECT", project: createInitialProject() });
     setStatus("stopped");
     setNoteClipboard(null);
+    setTrackConfigClipboard(null);
   }, [runtime]);
 
   const handleDeleteProject = useCallback(async () => {
@@ -702,6 +736,9 @@ export function App() {
   // sequence, so this is always false for it. Checked here (not inside FxPanel) so the panel
   // stays a pure render of what it's given, consistent with its existing props.
   const selectedTrackHasNotes = selectedTarget !== "master" && notesForTrack(selectedPattern, selectedTarget).length > 0;
+  // ECS-124: same rationale as selectedTrackHasNotes above, for the "Copy config" control.
+  const selectedTrack = selectedTarget !== "master" ? trackById(project, selectedTarget) : undefined;
+  const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
   const playheadInfo = transportRef.current?.getPlayheadInfo();
 
   return (
@@ -902,6 +939,10 @@ export function App() {
                 clipboardStatus={clipboardStatus}
                 onCopyTrack={handleCopyTrack}
                 onPasteTrack={handlePasteNotes}
+                hasConfig={selectedTrackHasConfig}
+                canPasteConfig={trackConfigClipboard !== null}
+                onCopyTrackConfig={handleCopyTrackConfig}
+                onPasteTrackConfig={handlePasteTrackConfig}
               />
             )}
             {bottomPanelView === "mixer" && (

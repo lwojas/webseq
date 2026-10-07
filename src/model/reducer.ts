@@ -1,9 +1,11 @@
 import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, Project, TrackId, VoiceMode } from "./types";
 import type { CopiedNote } from "./notes";
+import type { CopiedTrackConfig } from "./trackConfig";
 import type { Asset } from "./types";
 import * as project from "./project";
 import * as fx from "./fx";
 import * as automation from "./automation";
+import * as trackConfig from "./trackConfig";
 
 export type Action =
   | { type: "SET_BPM"; bpm: number }
@@ -22,6 +24,7 @@ export type Action =
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
   | { type: "CLEAR_TRACK_NOTES"; patternId: PatternId; trackId: TrackId }
   | { type: "PASTE_NOTES"; patternId: PatternId; trackId: TrackId; notes: CopiedNote[] }
+  | { type: "PASTE_TRACK_CONFIG"; trackId: TrackId; config: CopiedTrackConfig }
   | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
   | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
   | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
@@ -79,6 +82,8 @@ export function projectReducer(state: Project, action: Action): Project {
       // deterministic placement decisions (only the generated note ids differ) to apply it as
       // a normal declarative action, consistent with every other note operation here.
       return project.pasteNotes(state, action.patternId, action.trackId, action.notes).project;
+    case "PASTE_TRACK_CONFIG":
+      return trackConfig.pasteTrackConfig(state, action.trackId, action.config);
     case "RESIZE_NOTE":
       return project.resizeNote(state, action.patternId, action.noteId, action.duration, action.resolution);
     case "MOVE_NOTE":
