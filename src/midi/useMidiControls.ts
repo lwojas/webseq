@@ -19,6 +19,13 @@ import { createBankActions, createSequencerRegistry, faderPagesPerBank, type Seq
 export interface TransportCallbacks {
   readonly play: () => void;
   readonly stop: () => void;
+  /**
+   * Current transport position (ECS-131) — the same `Transport.getPlayheadInfo()` the on-screen playhead already
+   * reads (`App.tsx`'s `getPlayheadBeat`). Omitted means no playhead feedback on a connected device.
+   */
+  readonly getPlayheadInfo?: () => { readonly patternId: PatternId | null; readonly beat: number };
+  /** Whether the transport is actually playing right now (ECS-131) — `Transport.getStatus() === "playing"`. */
+  readonly isPlaying?: () => boolean;
 }
 
 export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "connected" | "error";
@@ -156,6 +163,8 @@ export function useMidiControls(
         getBank: () => bankRef.current,
         setBank: (bank) => selectBankRef.current(bank),
         faderPageSize,
+        getPlayhead: () => transportRef.current.getPlayheadInfo?.() ?? { patternId: null, beat: 0 },
+        isPlaying: () => transportRef.current.isPlaying?.() ?? false,
       });
       const actions = {
         play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),
@@ -188,9 +197,11 @@ export function useMidiControls(
         device.profile,
         {
           stepTemplate: "step.{row}.{column}",
+          stepDurationTemplate: "step.{row}.{column}.duration",
           lengthControl: "steps.length",
           muteTemplate: "mute.{track}",
           trackCountControl: "tracks.count",
+          playheadControl: "transport.playhead",
           actions,
           faderActions,
           faderTemplates: { volume: "mixer.volume.{index}" },
@@ -256,6 +267,21 @@ export function useMidiControls(
     if (!connection) return;
     connection.registry.syncFromProject(project);
   });
+
+  // Drives the playhead's MIDI feedback from the same clock usePlayheadAnimation.ts already polls for the
+  // on-screen playhead (ECS-131) -- not a second, hardware-specific timer. Only runs while a device is actually
+  // connected: there's nothing to repaint otherwise, and this is the one place in this file with an animation-frame
+  // loop of its own, so it starts and stops with the connection rather than running for the component's whole life.
+  useEffect(() => {
+    if (status !== "connected") return;
+    let frame: number;
+    const poll = () => {
+      connectionRef.current?.registry.pollPlayhead();
+      frame = requestAnimationFrame(poll);
+    };
+    frame = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(frame);
+  }, [status]);
 
   // Switching bank returns the faders to that bank's first page (ECS-113), so they start on the
   // tracks the screen shows at the bank's start rather than a page further in.

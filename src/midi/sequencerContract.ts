@@ -29,20 +29,44 @@ export interface SequencerRegistryDeps {
   readonly setBank?: (bank: number) => void;
   /** How many tracks one fader page shows: the device's fader count, from midi-core's sequencerFaderCount (ECS-102). */
   readonly faderPageSize: number;
+  /**
+   * The transport's current position (ECS-131) — the same `Transport.getPlayheadInfo()` the on-screen playhead
+   * already reads (see `App.tsx`'s `getPlayheadBeat`, `hooks/usePlayheadAnimation.ts`). Polled, not subscribed to:
+   * this is the project's own established way of reading a continuously-advancing engine clock, reused as-is
+   * rather than inventing a push-based source just for MIDI feedback. Omitted means no playhead feedback.
+   */
+  readonly getPlayhead?: () => { readonly patternId: PatternId | null; readonly beat: number };
+  /**
+   * Whether the transport is actually playing right now (ECS-131). `getPlayhead()` alone isn't enough: a stopped
+   * or paused transport still reports a resting position (`Transport`'s own `pausedPosition`), which must not
+   * light a pad — "leave the Launchpad in a sensible stopped state" is this check, not a sentinel `getPlayhead()`
+   * has to invent. Omitted means never playing.
+   */
+  readonly isPlaying?: () => boolean;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
   syncFromProject(project: Project): void;
   /** Repaints every fader from its current track, after a fader page turn (ECS-96). */
   repaintFaders(): void;
+  /**
+   * Re-reads the playhead and fires its control's listeners if the column it resolves to moved (ECS-131). Meant
+   * to be called from an animation-frame loop while connected — the same clock `usePlayheadAnimation` already
+   * polls for the on-screen playhead, not a new timer of its own. A no-op until something has resolved
+   * `transport.playhead` at least once (normal once a device's steps mode is bound), since this only re-syncs an
+   * already-cached control, the same as `repaintFaders()` does for faders.
+   */
+  pollPlayhead(): void;
 }
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
+const STEP_DURATION_ID = /^step\.(\d+)\.(\d+)\.duration$/;
 const MUTE_ID = /^mute\.(\d+)$/;
 const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 const BANK_ID = "bank.active";
+const PLAYHEAD_ID = "transport.playhead";
 
 function selectedPattern(project: Project, patternId: PatternId): Pattern {
   return project.patterns.find((pattern) => pattern.id === patternId) ?? project.patterns[0]!;
@@ -74,6 +98,77 @@ function createStepControl(id: string, track: Track, start: number, deps: Sequen
     },
     syncFromProject(project) {
       const next = isOn(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+// step.<row>.<column>.duration (ECS-127): the note starting at that position's own length, in beats -- exactly
+// midi-core's "how many cells this step's duration spans" unit, since a column here is one beat. Feedback-only:
+// a pad's press toggles the note on/off (createStepControl above), never its length, so setValue is a no-op.
+function createStepDurationControl(id: string, track: Track, start: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id, label: `${track.id} step ${start + 1} duration`, kind: "number", min: 0, max: 1024, default: 0 };
+  const duration = (project: Project) => {
+    const pattern = selectedPattern(project, deps.getPatternId());
+    const noteId = noteIdAt(pattern, track.id, start);
+    return noteId === undefined ? 0 : pattern.notes[noteId]!.duration;
+  };
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = duration(deps.getProject());
+
+  return {
+    def,
+    getValue: () => duration(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = duration(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * transport.playhead (ECS-131): the virtual column currently playing, or -1 while nothing should light. -1 covers
+ * both "not playing" (`deps.isPlaying()` false — a stopped or paused transport still reports a resting position,
+ * which must not light a pad) and "playing a different pattern than this sequencer currently shows" (`patternId`
+ * mismatch) — the same "hide rather than claim a position that isn't really here" rule `App.tsx`'s own
+ * `getPlayheadBeat` already follows for the on-screen playhead. Feedback-only: nothing ever calls setValue.
+ */
+function playheadColumn(deps: SequencerRegistryDeps): number {
+  if (!deps.isPlaying?.()) return -1;
+  const info = deps.getPlayhead?.();
+  if (!info || info.patternId !== deps.getPatternId()) return -1;
+  return Math.floor(info.beat);
+}
+
+function createPlayheadControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: PLAYHEAD_ID, label: "Playhead", kind: "number", min: -1, max: 1024, default: -1 };
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = playheadColumn(deps);
+
+  return {
+    def,
+    getValue: () => playheadColumn(deps),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    // Ignores its `project` argument: the playhead moves from the transport's clock, not from project edits. Called
+    // from the same places createBankControl's own project-argument-ignoring sync already is, plus pollPlayhead()
+    // below for the per-frame case neither a project change nor a bank change covers.
+    syncFromProject() {
+      const next = playheadColumn(deps);
       if (next === last) return;
       const previous = last;
       last = next;
@@ -267,12 +362,19 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     const project = deps.getProject();
     let created: ProjectControl<ControlDef> | undefined;
     const step = STEP_ID.exec(id);
+    const stepDuration = STEP_DURATION_ID.exec(id);
     const mute = MUTE_ID.exec(id);
     if (step) {
       const track = project.tracks[Number(step[1])];
       const column = Number(step[2]);
       if (track && column < totalBeats(selectedPattern(project, deps.getPatternId()), project.beatsPerBar)) {
         created = createStepControl(id, track, column, deps);
+      }
+    } else if (stepDuration) {
+      const track = project.tracks[Number(stepDuration[1])];
+      const column = Number(stepDuration[2]);
+      if (track && column < totalBeats(selectedPattern(project, deps.getPatternId()), project.beatsPerBar)) {
+        created = createStepDurationControl(id, track, column, deps) as ProjectControl<ControlDef>;
       }
     } else if (mute) {
       const track = project.tracks[Number(mute[1]) - 1];
@@ -283,6 +385,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createTrackCountControl(deps) as ProjectControl<ControlDef>;
     } else if (id === BANK_ID) {
       created = createBankControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === PLAYHEAD_ID) {
+      created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
     } else {
       const fader = FADER_VOLUME_ID.exec(id);
       // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.
@@ -304,6 +408,9 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       for (const [id, control] of cache) {
         if (FADER_VOLUME_ID.test(id)) (control as FaderVolumeControl).repaint();
       }
+    },
+    pollPlayhead() {
+      (resolve(PLAYHEAD_ID) as ProjectControl<ControlDef> | undefined)?.syncFromProject(deps.getProject());
     },
   };
 }

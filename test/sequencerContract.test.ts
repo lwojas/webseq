@@ -55,6 +55,40 @@ describe("sequencer contract: steps", () => {
   });
 });
 
+describe("sequencer contract: step duration (ECS-127)", () => {
+  it("a column with no note has duration 0", () => {
+    const { registry } = harness();
+    expect(registry.getControl("step.0.2.duration")!.getValue()).toBe(0);
+  });
+
+  it("a freshly added note's duration is 1 (one step, DEFAULT_NOTE_DURATION), and growing the note moves the control", () => {
+    const { registry, dispatch, getProject, patternId } = harness();
+    registry.getControl("step.0.2")!.setValue(true);
+    expect(registry.getControl("step.0.2.duration")!.getValue()).toBe(1);
+
+    const noteId = Object.values(getProject().patterns[0]!.notes).find((n) => n.trackId === "track-1" && n.start === 2)!.id;
+    dispatch({ type: "RESIZE_NOTE", patternId, noteId: noteId!, duration: 4 });
+    expect(registry.getControl("step.0.2.duration")!.getValue()).toBe(4);
+  });
+
+  it("rows are tracks, and a duration control past the sequence length does not exist", () => {
+    const { registry, getProject } = harness();
+    const length = totalBeats(getProject().patterns[0]!, getProject().beatsPerBar);
+    expect(registry.getControl("step.0.0.duration")).toBeDefined();
+    expect(registry.getControl(`step.0.${length}.duration`)).toBeUndefined();
+  });
+
+  it("is feedback-only: setValue never changes the note", () => {
+    const { registry, getProject } = harness();
+    registry.getControl("step.0.2")!.setValue(true);
+    const before = getProject().patterns[0]!.notes;
+
+    registry.getControl("step.0.2.duration")!.setValue(5);
+    expect(registry.getControl("step.0.2.duration")!.getValue()).toBe(1);
+    expect(getProject().patterns[0]!.notes).toEqual(before);
+  });
+});
+
 describe("sequencer contract: tracks", () => {
   it("reports the project's track count as tracks.count, which bounds vertical paging", () => {
     const { registry, getProject } = harness();
@@ -68,6 +102,87 @@ describe("sequencer contract: mutes", () => {
     registry.getControl("mute.2")!.setValue(true);
     expect(getProject().tracks[1]).toMatchObject({ id: "track-2", muted: true });
     expect(registry.getControl("mute.2")!.getValue()).toBe(true);
+  });
+});
+
+describe("sequencer contract: playhead (ECS-131)", () => {
+  function playheadHarness() {
+    let project: Project = createInitialProject();
+    let playing = false;
+    let playhead = { patternId: null as string | null, beat: 0 };
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    const patternId = project.patterns[0]!.id;
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => patternId,
+      dispatch,
+      faderPageSize: 8,
+      getPlayhead: () => playhead,
+      isPlaying: () => playing,
+    });
+    return {
+      registry,
+      patternId,
+      setPlaying: (value: boolean) => {
+        playing = value;
+      },
+      setPlayhead: (next: { patternId: string | null; beat: number }) => {
+        playhead = next;
+      },
+    };
+  }
+
+  it("reports -1 while stopped, even if the transport has a resting position", () => {
+    const { registry, patternId, setPlayhead } = playheadHarness();
+    setPlayhead({ patternId, beat: 0 });
+    expect(registry.getControl("transport.playhead")!.getValue()).toBe(-1);
+  });
+
+  it("reports the floored current beat while playing the selected pattern", () => {
+    const { registry, patternId, setPlaying, setPlayhead } = playheadHarness();
+    setPlaying(true);
+    setPlayhead({ patternId, beat: 3.7 });
+    expect(registry.getControl("transport.playhead")!.getValue()).toBe(3);
+  });
+
+  it("reports -1 while playing a pattern other than the one this sequencer currently shows", () => {
+    const { registry, setPlaying, setPlayhead } = playheadHarness();
+    setPlaying(true);
+    setPlayhead({ patternId: "some-other-pattern", beat: 3.7 });
+    expect(registry.getControl("transport.playhead")!.getValue()).toBe(-1);
+  });
+
+  it("is feedback-only: setValue never calls back into the transport", () => {
+    const { registry, patternId, setPlaying, setPlayhead } = playheadHarness();
+    setPlaying(true);
+    setPlayhead({ patternId, beat: 1 });
+    registry.getControl("transport.playhead")!.setValue(9);
+    expect(registry.getControl("transport.playhead")!.getValue()).toBe(1);
+  });
+
+  it("pollPlayhead() fires onChange only when the floored column actually moves", () => {
+    const { registry, patternId, setPlaying, setPlayhead } = playheadHarness();
+    setPlaying(true);
+    setPlayhead({ patternId, beat: 0 });
+    const seen: number[] = [];
+    registry.getControl("transport.playhead")!.onChange((value) => seen.push(value as number));
+
+    registry.pollPlayhead();
+    expect(seen).toEqual([]); // first poll just resolves the control -- it was already at the right value
+
+    setPlayhead({ patternId, beat: 0.9 }); // still column 0
+    registry.pollPlayhead();
+    expect(seen).toEqual([]);
+
+    setPlayhead({ patternId, beat: 1.2 }); // column 1 now
+    registry.pollPlayhead();
+    expect(seen).toEqual([1]);
+
+    setPlaying(false); // stopping drops it back to -1
+    registry.pollPlayhead();
+    expect(seen).toEqual([1, -1]);
   });
 });
 
@@ -110,6 +225,82 @@ describe("sequencer contract: the Launchpad configuration drives it", () => {
     expect(stepOn(getProject(), "track-1", 2)).toBe(true);
     device.input.emitRawMessage(Uint8Array.of(0x90, 83, 127));
     expect(stepOn(getProject(), "track-1", 2)).toBe(false);
+    await surface.detach();
+  });
+
+  it("shows the note's duration and the transport's playhead on the Launchpad pads, composed correctly (ECS-127, ECS-131)", async () => {
+    let project: Project = createInitialProject();
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    const patternId = project.patterns[0]!.id;
+    let playing = false;
+    let playhead = { patternId: null as string | null, beat: 0 };
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => patternId,
+      dispatch,
+      faderPageSize: 8,
+      getPlayhead: () => playhead,
+      isPlaying: () => playing,
+    });
+
+    const device = createMockDevice();
+    const input = createMidiInput(device.input);
+    const output = createMidiOutput(device.output);
+    const send = output.send.bind(output);
+    output.send = (message) => {
+      send(message);
+      if (message.type === "sysex" && message.raw[3] === 0x06) {
+        device.input.emitRawMessage(Uint8Array.of(0xf0, 0x7e, 0x00, 0x06, 0x02, 0x00, 0x20, 0x29, 0x13, 0x01, 0x00, 0x00, 0x00, 0x04, 0x06, 0x07, 0xf7));
+      }
+    };
+    const noop = createAction({ id: "noop", label: "noop" }, () => {});
+    const launchpad = findDevice({ name: "Launchpad Mini MK3" })!;
+    const surface = createControlSurface({
+      profile: launchpad.profile,
+      ports: { inputs: { "midi-in": input }, outputs: { "midi-out": output } },
+      bindingTable: createSequencerBindings(input, launchpad.profile, {
+        stepTemplate: "step.{row}.{column}",
+        stepDurationTemplate: "step.{row}.{column}.duration",
+        lengthControl: "steps.length",
+        muteTemplate: "mute.{track}",
+        playheadControl: "transport.playhead",
+        actions: { play: noop, stop: noop },
+      }).bindings,
+      context: createSurfaceContext(),
+      registry,
+      generate: generateControlMappings,
+      initialNavigation: { mode: "steps", gridOffset: { row: 0, column: 0 } },
+    });
+
+    await surface.attach();
+    const sent = () => device.output.sentMessages.map(hex);
+    const lastLed = (led: number) => {
+      const matches = sent().filter((message) => message.startsWith(`f0 00 20 29 02 0d 03 03 ${led.toString(16).padStart(2, "0")} `));
+      return matches[matches.length - 1];
+    };
+
+    // Row 0 (track-1), columns 0-3 are pad notes 81-84 (launchpad-mini-mk3.ts: note = (8-row)*10 + column+1).
+    dispatch({ type: "ADD_NOTE", patternId, trackId: "track-1", start: 0 });
+    const noteId = Object.values(project.patterns[0]!.notes).find((n) => n.trackId === "track-1" && n.start === 0)!.id;
+    dispatch({ type: "RESIZE_NOTE", patternId, noteId, duration: 3 });
+    registry.syncFromProject(project);
+    expect(lastLed(81)).toBe("f0 00 20 29 02 0d 03 03 51 00 00 7f f7"); // the note's own colour (blue)
+    expect(lastLed(82)).toBe("f0 00 20 29 02 0d 03 03 52 00 00 20 f7"); // continuation: dimmed blue
+    expect(lastLed(83)).toBe("f0 00 20 29 02 0d 03 03 53 00 00 20 f7");
+    expect(lastLed(84)).toBe("f0 00 20 29 02 0d 03 03 54 00 00 00 f7"); // past the 3-step span: off
+
+    // Playback reaches column 1 (inside the note's duration): the playhead wins over the continuation colour.
+    playing = true;
+    playhead = { patternId, beat: 1 };
+    registry.pollPlayhead();
+    expect(lastLed(82)).toBe("f0 00 20 29 02 0d 03 03 52 7f 7f 7f f7"); // white
+
+    // Stopping leaves the pad showing its own state again, not a stray lit pad.
+    playing = false;
+    registry.pollPlayhead();
+    expect(lastLed(82)).toBe("f0 00 20 29 02 0d 03 03 52 00 00 20 f7");
     await surface.detach();
   });
 });

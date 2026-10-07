@@ -194,7 +194,20 @@ export function App() {
     setStatus(transportRef.current?.getStatus() ?? "stopped");
   }, []);
 
-  const midi = useMidiControls(project, dispatch, { play: () => void handlePlay(), stop: handleStop }, selectedPatternId, activeBank, setActiveBank);
+  const midi = useMidiControls(
+    project,
+    dispatch,
+    {
+      play: () => void handlePlay(),
+      stop: handleStop,
+      // ECS-131: the same Transport.getPlayheadInfo()/getStatus() the on-screen playhead already reads.
+      getPlayheadInfo: () => transportRef.current?.getPlayheadInfo() ?? { patternId: null, beat: 0 },
+      isPlaying: () => transportRef.current?.getStatus() === "playing",
+    },
+    selectedPatternId,
+    activeBank,
+    setActiveBank,
+  );
 
   const handleBpmChange = useCallback((bpm: number) => {
     dispatch({ type: "SET_BPM", bpm });
