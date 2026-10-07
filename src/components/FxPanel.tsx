@@ -32,6 +32,14 @@ interface Props {
    * "Clear sequence" control below when there's nothing to clear (ECS-107). */
   hasNotes: boolean;
   onClearTrack: (trackId: TrackId) => void;
+  /** Whether there's a copied track clipboard to paste (ECS-112) — hides "Paste sequence" when
+   * there's nothing to paste, same rationale as hasNotes above for Copy/Clear. */
+  canPaste: boolean;
+  /** Transient "Track 03 · 4 notes" feedback after Copy/Paste — cleared by App.tsx after a
+   * couple seconds, same pattern as TransportBar's save/resample status. */
+  clipboardStatus: string | null;
+  onCopyTrack: (trackId: TrackId) => void;
+  onPasteTrack: () => void;
 }
 
 /** The bottom module panel, contextual to whatever is currently selected in the timeline — a
@@ -61,6 +69,10 @@ export function FxPanel({
   onSetVoiceMode,
   hasNotes,
   onClearTrack,
+  canPaste,
+  clipboardStatus,
+  onCopyTrack,
+  onPasteTrack,
 }: Props) {
   const selectedFx = fx.find((f) => f.id === selectedFxId) ?? null;
   const title = target === "master" ? "MASTER" : `${track?.name ?? target}`;
@@ -107,22 +119,42 @@ export function FxPanel({
               ))}
             </div>
           </div>
+          {/* Whole-track copy/paste (ECS-112) and clear (ECS-107) share this row for the same
+              reason: Cmd/Ctrl+C/V and Delete/Backspace (App.tsx's keydown handler) are the
+              desktop equivalents, but touch has no reliable keyboard. Each button is its own
+              direct child of .track-mode-row (not grouped in a shared, non-wrapping
+              .track-mode-group) so the row's existing flex-wrap can reflow them individually on
+              narrow viewports, the same mechanism already wrapping Mode/Voice above — not a new
+              overflow strategy. This is also the mobile-safe surface generally, unlike
+              TrackRow's header column which has no room to spare for more buttons. */}
           {hasNotes && (
-            // Deliberate whole-track clear (ECS-107): this, and the Delete/Backspace shortcut
-            // with the track selected (App.tsx's keydown handler), are the only two ways to
-            // trigger it — no persistent control, and this row already wraps on narrow
-            // viewports (see .track-mode-row), so it's also the mobile-safe surface, unlike
-            // TrackRow's header column which has no room to spare.
-            <div className="track-mode-group">
-              <button
-                className="track-clear-btn"
-                onClick={() => onClearTrack(track.id)}
-                title={`Remove every note from ${track.name}'s sequence in this pattern — no undo`}
-              >
-                Clear sequence
-              </button>
-            </div>
+            <button
+              className="track-copy-btn"
+              onClick={() => onCopyTrack(track.id)}
+              title={`Copy every note in ${track.name}'s sequence (this pattern) to the clipboard`}
+            >
+              Copy sequence
+            </button>
           )}
+          {canPaste && (
+            <button
+              className="track-paste-btn"
+              onClick={onPasteTrack}
+              title={`Paste the copied sequence onto ${track.name}, in this pattern`}
+            >
+              Paste sequence
+            </button>
+          )}
+          {hasNotes && (
+            <button
+              className="track-clear-btn"
+              onClick={() => onClearTrack(track.id)}
+              title={`Remove every note from ${track.name}'s sequence in this pattern — no undo`}
+            >
+              Clear sequence
+            </button>
+          )}
+          {clipboardStatus && <div className="clipboard-status">{clipboardStatus}</div>}
         </div>
       )}
       <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} />

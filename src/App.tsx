@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { AudioRuntime } from "webdsp";
 import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
-import { BANK_SIZE, createInitialProject, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
-import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type GridResolution } from "./model/notes";
+import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
+import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
@@ -63,6 +63,14 @@ function releaseEngineSamples(rt: AudioRuntime): void {
   for (const sample of rt.listSamples()) rt.removeSample(sample.id);
 }
 
+/** The positional "Track 03" label the ECS-112 clipboard's transient feedback uses — the same
+ * numbering TrackRow/MixerPanel already show per track, not `track.name` (which becomes the
+ * assigned sample's filename once one is assigned, per project.ts's assignAsset). */
+function trackLabel(tracks: { id: TrackId }[], trackId: TrackId): string {
+  const idx = tracks.findIndex((t) => t.id === trackId);
+  return `Track ${String(idx + 1).padStart(2, "0")}`;
+}
+
 export function App() {
   const { runtime, error, init } = useAudioRuntime();
   const [project, dispatch] = useReducer(projectReducer, undefined, () => createInitialProject());
@@ -103,6 +111,11 @@ export function App() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [importBatchResult, setImportBatchResult] = useState<ImportBatchResult | null>(null);
+  // ECS-112's clipboard contract: project-local (not the system clipboard), self-contained
+  // plain data (CopiedNote has no id/trackId — see notes.ts's doc comment), cleared on
+  // New/Load so a stale "copied from Track X" label can never outlive the project it names.
+  const [noteClipboard, setNoteClipboard] = useState<{ sourceTrackId: TrackId; notes: CopiedNote[] } | null>(null);
+  const [clipboardStatus, setClipboardStatus] = useState<string | null>(null);
 
   const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
 
@@ -263,6 +276,50 @@ export function App() {
     (trackId: TrackId) => dispatch({ type: "CLEAR_TRACK_NOTES", patternId: selectedPatternId, trackId }),
     [selectedPatternId],
   );
+
+  // ECS-112: whole-track copy/paste. Copy scope is deliberately "every note on the selected
+  // track" rather than any finer selection — this app has no multi-note range-selection system,
+  // and building one solely for copy/paste would be exactly the kind of feature-specific
+  // machinery the parent brief (ECS-81) asks to avoid. `start` is carried through unchanged
+  // (see notes.ts's CopiedNote doc comment) — there's no "paste cursor" concept, so paste always
+  // reproduces the original beat positions, just under the destination trackId/pattern.
+  const handleCopyTrack = useCallback(
+    (trackId: TrackId) => {
+      const pattern = project.patterns.find((p) => p.id === selectedPatternId) ?? project.patterns[0];
+      const copied: CopiedNote[] = notesForTrack(pattern, trackId).map((n) => ({
+        start: n.start,
+        duration: n.duration,
+        velocity: n.velocity,
+      }));
+      if (copied.length === 0) return;
+      setNoteClipboard({ sourceTrackId: trackId, notes: copied });
+      setClipboardStatus(`${trackLabel(project.tracks, trackId)} · ${copied.length} note${copied.length === 1 ? "" : "s"}`);
+    },
+    [project, selectedPatternId],
+  );
+  const handlePasteNotes = useCallback(() => {
+    if (!noteClipboard || selectedTarget === "master") return;
+    // Computed once here (for the feedback message) and again by the reducer below when
+    // PASTE_NOTES is actually applied — both calls are pure and see the same project, so they
+    // make identical pasted/skipped placement decisions (only the generated note ids differ,
+    // and those aren't shown to the user). See reducer.ts's PASTE_NOTES case for why this
+    // can't just dispatch the already-computed project directly.
+    const preview = pasteNotes(project, selectedPatternId, selectedTarget, noteClipboard.notes);
+    dispatch({ type: "PASTE_NOTES", patternId: selectedPatternId, trackId: selectedTarget, notes: noteClipboard.notes });
+    const label = trackLabel(project.tracks, selectedTarget);
+    setClipboardStatus(
+      preview.skipped === 0
+        ? `${label} · ${preview.pasted} note${preview.pasted === 1 ? "" : "s"}`
+        : `${label} · ${preview.pasted}/${preview.pasted + preview.skipped} notes — ${preview.skipped} skipped (no room)`,
+    );
+  }, [noteClipboard, selectedTarget, selectedPatternId, project]);
+  // Clears the transient clipboard feedback after a couple seconds — same pattern as
+  // saveStatus's own timer above.
+  useEffect(() => {
+    if (!clipboardStatus) return;
+    const timer = setTimeout(() => setClipboardStatus(null), 2000);
+    return () => clearTimeout(timer);
+  }, [clipboardStatus]);
 
   // Decodes a local file via the runtime (unchanged mechanism — see the project brief's "the
   // existing ability to load and play local audio must continue working") and adds it to the
@@ -433,11 +490,44 @@ export function App() {
         } else {
           void handlePlay();
         }
+        return;
+      }
+      // ECS-112: Cmd/Ctrl+C / Cmd/Ctrl+V for the whole-track note clipboard. Guarded the same
+      // way as Space above (text-entry/button targets excluded), plus `e.repeat` so holding the
+      // key doesn't re-copy/re-paste every repeat event. Only preventDefault once a track is
+      // actually selected and there's something to do, so a plain Cmd+C/V elsewhere on the page
+      // (no track selected, or copying real text in a focused field) is left alone.
+      if ((e.key === "c" || e.key === "C" || e.key === "v" || e.key === "V") && (e.metaKey || e.ctrlKey) && !e.repeat) {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target.tagName))
+        ) {
+          return;
+        }
+        if (selectedTarget === "master") return;
+        if (e.key === "c" || e.key === "C") {
+          e.preventDefault();
+          handleCopyTrack(selectedTarget);
+        } else if (noteClipboard) {
+          e.preventDefault();
+          handlePasteNotes();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNoteId, selectedPatternId, selectedTarget, runtime, handlePlay, handleStop]);
+  }, [
+    selectedNoteId,
+    selectedPatternId,
+    selectedTarget,
+    runtime,
+    handlePlay,
+    handleStop,
+    noteClipboard,
+    handleCopyTrack,
+    handlePasteNotes,
+  ]);
 
   const getPositionText = useCallback(() => {
     const info = transportRef.current?.getPlayheadInfo();
@@ -577,6 +667,10 @@ export function App() {
     // project is loaded next; ensureTrackBuses only ever allocates for an id it hasn't seen.
     dispatch({ type: "LOAD_PROJECT", project: remapped });
     setStatus("stopped");
+    // Not a correctness fix (track ids are fixed/deterministic across every project, so the
+    // clipboard's positions would still make sense) — just avoids a copy from a previous
+    // project session confusingly outliving it (ECS-112).
+    setNoteClipboard(null);
   }, [loadTargetId, runtime, init]);
 
   const handleNewProject = useCallback(() => {
@@ -588,6 +682,7 @@ export function App() {
     // track ids.
     dispatch({ type: "LOAD_PROJECT", project: createInitialProject() });
     setStatus("stopped");
+    setNoteClipboard(null);
   }, [runtime]);
 
   const handleDeleteProject = useCallback(async () => {
@@ -803,6 +898,10 @@ export function App() {
                 onSetVoiceMode={handleSetTrackVoiceMode}
                 hasNotes={selectedTrackHasNotes}
                 onClearTrack={handleClearTrack}
+                canPaste={noteClipboard !== null}
+                clipboardStatus={clipboardStatus}
+                onCopyTrack={handleCopyTrack}
+                onPasteTrack={handlePasteNotes}
               />
             )}
             {bottomPanelView === "mixer" && (

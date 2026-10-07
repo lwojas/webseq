@@ -1081,9 +1081,26 @@ select {
   color: #eafffa;
 }
 
-/* Whole-track clear (ECS-107) — same shape as .track-mode-toggle button, but --danger since
-   it's a destructive, no-undo action; sits in its own .track-mode-group so it wraps onto its
-   own line with the rest of .track-mode-row on narrow viewports. */
+/* Whole-track copy/paste (ECS-112) and clear (ECS-107) — same shape as .track-mode-toggle
+   button; Copy/Paste use --accent (a normal action), Clear uses --danger (destructive, no
+   undo). All three share one .track-mode-group, so it wraps onto its own line with the rest
+   of .track-mode-row on narrow viewports. */
+.track-copy-btn,
+.track-paste-btn {
+  background: var(--panel);
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.track-copy-btn:hover,
+.track-paste-btn:hover {
+  background: var(--accent-dim);
+  color: #eafffa;
+}
+
 .track-clear-btn {
   background: var(--panel);
   border: 1px solid var(--danger);
@@ -1096,6 +1113,19 @@ select {
 .track-clear-btn:hover {
   background: var(--danger);
   color: var(--bg);
+}
+
+/* Transient "Track 03 · 4 notes" feedback (ECS-112) — same treatment as AssetsPanel's
+   .import-status (uppercase micro-label in --accent), cleared by App.tsx after 2s.
+   flex-basis: 100% forces it onto its own line within .track-mode-row's flex-wrap, the same
+   row the Copy/Paste/Clear buttons above it wrap within. */
+.clipboard-status {
+  flex-basis: 100%;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: 6px;
 }
 
 .fx-chain-strip {
@@ -1613,6 +1643,8 @@ select {
   }
 
   .track-mode-toggle button,
+  .track-copy-btn,
+  .track-paste-btn,
   .track-clear-btn {
     padding: 9px 12px;
   }

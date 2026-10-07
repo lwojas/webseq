@@ -286,6 +286,25 @@ export function clearTrackNotes(project: Project, patternId: PatternId, trackId:
   return updatePattern(project, patternId, (p) => notes.clearTrackNotes(p, trackId));
 }
 
+/** ECS-112. Unlike the other note operations above, the caller (App.tsx) also needs the
+ * pasted/skipped counts for its transient feedback message, so this can't be a one-line
+ * updatePattern call — it does the same pattern lookup/replace by hand. */
+export function pasteNotes(
+  project: Project,
+  patternId: PatternId,
+  trackId: TrackId,
+  copied: notes.CopiedNote[],
+): { project: Project; pasted: number; skipped: number } {
+  const pattern = project.patterns.find((p) => p.id === patternId);
+  if (!pattern) return { project, pasted: 0, skipped: copied.length };
+  const result = notes.pasteNotes(pattern, project.beatsPerBar, trackId, copied);
+  return {
+    project: { ...project, patterns: project.patterns.map((p) => (p.id === patternId ? result.pattern : p)) },
+    pasted: result.pasted,
+    skipped: result.skipped,
+  };
+}
+
 export function resizeNote(
   project: Project,
   patternId: PatternId,

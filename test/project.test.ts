@@ -20,7 +20,7 @@ import {
   setTrackVoiceMode,
   setTrackVolume,
 } from "../src/model/project";
-import { addNote, clearTrackNotes, moveNote, removeNote, remapAssetIds, resizeNote } from "../src/model/project";
+import { addNote, clearTrackNotes, moveNote, pasteNotes, removeNote, remapAssetIds, resizeNote } from "../src/model/project";
 import type { Asset } from "../src/model/types";
 import { effectivePlaybackMode, effectiveTrackGain, effectiveVoiceMode, notesForTrack, patternById, resolveChainStep, totalBeats } from "../src/model/types";
 
@@ -188,6 +188,43 @@ describe("project model", () => {
     const patternId = project.patterns[0].id;
     const result = clearTrackNotes(project, patternId, "track-1");
     expect(patternById(result, patternId)).toBe(patternById(project, patternId));
+  });
+
+  // ECS-112: paste can target a different track AND a different pattern than it was copied
+  // from; pasted positions are unchanged, and unrelated patterns/tracks/assets are untouched.
+  it("pasteNotes copies a track's notes onto another track, in a different pattern, unchanged positions", () => {
+    let project = createInitialProject();
+    const patternA = project.patterns[0].id;
+    project = addPattern(project, "Pattern B", 1);
+    const patternB = project.patterns[1].id;
+    project = addNote(project, patternA, "track-1", 0);
+    project = addNote(project, patternA, "track-1", 4);
+    const copied = notesForTrack(patternById(project, patternA)!, "track-1").map((n) => ({
+      start: n.start,
+      duration: n.duration,
+      velocity: n.velocity,
+    }));
+
+    const result = pasteNotes(project, patternB, "track-2", copied);
+    expect(result.pasted).toBe(2);
+    expect(result.skipped).toBe(0);
+    expect(notesForTrack(patternById(result.project, patternB)!, "track-2").map((n) => n.start).sort((a, b) => a - b)).toEqual([0, 4]);
+    expect(notesForTrack(patternById(result.project, patternA)!, "track-1")).toHaveLength(2); // source untouched
+    expect(notesForTrack(patternById(result.project, patternB)!, "track-1")).toHaveLength(0); // other track in dest pattern untouched
+  });
+
+  it("pasteNotes reports partial success when some copied notes don't fit", () => {
+    let project = createInitialProject();
+    const patternId = project.patterns[0].id;
+    project = addNote(project, patternId, "track-2", 0); // occupies [0, 1) on the destination track
+
+    const result = pasteNotes(project, patternId, "track-2", [
+      { start: 0, duration: 1, velocity: 1 }, // collides
+      { start: 4, duration: 1, velocity: 1 }, // fits
+    ]);
+    expect(result.pasted).toBe(1);
+    expect(result.skipped).toBe(1);
+    expect(notesForTrack(patternById(result.project, patternId)!, "track-2")).toHaveLength(2); // original + the one that fit
   });
 
   it("removing a pattern also removes it from the chain", () => {

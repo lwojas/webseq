@@ -112,6 +112,43 @@ export function clearTrackNotes(pattern: Pattern, trackId: TrackId): Pattern {
   return { ...pattern, notes };
 }
 
+/** The clipboard contract (ECS-112): a copied note is just its own shape minus `id`/`trackId` —
+ * self-contained plain data, not a reference into any project/pattern, so it survives the
+ * source track/pattern/project changing or disappearing before paste. `start` stays absolute
+ * (beats from this pattern's start), not relative to some anchor — there is no "paste cursor"
+ * concept in this app (no selected empty cell, only a selected track), so pasting reproduces
+ * the exact beat positions that were copied, just under the destination trackId. */
+export type CopiedNote = Pick<Note, "start" | "duration" | "velocity">;
+
+/** Pastes `copied` onto `trackId` in this Pattern, preserving each note's original start/
+ * duration/velocity exactly (no re-quantization — unlike addNote, these values already came
+ * from valid notes). Each note is placed independently and in order, so later notes in the
+ * batch see earlier ones just pasted; a note that doesn't fit (collides with an existing note,
+ * or — for a shorter destination pattern — runs past its end) is silently skipped rather than
+ * replacing/truncating anything, the same non-destructive refusal addNote already applies to a
+ * single placement. There is no undo, so skipping is the only safe response to a collision. */
+export function pasteNotes(
+  pattern: Pattern,
+  beatsPerBar: number,
+  trackId: TrackId,
+  copied: CopiedNote[],
+): { pattern: Pattern; pasted: number; skipped: number } {
+  let next = pattern;
+  let pasted = 0;
+  let skipped = 0;
+  for (const c of copied) {
+    if (!fitsWithoutOverlap(next, beatsPerBar, trackId, c.start, c.duration)) {
+      skipped += 1;
+      continue;
+    }
+    const id = nextId("note");
+    const note: Note = { id, trackId, start: c.start, duration: c.duration, velocity: c.velocity };
+    next = { ...next, notes: { ...next.notes, [id]: note } };
+    pasted += 1;
+  }
+  return { pattern: next, pasted, skipped };
+}
+
 /** Resizes a note's duration (dragging its right edge), snapped to `resolution` (a toolbar
  * grid resolution, or FREE_PLACEMENT_RESOLUTION while Alt/Option overrides snapping — see
  * NoteBlock/App.tsx), clamped to at least MIN_NOTE_DURATION beat and to whatever room the

@@ -5,6 +5,7 @@ import {
   fitsWithoutOverlap,
   FREE_PLACEMENT_RESOLUTION,
   moveNote,
+  pasteNotes,
   quantizeToResolution,
   removeNote,
   resizeNote,
@@ -76,6 +77,52 @@ describe("note operations over a single pattern", () => {
     pattern = addNote(pattern, BEATS_PER_BAR, "track-2", 0);
     const cleared = clearTrackNotes(pattern, "track-1");
     expect(cleared).toBe(pattern);
+  });
+
+  // ECS-112: paste reproduces the exact copied start/duration/velocity, under a new trackId,
+  // with fresh note ids — no anchor/shift, no re-quantization.
+  describe("pasteNotes", () => {
+    it("places each copied note at its original start, under the destination track, with new ids", () => {
+      let source = emptyPattern();
+      source = addNote(source, BEATS_PER_BAR, "track-1", 0);
+      source = addNote(source, BEATS_PER_BAR, "track-1", 4);
+      const copied = notesForTrack(source, "track-1").map((n) => ({ start: n.start, duration: n.duration, velocity: n.velocity }));
+
+      const result = pasteNotes(emptyPattern(), BEATS_PER_BAR, "track-2", copied);
+      expect(result.pasted).toBe(2);
+      expect(result.skipped).toBe(0);
+      const pasted = notesForTrack(result.pattern, "track-2");
+      expect(pasted.map((n) => n.start).sort((a, b) => a - b)).toEqual([0, 4]);
+      expect(pasted.every((n) => !source.notes[n.id])).toBe(true); // fresh ids, not reused
+    });
+
+    it("skips a pasted note that collides with an existing note, without touching the existing one", () => {
+      let pattern = emptyPattern();
+      pattern = addNote(pattern, BEATS_PER_BAR, "track-1", 0); // occupies [0, 1)
+      const existingId = notesForTrack(pattern, "track-1")[0].id;
+
+      const result = pasteNotes(pattern, BEATS_PER_BAR, "track-1", [{ start: 0, duration: 1, velocity: 1 }]);
+      expect(result.pasted).toBe(0);
+      expect(result.skipped).toBe(1);
+      expect(result.pattern.notes[existingId]).toEqual(pattern.notes[existingId]); // untouched, not replaced
+    });
+
+    it("skips a note that would overhang the end of a shorter destination pattern", () => {
+      const shortPattern = emptyPattern(1); // 16 beats at BEATS_PER_BAR = 16
+      const result = pasteNotes(shortPattern, BEATS_PER_BAR, "track-1", [{ start: 15, duration: 4, velocity: 1 }]);
+      expect(result.pasted).toBe(0);
+      expect(result.skipped).toBe(1);
+    });
+
+    it("places earlier notes in the batch before checking later ones, so they don't collide with each other", () => {
+      const result = pasteNotes(emptyPattern(), BEATS_PER_BAR, "track-1", [
+        { start: 0, duration: 2, velocity: 1 },
+        { start: 1, duration: 2, velocity: 1 }, // overlaps the first
+      ]);
+      expect(result.pasted).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(notesForTrack(result.pattern, "track-1")[0].start).toBe(0);
+    });
   });
 
   it("resizes a note's duration", () => {

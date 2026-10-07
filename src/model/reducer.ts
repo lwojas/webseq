@@ -1,4 +1,5 @@
 import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, Project, TrackId, VoiceMode } from "./types";
+import type { CopiedNote } from "./notes";
 import type { Asset } from "./types";
 import * as project from "./project";
 import * as fx from "./fx";
@@ -20,6 +21,7 @@ export type Action =
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
   | { type: "CLEAR_TRACK_NOTES"; patternId: PatternId; trackId: TrackId }
+  | { type: "PASTE_NOTES"; patternId: PatternId; trackId: TrackId; notes: CopiedNote[] }
   | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
   | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
   | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
@@ -71,6 +73,12 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.removeNote(state, action.patternId, action.noteId);
     case "CLEAR_TRACK_NOTES":
       return project.clearTrackNotes(state, action.patternId, action.trackId);
+    case "PASTE_NOTES":
+      // The App.tsx handler already called project.pasteNotes once itself to get the
+      // pasted/skipped counts for its transient feedback message — this re-derives the same
+      // deterministic placement decisions (only the generated note ids differ) to apply it as
+      // a normal declarative action, consistent with every other note operation here.
+      return project.pasteNotes(state, action.patternId, action.trackId, action.notes).project;
     case "RESIZE_NOTE":
       return project.resizeNote(state, action.patternId, action.noteId, action.duration, action.resolution);
     case "MOVE_NOTE":
