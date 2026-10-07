@@ -9,7 +9,8 @@
 // Each resolved control is cached, and syncFromProject() keeps every cached control's change notifications
 // in step with the project, the same way controlAdapter.ts's ProjectControl already does for track mutes.
 
-import type { BooleanControlDef, Control, ControlDef, ControlRegistry, NumericControlDef } from "midi-core/control-api";
+import { createAction, type BooleanControlDef, type Control, type ControlDef, type ControlRegistry, type NumericControlDef } from "midi-core/control-api";
+import type { SequencerContract } from "midi-core/configurations";
 import { totalBeats, trackById } from "../model/types";
 import type { Pattern, PatternId, Project, Track, TrackId } from "../model/types";
 import type { Action } from "../model/reducer";
@@ -234,6 +235,24 @@ function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): F
       last = next;
       for (const listener of listeners) listener(next, next);
     },
+  };
+}
+
+/**
+ * The bank actions a device's bank buttons invoke (ECS-114): previous and next step through A-D and stop at the ends, and
+ * select[n] selects bank n (0 = A). A bank change only moves the view: it changes no track's level or mute (ECS-113).
+ */
+export function createBankActions(getBank: () => number, setBank: (bank: number) => void): NonNullable<SequencerContract["bankActions"]> {
+  const clamp = (bank: number) => Math.min(BANK_COUNT - 1, Math.max(0, bank));
+  const select: Record<number, ReturnType<typeof createAction>> = {};
+  for (let index = 0; index < BANK_COUNT; index++) {
+    const letter = String.fromCharCode("A".charCodeAt(0) + index);
+    select[index] = createAction({ id: `bank.select.${letter}`, label: `Bank ${letter}` }, () => setBank(index));
+  }
+  return {
+    previous: createAction({ id: "bank.previous", label: "Previous bank" }, () => setBank(clamp(getBank() - 1))),
+    next: createAction({ id: "bank.next", label: "Next bank" }, () => setBank(clamp(getBank() + 1))),
+    select,
   };
 }
 

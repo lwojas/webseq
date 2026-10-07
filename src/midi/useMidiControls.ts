@@ -14,7 +14,7 @@ import { findDawPorts, requiresOutput, resolveDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
 import type { PatternId, Project } from "../model/types";
-import { createSequencerRegistry, faderPagesPerBank, type SequencerRegistry } from "./sequencerContract";
+import { createBankActions, createSequencerRegistry, faderPagesPerBank, type SequencerRegistry } from "./sequencerContract";
 
 export interface TransportCallbacks {
   readonly play: () => void;
@@ -193,6 +193,9 @@ export function useMidiControls(
           actions,
           faderActions,
           faderTemplates: { volume: "mixer.volume.{index}" },
+          // The bank buttons (ECS-114): the device's layout names which buttons they are; the app's bank is bank.active.
+          bankActions: createBankActions(() => bankRef.current, (bank) => selectBankRef.current(bank)),
+          bankControl: "bank.active",
         },
         devices,
       );
