@@ -12,7 +12,7 @@
 import { createAction, type BooleanControlDef, type Control, type ControlDef, type ControlRegistry, type NumericControlDef } from "midi-core/control-api";
 import type { SequencerContract } from "midi-core/configurations";
 import { totalBeats, trackById } from "../model/types";
-import type { Pattern, PatternId, Project, Track, TrackId } from "../model/types";
+import type { ChainEntryId, Pattern, PatternId, Project, Track, TrackId } from "../model/types";
 import type { Action } from "../model/reducer";
 import { BANK_COUNT, BANK_SIZE, MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
 import { createTrackMutedControl, type ProjectControl } from "./controlAdapter";
@@ -44,16 +44,12 @@ export interface SequencerRegistryDeps {
    */
   readonly isPlaying?: () => boolean;
   /**
-   * The pending manual pattern-launch request, if any (ECS-117) — the same
-   * `Transport.getQueuedPatternId()` the launch contract's module comment in
-   * `src/audio/transport.ts` documents. Polled, same rationale as `getPlayhead` above. Omitted
-   * means no queued-pattern feedback and no `pattern.<n>.queued` control can be set.
+   * The queue entry (project.patternChain) currently playing — `Transport.getCurrentChainEntryId()`.
+   * `pattern.<n>.queued`'s setValue uses this to queue a pattern right after whatever's
+   * actually sounding, via `deps.dispatch`, rather than at the end of the queue. Omitted means
+   * `pattern.<n>.queued` controls are feedback-only.
    */
-  readonly getQueuedPatternId?: () => PatternId | null;
-  /** Requests `patternId` for manual launch at the next completion boundary (ECS-117) — `Transport.requestPatternLaunch()`. Omitted means `pattern.<n>.queued` controls are feedback-only. */
-  readonly requestPatternLaunch?: (patternId: PatternId) => void;
-  /** Cancels a pending manual launch request (ECS-117) — `Transport.cancelQueuedLaunch()`. */
-  readonly cancelQueuedLaunch?: () => void;
+  readonly getCurrentChainEntryId?: () => ChainEntryId | null;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -210,17 +206,19 @@ function createPatternPlayingControl(index: number, deps: SequencerRegistryDeps)
 }
 
 /**
- * pattern.<n>.queued (ECS-117): whether `project.patterns[index]` is the pending manual-launch
- * request — see `Transport`'s launch contract module comment for exactly when this becomes
- * true/false. Unlike playing, this one is also writable: setting it true requests that pattern
- * for launch, setting it false cancels a pending request for it — the same "a pad is both
- * feedback and input" shape `mute.<n>` already has.
+ * pattern.<n>.queued: whether `project.patterns[index]` is in the pattern queue
+ * (project.patternChain) other than as the single currently-playing entry — true for anything
+ * queued to play next or later in the loop. Unlike playing, this one is also writable: setting
+ * it true queues that pattern right after whatever's currently playing, setting it false
+ * removes every one of its queue entries (refused by the reducer if that would empty the
+ * queue) — the same "a pad is both feedback and input" shape `mute.<n>` already has.
  */
 function createPatternQueuedControl(index: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
   const def: BooleanControlDef = { id: `pattern.${index}.queued`, label: `Pattern ${index + 1} queued`, kind: "boolean", default: false };
   const isQueued = (project: Project) => {
     const pattern = project.patterns[index];
-    return pattern !== undefined && pattern.id === (deps.getQueuedPatternId?.() ?? null);
+    if (!pattern) return false;
+    return project.patternChain.some((e) => e.patternId === pattern.id) && pattern.id !== activePlayingPatternId(deps);
   };
   const listeners = new Set<(value: boolean, previous: boolean) => void>();
   let last = isQueued(deps.getProject());
@@ -231,8 +229,8 @@ function createPatternQueuedControl(index: number, deps: SequencerRegistryDeps):
     setValue(value) {
       const pattern = deps.getProject().patterns[index];
       if (!pattern) return;
-      if (value) deps.requestPatternLaunch?.(pattern.id);
-      else deps.cancelQueuedLaunch?.();
+      if (value) deps.dispatch({ type: "QUEUE_PATTERN_NEXT", patternId: pattern.id, afterEntryId: deps.getCurrentChainEntryId?.() ?? null });
+      else deps.dispatch({ type: "REMOVE_FROM_QUEUE", patternId: pattern.id });
     },
     onChange(listener) {
       listeners.add(listener);

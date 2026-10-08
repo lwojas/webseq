@@ -13,7 +13,7 @@ import { createSequencerBindings, sequencerFaderCount, type SequencerDevices } f
 import { findDawPorts, requiresOutput, resolveDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
-import type { PatternId, Project } from "../model/types";
+import type { ChainEntryId, PatternId, Project } from "../model/types";
 import { createBankActions, createSequencerRegistry, faderPagesPerBank, type SequencerRegistry } from "./sequencerContract";
 
 export interface TransportCallbacks {
@@ -26,12 +26,8 @@ export interface TransportCallbacks {
   readonly getPlayheadInfo?: () => { readonly patternId: PatternId | null; readonly beat: number };
   /** Whether the transport is actually playing right now (ECS-131) — `Transport.getStatus() === "playing"`. */
   readonly isPlaying?: () => boolean;
-  /** The pending manual-launch request, if any (ECS-117) — `Transport.getQueuedPatternId()`. */
-  readonly getQueuedPatternId?: () => PatternId | null;
-  /** Requests a manual pattern launch (ECS-117) — `Transport.requestPatternLaunch()`. */
-  readonly requestPatternLaunch?: (patternId: PatternId) => void;
-  /** Cancels a pending manual launch request (ECS-117) — `Transport.cancelQueuedLaunch()`. */
-  readonly cancelQueuedLaunch?: () => void;
+  /** The queue entry currently playing — `Transport.getCurrentChainEntryId()`. */
+  readonly getCurrentChainEntryId?: () => ChainEntryId | null;
 }
 
 export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "connected" | "error";
@@ -171,9 +167,7 @@ export function useMidiControls(
         faderPageSize,
         getPlayhead: () => transportRef.current.getPlayheadInfo?.() ?? { patternId: null, beat: 0 },
         isPlaying: () => transportRef.current.isPlaying?.() ?? false,
-        getQueuedPatternId: () => transportRef.current.getQueuedPatternId?.() ?? null,
-        requestPatternLaunch: (patternId) => transportRef.current.requestPatternLaunch?.(patternId),
-        cancelQueuedLaunch: () => transportRef.current.cancelQueuedLaunch?.(),
+        getCurrentChainEntryId: () => transportRef.current.getCurrentChainEntryId?.() ?? null,
       });
       const actions = {
         play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),

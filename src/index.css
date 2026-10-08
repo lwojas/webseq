@@ -249,10 +249,9 @@ select {
   color: var(--danger);
 }
 
-/* --- pattern bar / chain editor --- */
+/* --- pattern bar / launcher --- */
 
 .pattern-bar,
-.chain-editor,
 .launcher-bar {
   display: flex;
   align-items: center;
@@ -271,8 +270,7 @@ select {
   flex-shrink: 0;
 }
 
-.pattern-chips,
-.chain-chips {
+.pattern-chips {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -296,29 +294,30 @@ select {
   color: #eafffa;
 }
 
-/* ECS-117: visualizes Transport's playing/queued pattern-launch state, independent of
+/* Visualizes Transport's playing pattern / PatternLauncher's queue membership, independent of
    .active above (the editing selection) -- a chip can be selected, playing and/or queued at
-   once. Reuses .chain-chip.playing's amber glow for "playing" so the two surfaces read the
-   same cue; "queued" gets a dashed accent outline for "about to happen, not yet true". Shared
-   with .launcher-chip (ECS-120) so the same pattern reads identically in both areas. */
+   once. "playing" gets an amber glow; "queued" (launcher-only -- see PatternLauncher, there's
+   no notion of a chip being both playing and queued) gets a dashed accent outline for "about
+   to happen, not yet true". Shared between .pattern-chip and .launcher-chip so the same state
+   reads identically in both rows. */
 .pattern-chip.playing,
 .launcher-chip.playing {
   border-color: var(--amber);
   box-shadow: 0 0 4px rgba(240, 168, 60, 0.4);
 }
 
-.pattern-chip.queued,
 .launcher-chip.queued {
   border-style: dashed;
   border-color: var(--accent);
 }
 
-/* ECS-120: PatternLauncher's chips -- each one *is* the launch/cancel toggle (no separate
-   select step, unlike .pattern-chip above), sharing .pattern-chip's plain-button sizing above
-   rather than the name+action split PatternBar would need. */
 .launcher-chip:hover {
   border-color: var(--accent-dim);
   color: var(--text);
+}
+
+.launcher-chip:disabled {
+  cursor: default;
 }
 
 .pattern-edit-fields {
@@ -350,51 +349,6 @@ select {
 .btn.danger:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-.chain-empty {
-  color: var(--text-dim);
-  font-style: italic;
-  font-size: 11px;
-}
-
-.chain-chip {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--panel-alt);
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  padding: 2px 4px;
-}
-
-.chain-chip.playing {
-  border-color: var(--amber);
-  box-shadow: 0 0 4px rgba(240, 168, 60, 0.4);
-}
-
-.chain-chip-name {
-  padding: 0 4px;
-  font-size: 11px;
-}
-
-.chain-move,
-.chain-remove {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  padding: 0 3px;
-  font-size: 12px;
-}
-
-.chain-move:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.chain-remove:hover {
-  color: var(--danger);
 }
 
 /* --- workspace (side panel + main content) --- */
@@ -544,6 +498,28 @@ select {
 .asset-chip-actions .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Shared by AssetsPanel's empty-bin message and MidiPanel's empty-log message. */
+.chain-empty {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 11px;
+}
+
+/* AssetsPanel's per-chip remove button (inside .asset-chip-actions, alongside .btn.small
+   siblings that get their own styling). */
+.chain-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 12px;
+}
+
+.chain-remove:hover {
+  color: var(--danger);
 }
 
 /* --- midi panel (lives inside .side-panel, see AssetsPanel's sibling MidiPanel) --- */
@@ -1651,10 +1627,6 @@ select {
     padding: 9px 12px;
   }
 
-  .chain-chip {
-    padding: 8px 10px;
-  }
-
   .pattern-chip,
   .launcher-chip {
     padding: 8px 10px;
@@ -1692,13 +1664,12 @@ select {
     padding: 9px 12px;
   }
 
-  .chain-move,
+  .asset-chip-actions .btn {
+    padding: 8px 10px;
+  }
+
   .chain-remove {
     padding: 6px 8px;
     font-size: 13px;
-  }
-
-  .asset-chip-actions .btn {
-    padding: 8px 10px;
   }
 }

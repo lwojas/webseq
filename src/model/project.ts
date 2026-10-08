@@ -245,14 +245,19 @@ export function duplicatePattern(project: Project, patternId: PatternId): Projec
   return { ...project, patterns: [...project.patterns, copy] };
 }
 
-/** Removes a pattern and every chain entry referencing it. Refuses to remove the project's
- * last remaining pattern — a project always needs at least one pattern to edit. */
+/** Removes a pattern and every queue entry referencing it. Refuses to remove the project's
+ * last remaining pattern — a project always needs at least one pattern to edit. If the removed
+ * pattern was the queue's only occupant (possible even with other patterns still in the
+ * project, if they were never queued), falls back to a fresh single entry for the new first
+ * remaining pattern — the queue is never allowed to go empty (see Project.patternChain). */
 export function removePattern(project: Project, patternId: PatternId): Project {
   if (project.patterns.length <= 1) return project;
+  const patterns = project.patterns.filter((p) => p.id !== patternId);
+  const patternChain = project.patternChain.filter((e) => e.patternId !== patternId);
   return {
     ...project,
-    patterns: project.patterns.filter((p) => p.id !== patternId),
-    patternChain: project.patternChain.filter((e) => e.patternId !== patternId),
+    patterns,
+    patternChain: patternChain.length > 0 ? patternChain : [{ id: nextId("chain"), patternId: patterns[0].id }],
   };
 }
 
@@ -319,27 +324,34 @@ export function moveNote(project: Project, patternId: PatternId, noteId: NoteId,
   return updatePattern(project, patternId, (p) => notes.moveNote(p, project.beatsPerBar, noteId, start, resolution));
 }
 
-// --- pattern chain ---
+// --- pattern queue (Project.patternChain — see its doc comment) ---
 
-export function appendToChain(project: Project, patternId: PatternId): Project {
-  return { ...project, patternChain: [...project.patternChain, { id: nextId("chain"), patternId }] };
+/** Inserts `patternId` into the queue immediately after `afterEntryId` (falling back to the
+ * end of the queue if that id is null or no longer present — e.g. its own pattern was deleted
+ * out from under it), so a freshly-queued pattern plays at the very next completion boundary
+ * rather than waiting for everything already queued ahead of it. The entry stays in the queue
+ * (this never "consumes" it) — the caller is expected to pass Transport.getCurrentChainEntryId()
+ * as `afterEntryId` so "queue next" means next relative to whatever's actually playing. */
+export function queuePatternNext(project: Project, patternId: PatternId, afterEntryId: ChainEntryId | null): Project {
+  const chain = project.patternChain;
+  const afterIndex = afterEntryId ? chain.findIndex((e) => e.id === afterEntryId) : -1;
+  const insertAt = afterIndex === -1 ? chain.length : afterIndex + 1;
+  const entry: ChainEntry = { id: nextId("chain"), patternId };
+  return { ...project, patternChain: [...chain.slice(0, insertAt), entry, ...chain.slice(insertAt)] };
 }
 
-export function removeChainEntry(project: Project, entryId: ChainEntryId): Project {
-  return { ...project, patternChain: project.patternChain.filter((e) => e.id !== entryId) };
+/** Removes every queue entry for `patternId`. Refused (a no-op) if that would empty the queue
+ * — the queue always needs at least one entry to loop (see Project.patternChain). */
+export function removePatternFromQueue(project: Project, patternId: PatternId): Project {
+  const patternChain = project.patternChain.filter((e) => e.patternId !== patternId);
+  if (patternChain.length === 0) return project;
+  return { ...project, patternChain };
 }
 
-/** Moves the chain entry at `fromIndex` to `toIndex`, for drag-to-reorder in the chain
- * editor. */
-export function moveChainEntry(project: Project, fromIndex: number, toIndex: number): Project {
-  const chain = [...project.patternChain];
-  if (fromIndex < 0 || fromIndex >= chain.length) return project;
-  const clampedTo = Math.max(0, Math.min(toIndex, chain.length - 1));
-  const [entry] = chain.splice(fromIndex, 1);
-  chain.splice(clampedTo, 0, entry);
-  return { ...project, patternChain: chain };
-}
-
+/** General-purpose queue setter — not reachable from the UI (there's no arbitrary multi-entry
+ * queue editor any more), but still useful for tests and for constructing/loading a project
+ * with a specific queue directly. Unlike queuePatternNext/removePatternFromQueue, this does not
+ * enforce the non-empty guarantee itself; callers that bypass the UI are responsible for it. */
 export function setChain(project: Project, patternChain: ChainEntry[]): Project {
   return { ...project, patternChain };
 }

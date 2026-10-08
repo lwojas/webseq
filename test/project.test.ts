@@ -2,14 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   addAsset,
   addPattern,
-  appendToChain,
   assignAsset,
   createInitialProject,
   duplicatePattern,
-  moveChainEntry,
+  queuePatternNext,
   removeAsset,
-  removeChainEntry,
   removePattern,
+  removePatternFromQueue,
   renameAsset,
   setBpm,
   setSwing,
@@ -227,62 +226,80 @@ describe("project model", () => {
     expect(notesForTrack(patternById(result.project, patternId)!, "track-2")).toHaveLength(2); // original + the one that fit
   });
 
-  it("removing a pattern also removes it from the chain", () => {
+  it("removing a pattern also removes it from the queue", () => {
     let project = createInitialProject();
     const patternA = project.patterns[0].id;
     project = addPattern(project, "Pattern B");
     const patternB = project.patterns[1].id;
-    project = appendToChain(project, patternB);
-    project = appendToChain(project, patternA);
+    project = queuePatternNext(project, patternB, project.patternChain[0].id);
+    project = queuePatternNext(project, patternA, project.patternChain[0].id);
 
     project = removePattern(project, patternA);
     expect(project.patternChain.every((e) => e.patternId !== patternA)).toBe(true);
   });
 
-  it("builds an ordered chain that can repeat the same pattern, e.g. A -> A -> B -> C -> A", () => {
+  it("removing a pattern that was the queue's only entry falls back to the first remaining pattern, never leaving it empty", () => {
     let project = createInitialProject();
     const a = project.patterns[0].id;
+    project = addPattern(project, "Pattern B"); // B exists but was never queued
+    const b = project.patterns[1].id;
+
+    project = removePattern(project, a); // queue was [A] only
+    expect(project.patternChain).toHaveLength(1);
+    expect(project.patternChain[0].patternId).toBe(b);
+  });
+
+  it("queuePatternNext inserts right after the given entry, not at the end", () => {
+    let project = createInitialProject();
+    const a = project.patterns[0].id; // queue starts as [A]
     project = addPattern(project, "Pattern B");
     const b = project.patterns[1].id;
     project = addPattern(project, "Pattern C");
     const c = project.patterns[2].id;
 
-    project = appendToChain(project, a); // chain starts with one A already
-    project = appendToChain(project, b);
-    project = appendToChain(project, c);
-    project = appendToChain(project, a);
+    project = queuePatternNext(project, c, project.patternChain[0].id); // [A, C]
+    const afterA = project.patternChain[0].id;
+    project = queuePatternNext(project, b, afterA); // insert after A again -> [A, B, C]
 
-    expect(project.patternChain.map((e) => e.patternId)).toEqual([a, a, b, c, a]);
+    expect(project.patternChain.map((e) => e.patternId)).toEqual([a, b, c]);
   });
 
-  it("reorders the chain by moving an entry", () => {
+  it("queuePatternNext appends when afterEntryId is null or no longer present", () => {
     let project = createInitialProject();
     const a = project.patterns[0].id;
     project = addPattern(project, "Pattern B");
     const b = project.patterns[1].id;
-    project = appendToChain(project, b); // chain: [A, B]
 
-    project = moveChainEntry(project, 1, 0); // -> [B, A]
-    expect(project.patternChain.map((e) => e.patternId)).toEqual([b, a]);
+    project = queuePatternNext(project, b, null);
+    expect(project.patternChain.map((e) => e.patternId)).toEqual([a, b]);
+
+    project = addPattern(project, "Pattern C");
+    const c = project.patterns[2].id;
+    project = queuePatternNext(project, c, "no-such-entry-id");
+    expect(project.patternChain.map((e) => e.patternId)).toEqual([a, b, c]);
   });
 
-  it("removes a single chain entry without affecting the pattern list", () => {
-    let project = createInitialProject();
-    const a = project.patterns[0].id;
-    project = appendToChain(project, a);
-    const entryToRemove = project.patternChain[0].id;
-
-    project = removeChainEntry(project, entryToRemove);
-    expect(project.patternChain).toHaveLength(1);
-    expect(project.patterns).toHaveLength(1);
-  });
-
-  it("resolveChainStep wraps around the chain length and skips dangling entries", () => {
+  it("removePatternFromQueue removes every entry for that pattern, but refuses to empty the queue", () => {
     let project = createInitialProject();
     const a = project.patterns[0].id;
     project = addPattern(project, "Pattern B");
     const b = project.patterns[1].id;
-    project = appendToChain(project, b); // chain: [A, B]
+    project = queuePatternNext(project, b, project.patternChain[0].id); // [A, B]
+    project = queuePatternNext(project, a, project.patternChain[0].id); // [A, A, B] -- A appears twice
+
+    project = removePatternFromQueue(project, a);
+    expect(project.patternChain.map((e) => e.patternId)).toEqual([b]); // both A entries gone
+
+    const unchanged = removePatternFromQueue(project, b); // only entry left -- refused
+    expect(unchanged.patternChain.map((e) => e.patternId)).toEqual([b]);
+  });
+
+  it("resolveChainStep wraps around the queue length and skips dangling entries", () => {
+    let project = createInitialProject();
+    const a = project.patterns[0].id;
+    project = addPattern(project, "Pattern B");
+    const b = project.patterns[1].id;
+    project = queuePatternNext(project, b, project.patternChain[0].id); // queue: [A, B]
 
     expect(resolveChainStep(project, 0)?.pattern.id).toBe(a);
     expect(resolveChainStep(project, 1)?.pattern.id).toBe(b);

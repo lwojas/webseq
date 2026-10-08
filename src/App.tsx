@@ -8,6 +8,7 @@ import { copyTrackConfig, hasTrackConfig, type CopiedTrackConfig } from "./model
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
+import { usePlayingPatternId } from "./hooks/usePlayingPatternId";
 import { Transport, type PlaybackStatus } from "./audio/transport";
 import { Playback, type ManualPlaybackSnapshot } from "./audio/playback";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
@@ -18,7 +19,6 @@ import { remapAssetIds } from "./model/project";
 import { TransportBar, type ResamplePhase } from "./components/TransportBar";
 import { PatternBar } from "./components/PatternBar";
 import { PatternLauncher } from "./components/PatternLauncher";
-import { ChainEditor } from "./components/ChainEditor";
 import { AssetsPanel, type ImportBatchResult } from "./components/AssetsPanel";
 import { MidiPanel } from "./components/MidiPanel";
 import { SequencerGrid } from "./components/SequencerGrid";
@@ -216,21 +216,15 @@ export function App() {
     setStatus(transportRef.current?.getStatus() ?? "stopped");
   }, []);
 
-  // requestPatternLaunch()/cancelQueuedLaunch() mutate Transport directly (same ref-based
-  // reasoning as play/pause/stop above), so nothing re-renders PatternBar/PatternLauncher's
-  // queued-chip highlight on its own -- this nudge forces the re-render the user's own click
-  // expects. Automatic consumption at a completion boundary stays un-nudged, same accepted
-  // imprecision already documented where queuedPatternId/playingPatternId are read (ECS-117).
-  const [, setLaunchNudge] = useState(0);
-
-  const handleRequestLaunch = useCallback((patternId: PatternId) => {
-    transportRef.current?.requestPatternLaunch(patternId);
-    setLaunchNudge((n) => n + 1);
+  // Queuing/removing a pattern is an ordinary project edit (model/project.ts's
+  // queuePatternNext/removePatternFromQueue) — "after whatever's currently playing" comes from
+  // Transport.getCurrentChainEntryId(), the one thing Transport still needs to expose for this.
+  const handleQueueNext = useCallback((patternId: PatternId) => {
+    dispatch({ type: "QUEUE_PATTERN_NEXT", patternId, afterEntryId: transportRef.current?.getCurrentChainEntryId() ?? null });
   }, []);
 
-  const handleCancelLaunch = useCallback(() => {
-    transportRef.current?.cancelQueuedLaunch();
-    setLaunchNudge((n) => n + 1);
+  const handleRemoveFromQueue = useCallback((patternId: PatternId) => {
+    dispatch({ type: "REMOVE_FROM_QUEUE", patternId });
   }, []);
 
   const midi = useMidiControls(
@@ -242,10 +236,7 @@ export function App() {
       // ECS-131: the same Transport.getPlayheadInfo()/getStatus() the on-screen playhead already reads.
       getPlayheadInfo: () => transportRef.current?.getPlayheadInfo() ?? { patternId: null, beat: 0 },
       isPlaying: () => transportRef.current?.getStatus() === "playing",
-      // ECS-117: the manual pattern-launch contract — see Transport's module comment.
-      getQueuedPatternId: () => transportRef.current?.getQueuedPatternId() ?? null,
-      requestPatternLaunch: (patternId) => transportRef.current?.requestPatternLaunch(patternId),
-      cancelQueuedLaunch: () => transportRef.current?.cancelQueuedLaunch(),
+      getCurrentChainEntryId: () => transportRef.current?.getCurrentChainEntryId() ?? null,
     },
     selectedPatternId,
     activeBank,
@@ -762,9 +753,11 @@ export function App() {
   const selectedTrack = selectedTarget !== "master" ? trackById(project, selectedTarget) : undefined;
   const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
   const playheadInfo = transportRef.current?.getPlayheadInfo();
-  // ECS-117: read fresh at render time, same as playheadInfo above -- not RAF-driven, so this
-  // reflects the last render's transport state, not necessarily this exact instant.
-  const queuedPatternId = transportRef.current?.getQueuedPatternId() ?? null;
+  // Polled, unlike playheadInfo above -- the queue now advances on its own (see
+  // Project.patternChain's doc comment), so PatternBar/PatternLauncher's chip highlighting
+  // needs a real state update on a boundary crossing even when nothing else re-renders the
+  // app (see usePlayingPatternId's doc comment).
+  const playingPatternId = usePlayingPatternId(transportRef, status === "playing");
 
   return (
     <div className="app" data-mobile-tab={mobileTab}>
@@ -844,26 +837,15 @@ export function App() {
         onRemovePattern={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
         onRenamePattern={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
         onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
-        playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
-        queuedPatternId={queuedPatternId}
+        playingPatternId={playingPatternId}
       />
 
       <PatternLauncher
         patterns={project.patterns}
-        playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
-        queuedPatternId={queuedPatternId}
-        onRequestLaunch={handleRequestLaunch}
-        onCancelLaunch={handleCancelLaunch}
-      />
-
-      <ChainEditor
-        chain={project.patternChain}
-        patterns={project.patterns}
-        playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
-        onAppend={(patternId) => dispatch({ type: "APPEND_TO_CHAIN", patternId })}
-        onRemoveEntry={(entryId) => dispatch({ type: "REMOVE_CHAIN_ENTRY", entryId })}
-        onMoveEntry={(from, to) => dispatch({ type: "MOVE_CHAIN_ENTRY", fromIndex: from, toIndex: to })}
-        selectedPatternIdToAdd={selectedPatternId}
+        patternChain={project.patternChain}
+        playingPatternId={playingPatternId}
+        onQueueNext={handleQueueNext}
+        onRemoveFromQueue={handleRemoveFromQueue}
       />
 
       <div className="workspace">

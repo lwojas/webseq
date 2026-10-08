@@ -186,7 +186,7 @@ describe("sequencer contract: playhead (ECS-131)", () => {
   });
 });
 
-describe("sequencer contract: pattern launch (ECS-117)", () => {
+describe("sequencer contract: pattern launch", () => {
   function launchHarness() {
     let project: Project = createInitialProject();
     const dispatch = (action: Action) => {
@@ -195,9 +195,7 @@ describe("sequencer contract: pattern launch (ECS-117)", () => {
     dispatch({ type: "ADD_PATTERN" }); // patterns[1] exists for pattern.1.*
     let playing = false;
     let playhead = { patternId: null as string | null, beat: 0 };
-    let queuedPatternId: string | null = null;
-    const launchCalls: string[] = [];
-    const cancelCalls: string[] = [];
+    let currentChainEntryId: string | null = null;
     const registry = createSequencerRegistry({
       getProject: () => project,
       getPatternId: () => project.patterns[0]!.id,
@@ -205,9 +203,7 @@ describe("sequencer contract: pattern launch (ECS-117)", () => {
       faderPageSize: 8,
       getPlayhead: () => playhead,
       isPlaying: () => playing,
-      getQueuedPatternId: () => queuedPatternId,
-      requestPatternLaunch: (patternId) => launchCalls.push(patternId),
-      cancelQueuedLaunch: () => cancelCalls.push("cancel"),
+      getCurrentChainEntryId: () => currentChainEntryId,
     });
     return {
       registry,
@@ -218,11 +214,9 @@ describe("sequencer contract: pattern launch (ECS-117)", () => {
       setPlayhead: (next: { patternId: string | null; beat: number }) => {
         playhead = next;
       },
-      setQueuedPatternId: (id: string | null) => {
-        queuedPatternId = id;
+      setCurrentChainEntryId: (id: string | null) => {
+        currentChainEntryId = id;
       },
-      launchCalls,
-      cancelCalls,
     };
   }
 
@@ -241,26 +235,30 @@ describe("sequencer contract: pattern launch (ECS-117)", () => {
   });
 
   it("pattern.<n>.playing is feedback-only", () => {
-    const { registry, launchCalls, cancelCalls } = launchHarness();
+    const { registry, getProject } = launchHarness();
+    const before = getProject();
     registry.getControl("pattern.0.playing")!.setValue(true);
-    expect(launchCalls).toEqual([]);
-    expect(cancelCalls).toEqual([]);
+    expect(getProject()).toBe(before); // unchanged -- no dispatch fired
   });
 
-  it("pattern.<n>.queued reflects the transport's queued pattern, and setValue requests/cancels a launch", () => {
-    const { registry, getProject, setQueuedPatternId, launchCalls, cancelCalls } = launchHarness();
+  it("pattern.<n>.queued reflects queue membership (other than the playing entry), and setValue queues/removes it", () => {
+    const { registry, getProject, setPlaying, setPlayhead, setCurrentChainEntryId } = launchHarness();
+    const patternA = getProject().patterns[0]!.id;
     const patternB = getProject().patterns[1]!.id;
+    setPlaying(true);
+    setPlayhead({ patternId: patternA, beat: 0 });
+    setCurrentChainEntryId(getProject().patternChain[0]!.id);
 
     expect(registry.getControl("pattern.1.queued")!.getValue()).toBe(false);
-    setQueuedPatternId(patternB);
-    expect(registry.getControl("pattern.1.queued")!.getValue()).toBe(true);
-    expect(registry.getControl("pattern.0.queued")!.getValue()).toBe(false);
 
     registry.getControl("pattern.1.queued")!.setValue(true);
-    expect(launchCalls).toEqual([patternB]);
+    expect(getProject().patternChain.map((e) => e.patternId)).toEqual([patternA, patternB]);
+    expect(registry.getControl("pattern.1.queued")!.getValue()).toBe(true);
+    expect(registry.getControl("pattern.0.queued")!.getValue()).toBe(false); // A is playing, not "queued"
 
     registry.getControl("pattern.1.queued")!.setValue(false);
-    expect(cancelCalls).toEqual(["cancel"]);
+    expect(getProject().patternChain.map((e) => e.patternId)).toEqual([patternA]);
+    expect(registry.getControl("pattern.1.queued")!.getValue()).toBe(false);
   });
 
   it("no control resolves for a pattern index past the project's pattern count", () => {
@@ -270,20 +268,24 @@ describe("sequencer contract: pattern launch (ECS-117)", () => {
   });
 
   it("pollPatternLaunch() re-syncs both playing and queued controls from the transport's clock", () => {
-    const { registry, getProject, setPlaying, setPlayhead, setQueuedPatternId } = launchHarness();
-    const patternB = getProject().patterns[1]!.id;
-    registry.getControl("pattern.1.playing"); // resolve + cache, same precondition pollPlayhead() has
+    const { registry, getProject, setPlaying, setPlayhead, setCurrentChainEntryId } = launchHarness();
+    const patternA = getProject().patterns[0]!.id;
+    registry.getControl("pattern.0.playing"); // resolve + cache, same precondition pollPlayhead() has
     registry.getControl("pattern.1.queued");
 
     const playingSeen: boolean[] = [];
     const queuedSeen: boolean[] = [];
-    registry.getControl("pattern.1.playing")!.onChange((value) => playingSeen.push(value as boolean));
+    registry.getControl("pattern.0.playing")!.onChange((value) => playingSeen.push(value as boolean));
     registry.getControl("pattern.1.queued")!.onChange((value) => queuedSeen.push(value as boolean));
 
     setPlaying(true);
-    setPlayhead({ patternId: patternB, beat: 0 });
-    setQueuedPatternId(patternB);
-    registry.pollPatternLaunch();
+    setPlayhead({ patternId: patternA, beat: 0 }); // A playing, so queuing B doesn't conflict with it
+    setCurrentChainEntryId(getProject().patternChain[0]!.id);
+    registry.getControl("pattern.1.queued")!.setValue(true); // dispatches, but nothing syncs/fires on its own yet
+    expect(playingSeen).toEqual([]);
+    expect(queuedSeen).toEqual([]);
+
+    registry.pollPatternLaunch(); // re-reads the live project/clock and fires both
     expect(playingSeen).toEqual([true]);
     expect(queuedSeen).toEqual([true]);
   });

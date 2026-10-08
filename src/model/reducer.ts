@@ -32,9 +32,8 @@ export type Action =
   | { type: "DUPLICATE_PATTERN"; patternId: PatternId }
   | { type: "REMOVE_PATTERN"; patternId: PatternId }
   | { type: "RENAME_PATTERN"; patternId: PatternId; name: string }
-  | { type: "APPEND_TO_CHAIN"; patternId: PatternId }
-  | { type: "REMOVE_CHAIN_ENTRY"; entryId: ChainEntryId }
-  | { type: "MOVE_CHAIN_ENTRY"; fromIndex: number; toIndex: number }
+  | { type: "QUEUE_PATTERN_NEXT"; patternId: PatternId; afterEntryId: ChainEntryId | null }
+  | { type: "REMOVE_FROM_QUEUE"; patternId: PatternId }
   | { type: "ADD_FX"; target: FxTarget; fxType: FxType }
   | { type: "REMOVE_FX"; target: FxTarget; fxId: FxId }
   | { type: "SET_FX_PARAM"; target: FxTarget; fxId: FxId; paramId: string; value: number }
@@ -98,12 +97,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.removePattern(state, action.patternId);
     case "RENAME_PATTERN":
       return project.renamePattern(state, action.patternId, action.name);
-    case "APPEND_TO_CHAIN":
-      return project.appendToChain(state, action.patternId);
-    case "REMOVE_CHAIN_ENTRY":
-      return project.removeChainEntry(state, action.entryId);
-    case "MOVE_CHAIN_ENTRY":
-      return project.moveChainEntry(state, action.fromIndex, action.toIndex);
+    case "QUEUE_PATTERN_NEXT":
+      return project.queuePatternNext(state, action.patternId, action.afterEntryId);
+    case "REMOVE_FROM_QUEUE":
+      return project.removePatternFromQueue(state, action.patternId);
     case "ADD_FX":
       return fx.addFx(state, action.target, action.fxType);
     case "REMOVE_FX":

@@ -164,9 +164,10 @@ export interface Pattern {
   notes: Record<NoteId, Note>;
 }
 
-/** One slot in the project's pattern chain. A separate `id` (not just the patternId) because
- * the same pattern may appear more than once in the chain (e.g. `A -> A -> B -> C -> A`), and
- * each occurrence needs a stable identity for reordering/removal in the UI. */
+/** One slot in the project's pattern queue (`Project.patternChain` — see its doc comment for
+ * why the field keeps its original name). A separate `id` (not just the patternId) because the
+ * same pattern can appear more than once, and each occurrence needs a stable identity
+ * independent of its position, which shifts as entries are queued/removed around it. */
 export interface ChainEntry {
   id: ChainEntryId;
   patternId: PatternId;
@@ -219,8 +220,14 @@ export interface Project {
   beatsPerBar: number;
   tracks: Track[];
   patterns: Pattern[];
-  /** Ordered, possibly-repeating sequence of patterns that plays back continuously, looping
-   * from the last entry back to the first — see src/audio/transport.ts. */
+  /** The pattern queue: an ordered, possibly-repeating, circular playlist that plays back
+   * continuously, looping from the last entry back to the first — see src/audio/transport.ts.
+   * Every mutator in project.ts (queuePatternNext, removePatternFromQueue, removePattern)
+   * guarantees this is never empty, so Transport never has to treat "nothing queued" as a
+   * distinct state from "loop whatever's here" — there's always at least one entry to loop.
+   * Still named `patternChain`/`ChainEntry` (an earlier, predefined-sequence-with-reordering
+   * design this was simplified from) rather than renamed, to avoid a project-file migration for
+   * a field whose on-disk shape didn't actually need to change. */
   patternChain: ChainEntry[];
   master: MasterBus;
   /** The project-level Asset Bin — see the Asset doc comment. */

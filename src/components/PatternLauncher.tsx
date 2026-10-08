@@ -1,38 +1,46 @@
-import type { Pattern, PatternId } from "../model/types";
+import type { ChainEntry, Pattern, PatternId } from "../model/types";
 
 interface Props {
   patterns: Pattern[];
+  /** The pattern queue (project.patternChain — see its doc comment): an ordered, circular,
+   * never-empty playlist. A pattern's membership here (not a single scalar "queued" id) is
+   * what this component visualizes and edits. */
+  patternChain: ChainEntry[];
   playingPatternId: PatternId | null;
-  queuedPatternId: PatternId | null;
-  onRequestLaunch: (id: PatternId) => void;
-  onCancelLaunch: () => void;
+  /** Queues `id` right after whatever's currently playing (model/project.ts's
+   * queuePatternNext) — the caller resolves "currently playing" via
+   * Transport.getCurrentChainEntryId(), since the queue itself has no playback-position
+   * concept of its own. */
+  onQueueNext: (patternId: PatternId) => void;
+  /** Removes every queue entry for `id` (model/project.ts's removePatternFromQueue) — refused
+   * by the model if that would leave the queue empty. */
+  onRemoveFromQueue: (patternId: PatternId) => void;
 }
 
-/** Small, dedicated pattern-launching area (ECS-120) — separate from PatternBar's editing
- * concerns (select/create/duplicate/rename/bars) and from ChainEditor's predefined chain, per
- * ECS-115's "separate pattern editing from pattern launching" direction: the editor stays
- * focused on pattern contents, and this is the "own interaction/view layer" launching gets
- * instead. Owns the manual-launch interaction entirely — every chip here *is* its own
- * launch/cancel toggle (no separate select step, unlike PatternBar's chips) — using the same
- * shared Transport.requestPatternLaunch()/cancelQueuedLaunch() contract as everything else
- * (ECS-117); no transition logic lives here, just the UI that triggers it. Clicking the
- * already-playing pattern is left enabled rather than special-cased away: the contract already
- * treats "request the pattern that's already playing" as cancelling any pending request, so
- * that click is still meaningful whenever something else is queued. */
-export function PatternLauncher({ patterns, playingPatternId, queuedPatternId, onRequestLaunch, onCancelLaunch }: Props) {
+/** Small, dedicated pattern-launching area — separate from PatternBar's editing concerns
+ * (select/create/duplicate/rename/bars), per ECS-115's "separate pattern editing from pattern
+ * launching" direction. The pattern queue *is* the playback driver (there's no separate
+ * predefined chain any more — see Project.patternChain's doc comment): queuing a pattern here
+ * inserts it into the loop right after whatever's currently playing, and it stays there,
+ * repeating, until explicitly removed — never a one-shot override that falls back to some
+ * other sequence on its own. Every chip is its own queue/remove toggle (no separate select
+ * step, unlike PatternBar's chips), using the project reducer directly (queuing is an ordinary
+ * project edit, not transient playback state) rather than any transport-side launch API. */
+export function PatternLauncher({ patterns, patternChain, playingPatternId, onQueueNext, onRemoveFromQueue }: Props) {
   return (
     <div className="pattern-bar launcher-bar">
       <span className="pattern-bar-label">Launch</span>
       <div className="pattern-chips">
         {patterns.map((p) => {
           const playing = p.id === playingPatternId;
-          const queued = p.id === queuedPatternId;
+          const queued = !playing && patternChain.some((e) => e.patternId === p.id);
           return (
             <button
               key={p.id}
               className={`launcher-chip ${playing ? "playing" : ""} ${queued ? "queued" : ""}`}
-              onClick={() => (queued ? onCancelLaunch() : onRequestLaunch(p.id))}
-              title={queued ? "Cancel queued launch" : playing ? "Playing" : "Queue to launch at the next completion boundary"}
+              onClick={() => (queued ? onRemoveFromQueue(p.id) : onQueueNext(p.id))}
+              disabled={playing}
+              title={queued ? "Remove from queue" : playing ? "Playing" : "Queue next"}
             >
               {p.name}
             </button>
