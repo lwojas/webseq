@@ -7,6 +7,7 @@ import {
   duplicatePattern,
   queuePatternNext,
   removeAsset,
+  removeChainEntry,
   removePattern,
   removePatternFromQueue,
   renameAsset,
@@ -292,6 +293,29 @@ describe("project model", () => {
 
     const unchanged = removePatternFromQueue(project, b); // only entry left -- refused
     expect(unchanged.patternChain.map((e) => e.patternId)).toEqual([b]);
+  });
+
+  it("removeChainEntry removes exactly one entry, leaving other occurrences of its pattern untouched", () => {
+    let project = createInitialProject();
+    const a = project.patterns[0].id;
+    project = addPattern(project, "Pattern B");
+    const b = project.patterns[1].id;
+    project = queuePatternNext(project, b, project.patternChain[0].id); // [A, B]
+    project = queuePatternNext(project, a, project.patternChain[0].id); // [A, A, B]
+    const [first, second, third] = project.patternChain;
+
+    project = removeChainEntry(project, second.id); // drop just the second A
+    expect(project.patternChain.map((e) => e.id)).toEqual([first.id, third.id]);
+    expect(project.patternChain.map((e) => e.patternId)).toEqual([a, b]);
+  });
+
+  it("removeChainEntry refuses to empty the queue", () => {
+    const project = createInitialProject();
+    const onlyEntryId = project.patternChain[0].id;
+
+    const unchanged = removeChainEntry(project, onlyEntryId);
+    expect(unchanged.patternChain).toHaveLength(1);
+    expect(unchanged.patternChain[0].id).toBe(onlyEntryId);
   });
 
   it("resolveChainStep wraps around the queue length and skips dangling entries", () => {

@@ -341,9 +341,19 @@ export function queuePatternNext(project: Project, patternId: PatternId, afterEn
 }
 
 /** Removes every queue entry for `patternId`. Refused (a no-op) if that would empty the queue
- * — the queue always needs at least one entry to loop (see Project.patternChain). */
+ * — the queue always needs at least one entry to loop (see Project.patternChain). Used by the
+ * MIDI `pattern.<n>.queued` pad control, which is indexed by pattern, not by queue position. */
 export function removePatternFromQueue(project: Project, patternId: PatternId): Project {
   const patternChain = project.patternChain.filter((e) => e.patternId !== patternId);
+  if (patternChain.length === 0) return project;
+  return { ...project, patternChain };
+}
+
+/** Removes exactly one queue entry by its own id — unlike removePatternFromQueue above, this
+ * leaves any other occurrence of the same pattern untouched (a queue with repeats, e.g.
+ * `[A, A, B]`, can drop just one `A`). Refused (a no-op) if that would empty the queue. */
+export function removeChainEntry(project: Project, entryId: ChainEntryId): Project {
+  const patternChain = project.patternChain.filter((e) => e.id !== entryId);
   if (patternChain.length === 0) return project;
   return { ...project, patternChain };
 }

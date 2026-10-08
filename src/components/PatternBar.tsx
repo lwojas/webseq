@@ -11,16 +11,16 @@ interface Props {
   onSetBars: (id: PatternId, bars: number) => void;
   /** The pattern currently sounding, or null while stopped/paused — independent of
    * `selectedPatternId`, which is only the editing selection. Visualization only: queuing
-   * lives in PatternLauncher, not here. */
+   * lives in the Patterns view (PatternList/PatternQueue), not here. */
   playingPatternId?: PatternId | null;
 }
 
 /** Pattern selector + editor: which pattern is currently open in the timeline below, plus
  * create/duplicate/remove/rename and the pattern's own bar count. Playback (the pattern
- * *queue* — see PatternLauncher and Transport's doc comments) is independent of this
- * selection — this only controls what you're looking at/editing. `playingPatternId` is shown
- * here too (not just in PatternLauncher) purely as read-only context; the queue interaction
- * itself is owned by PatternLauncher, not the editor (ECS-115's "separate pattern editing from
+ * *queue* — see PatternQueue and Transport's doc comments) is independent of this selection —
+ * this only controls what you're looking at/editing. `playingPatternId` is shown here too
+ * purely as read-only context; the queue interaction itself is owned by the dedicated Patterns
+ * view (App.tsx's `mainView`), not the editor (ECS-115's "separate pattern editing from
  * pattern launching" direction). */
 export function PatternBar({
   patterns,

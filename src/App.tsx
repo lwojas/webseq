@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -8,7 +8,7 @@ import { copyTrackConfig, hasTrackConfig, type CopiedTrackConfig } from "./model
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
-import { usePlayingPatternId } from "./hooks/usePlayingPatternId";
+import { usePlayingPosition } from "./hooks/usePlayingPosition";
 import { Transport, type PlaybackStatus } from "./audio/transport";
 import { Playback, type ManualPlaybackSnapshot } from "./audio/playback";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
@@ -18,7 +18,8 @@ import { saveProject, loadProject, listProjects, deleteProject } from "./persist
 import { remapAssetIds } from "./model/project";
 import { TransportBar, type ResamplePhase } from "./components/TransportBar";
 import { PatternBar } from "./components/PatternBar";
-import { PatternLauncher } from "./components/PatternLauncher";
+import { PatternList } from "./components/PatternList";
+import { PatternQueue } from "./components/PatternQueue";
 import { AssetsPanel, type ImportBatchResult } from "./components/AssetsPanel";
 import { MidiPanel } from "./components/MidiPanel";
 import { SequencerGrid } from "./components/SequencerGrid";
@@ -50,12 +51,25 @@ const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
  * its own bottom tab bar covering all of them instead of the desktop's two separate tab
  * strips. This is pure navigation state — desktop's existing `sidePanelView`/`bottomPanelView`
  * still own which content actually renders inside each section (see handleSelectMobileTab). */
-type MobileTab = "timeline" | "fx" | "mixer" | "assets";
+type MobileTab = "timeline" | "fx" | "mixer" | "assets" | "patterns";
 const MOBILE_TABS: { id: MobileTab; label: string }[] = [
   { id: "timeline", label: "Timeline" },
   { id: "fx", label: "FX" },
   { id: "mixer", label: "Mixer" },
   { id: "assets", label: "Assets" },
+  { id: "patterns", label: "Patterns" },
+];
+
+/** Top-level toggle between the Sequencer workspace and the Patterns view (pattern library +
+ * queue, PatternList/PatternQueue) — see index.css's `data-main-view` rules. Both are always
+ * mounted; only CSS `display` toggles between them (the same mechanism `data-mobile-tab`
+ * already uses, deliberately not conditional JSX unmount/remount) so switching never loses
+ * SequencerGrid's scroll position/virtualization state, and costs nothing beyond a style
+ * recalc. */
+type MainView = "sequencer" | "patterns";
+const MAIN_VIEWS: { id: MainView; label: string }[] = [
+  { id: "sequencer", label: "Sequencer" },
+  { id: "patterns", label: "Patterns" },
 ];
 
 /** Frees every sample the engine holds. New and Load replace the whole project, so the previous
@@ -98,6 +112,7 @@ export function App() {
   const [sidePanelView, setSidePanelView] = useState<SidePanelView>("assets");
   const [bottomPanelView, setBottomPanelView] = useState<BottomPanelView>("fx");
   const [mobileTab, setMobileTab] = useState<MobileTab>("timeline");
+  const [mainView, setMainView] = useState<MainView>("sequencer");
   const [selectedTarget, setSelectedTarget] = useState<FxTarget>("master");
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
   const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
@@ -217,14 +232,16 @@ export function App() {
   }, []);
 
   // Queuing/removing a pattern is an ordinary project edit (model/project.ts's
-  // queuePatternNext/removePatternFromQueue) — "after whatever's currently playing" comes from
+  // queuePatternNext/removeChainEntry) — "after whatever's currently playing" comes from
   // Transport.getCurrentChainEntryId(), the one thing Transport still needs to expose for this.
   const handleQueueNext = useCallback((patternId: PatternId) => {
     dispatch({ type: "QUEUE_PATTERN_NEXT", patternId, afterEntryId: transportRef.current?.getCurrentChainEntryId() ?? null });
   }, []);
 
-  const handleRemoveFromQueue = useCallback((patternId: PatternId) => {
-    dispatch({ type: "REMOVE_FROM_QUEUE", patternId });
+  // Targets one specific queue entry (PatternQueue's per-row Remove), not every occurrence of
+  // its pattern -- see model/project.ts's removeChainEntry doc comment.
+  const handleRemoveChainEntry = useCallback((entryId: ChainEntryId) => {
+    dispatch({ type: "REMOVE_CHAIN_ENTRY", entryId });
   }, []);
 
   const midi = useMidiControls(
@@ -754,13 +771,13 @@ export function App() {
   const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
   const playheadInfo = transportRef.current?.getPlayheadInfo();
   // Polled, unlike playheadInfo above -- the queue now advances on its own (see
-  // Project.patternChain's doc comment), so PatternBar/PatternLauncher's chip highlighting
+  // Project.patternChain's doc comment), so PatternBar/PatternList/PatternQueue's highlighting
   // needs a real state update on a boundary crossing even when nothing else re-renders the
-  // app (see usePlayingPatternId's doc comment).
-  const playingPatternId = usePlayingPatternId(transportRef, status === "playing");
+  // app (see usePlayingPosition's doc comment).
+  const { patternId: playingPatternId, chainEntryId: playingChainEntryId } = usePlayingPosition(transportRef, status === "playing");
 
   return (
-    <div className="app" data-mobile-tab={mobileTab}>
+    <div className="app" data-mobile-tab={mobileTab} data-main-view={mainView}>
       <div className="topbar">
         <div>
           <span className="brand">WEBSEQ</span>
@@ -840,13 +857,17 @@ export function App() {
         playingPatternId={playingPatternId}
       />
 
-      <PatternLauncher
-        patterns={project.patterns}
-        patternChain={project.patternChain}
-        playingPatternId={playingPatternId}
-        onQueueNext={handleQueueNext}
-        onRemoveFromQueue={handleRemoveFromQueue}
-      />
+      <nav className="main-view-tabs">
+        {MAIN_VIEWS.map((view) => (
+          <button
+            key={view.id}
+            className={`main-view-tab ${mainView === view.id ? "active" : ""}`}
+            onClick={() => setMainView(view.id)}
+          >
+            {view.label}
+          </button>
+        ))}
+      </nav>
 
       <div className="workspace">
         <aside className="side-panel">
@@ -975,10 +996,34 @@ export function App() {
         </div>
       </div>
 
+      {/* Always mounted alongside .workspace above -- data-main-view toggles which is visible
+          via CSS display, the same mechanism data-mobile-tab already uses, so switching never
+          unmounts/remounts SequencerGrid (see MainView's doc comment). */}
+      <div className="patterns-view">
+        <PatternList
+          patterns={project.patterns}
+          selectedPatternId={selectedPatternId}
+          playingPatternId={playingPatternId}
+          onSelect={setSelectedPatternId}
+          onAdd={() => dispatch({ type: "ADD_PATTERN" })}
+          onDuplicate={(id) => dispatch({ type: "DUPLICATE_PATTERN", patternId: id })}
+          onRemove={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
+          onRename={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
+          onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
+          onQueueNext={handleQueueNext}
+        />
+        <PatternQueue
+          patternChain={project.patternChain}
+          patterns={project.patterns}
+          playingChainEntryId={playingChainEntryId}
+          onRemoveEntry={handleRemoveChainEntry}
+        />
+      </div>
+
       {/* Hidden on desktop (see index.css) — on a phone-sized viewport this replaces the
           desktop side-panel/bottom-panel tab strips as the one control that switches which
-          of Timeline/FX/Mixer/Assets is visible (see the @media block's section-visibility
-          rules keyed off .app's data-mobile-tab attribute above). */}
+          of Timeline/FX/Mixer/Assets/Patterns is visible (see the @media block's section-
+          visibility rules keyed off .app's data-mobile-tab attribute above). */}
       <nav className="mobile-tabbar">
         {MOBILE_TABS.map((tab) => (
           <button

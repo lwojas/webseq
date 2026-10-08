@@ -251,8 +251,7 @@ select {
 
 /* --- pattern bar / launcher --- */
 
-.pattern-bar,
-.launcher-bar {
+.pattern-bar {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -277,8 +276,7 @@ select {
   flex-wrap: wrap;
 }
 
-.pattern-chip,
-.launcher-chip {
+.pattern-chip {
   background: var(--panel-alt);
   border: 1px solid var(--border-strong);
   color: var(--text-dim);
@@ -294,30 +292,15 @@ select {
   color: #eafffa;
 }
 
-/* Visualizes Transport's playing pattern / PatternLauncher's queue membership, independent of
-   .active above (the editing selection) -- a chip can be selected, playing and/or queued at
-   once. "playing" gets an amber glow; "queued" (launcher-only -- see PatternLauncher, there's
-   no notion of a chip being both playing and queued) gets a dashed accent outline for "about
-   to happen, not yet true". Shared between .pattern-chip and .launcher-chip so the same state
-   reads identically in both rows. */
+/* Visualizes Transport's playing pattern, independent of .active above (the editing
+   selection) -- a chip/row can be selected and/or playing at once. Shared with
+   .pattern-list-row/.queue-row (the Patterns view) so the same "playing" cue reads identically
+   everywhere it appears. */
 .pattern-chip.playing,
-.launcher-chip.playing {
+.pattern-list-row.playing,
+.queue-row.playing {
   border-color: var(--amber);
   box-shadow: 0 0 4px rgba(240, 168, 60, 0.4);
-}
-
-.launcher-chip.queued {
-  border-style: dashed;
-  border-color: var(--accent);
-}
-
-.launcher-chip:hover {
-  border-color: var(--accent-dim);
-  color: var(--text);
-}
-
-.launcher-chip:disabled {
-  cursor: default;
 }
 
 .pattern-edit-fields {
@@ -349,6 +332,145 @@ select {
 .btn.danger:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* --- main view toggle (Sequencer / Patterns) --- */
+
+/* Same tab-strip treatment as .side-panel-tab, just at the top level instead of inside a
+   sidebar -- see App.tsx's MainView doc comment for why this exists as a full .app-level
+   toggle (both views stay mounted; this only flips which is visible). */
+.main-view-tabs {
+  display: flex;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.main-view-tab {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.main-view-tab:hover {
+  color: var(--text);
+}
+
+.main-view-tab.active {
+  background: var(--panel-alt);
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* --- patterns view (pattern library | queue, two columns) --- */
+
+/* Always mounted (see App.tsx's MainView doc comment) -- hidden by default, shown only under
+   .app[data-main-view="patterns"] below, the same display-toggle mechanism data-mobile-tab
+   already uses for its own sections. */
+.patterns-view {
+  flex: 1;
+  min-height: 0;
+  display: none;
+  overflow: hidden;
+}
+
+.app[data-main-view="patterns"] .workspace {
+  display: none;
+}
+
+.app[data-main-view="patterns"] .patterns-view {
+  display: flex;
+}
+
+.pattern-list-column,
+.pattern-queue-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.pattern-list-column {
+  border-right: 1px solid var(--border);
+}
+
+.pattern-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.pattern-list,
+.pattern-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pattern-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.pattern-list-row.active {
+  border-color: var(--accent);
+}
+
+.pattern-list-row .pattern-name-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.pattern-list-bars {
+  flex-shrink: 0;
+}
+
+.pattern-list-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 6px 8px;
+}
+
+.queue-row-position {
+  color: var(--text-dim);
+  font-size: 10px;
+  flex-shrink: 0;
+  width: 1.5em;
+  text-align: right;
+}
+
+.queue-row-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
 }
 
 /* --- workspace (side panel + main content) --- */
@@ -1534,19 +1656,22 @@ select {
     --header-width: 132px;
   }
 
-  .workspace {
+  .workspace,
+  .patterns-view {
     flex-direction: column;
   }
 
   .side-panel-tabs,
-  .bottom-panel-tabs {
+  .bottom-panel-tabs,
+  .main-view-tabs {
     display: none;
   }
 
   .side-panel,
   .main,
   .sequencer,
-  .bottom-panel {
+  .bottom-panel,
+  .patterns-view {
     display: none;
   }
 
@@ -1579,6 +1704,30 @@ select {
     flex: 1;
     height: auto;
     border-top: none;
+  }
+
+  /* data-main-view's desktop-only show/hide (further up this file) is irrelevant on mobile --
+     data-mobile-tab is the one thing that decides visibility here, same as it already is for
+     .side-panel/.main/.bottom-panel above. */
+  .app[data-mobile-tab="patterns"] .patterns-view {
+    display: flex;
+    flex: 1;
+  }
+
+  .pattern-list-column {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Same overflow strategy as .pattern-edit-fields above: wrap onto a second line rather than
+     let flex:1/min-width:0 crush the name input down to a few unreadable characters. */
+  .pattern-list-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .pattern-list-row .pattern-name-input {
+    flex-basis: 100%;
   }
 
   .mobile-tabbar {
@@ -1627,9 +1776,13 @@ select {
     padding: 9px 12px;
   }
 
-  .pattern-chip,
-  .launcher-chip {
+  .pattern-chip {
     padding: 8px 10px;
+  }
+
+  .pattern-list-row,
+  .queue-row {
+    padding: 10px 8px;
   }
 
   .track-header .load-btn,
@@ -1655,7 +1808,8 @@ select {
   .side-panel-tab,
   .bottom-panel-tab,
   .bank-tab,
-  .mobile-tab {
+  .mobile-tab,
+  .main-view-tab {
     padding: 12px 8px;
   }
 
