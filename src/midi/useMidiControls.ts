@@ -120,6 +120,15 @@ export function useMidiControls(
         return;
       }
 
+      // midi-core's surface/sequencer plumbing keys its ports by the profile's own port ids (e.g. the Launchpad's
+      // "midi-in"/"daw-in", the Push's "user-port-in", the generic profile's "main-in") -- never a fixed name.
+      // Resolving by role here, the same way midi-core's own createSequencerBindings does internally, instead of a
+      // hardcoded "midi-in"/"daw-in" literal, since the latter only matched the Launchpad's own ids by coincidence.
+      const mainInputPortId = device.profile.ports.find((port) => port.type === "input" && port.role === "main")?.id;
+      const mainOutputPortId = device.profile.ports.find((port) => port.type === "output" && port.role === "main")?.id;
+      const dawInputPortId = device.profile.ports.find((port) => port.type === "input" && port.role === "daw-control")?.id;
+      const dawOutputPortId = device.profile.ports.find((port) => port.type === "output" && port.role === "daw-control")?.id;
+
       await disconnect();
 
       setStatus("connecting");
@@ -190,9 +199,12 @@ export function useMidiControls(
       // The DAW ports the system has. Each is passed on its own: the DAW input carries the bank arrows on any device that has one
       // (ECS-114), and midi-core builds a fader mode only when both of its required ports are here. Whether they connect is the
       // surface's to report: a fader mode whose port fails to connect is refused when entered (ECS-104).
+      const outputsByPortId: Record<string, MidiOutput> = {};
+      if (output && mainOutputPortId) outputsByPortId[mainOutputPortId] = output;
+      if (dawOutput && dawOutputPortId) outputsByPortId[dawOutputPortId] = dawOutput;
       const devices: SequencerDevices = {
-        outputs: { ...(output ? { "midi-out": output } : {}), ...(dawOutput ? { "daw-out": dawOutput } : {}) },
-        inputs: dawInput ? { "daw-in": dawInput } : {},
+        outputs: outputsByPortId,
+        inputs: dawInput && dawInputPortId ? { [dawInputPortId]: dawInput } : {},
       };
 
       const sequencer = createSequencerBindings(
@@ -219,8 +231,8 @@ export function useMidiControls(
       const surface = createControlSurface({
         profile: device.profile,
         ports: {
-          inputs: { "midi-in": input, ...(dawInput ? { "daw-in": dawInput } : {}) },
-          outputs: { ...(output ? { "midi-out": output } : {}), ...(dawOutput ? { "daw-out": dawOutput } : {}) },
+          inputs: { ...(mainInputPortId ? { [mainInputPortId]: input } : {}), ...(dawInput && dawInputPortId ? { [dawInputPortId]: dawInput } : {}) },
+          outputs: outputsByPortId,
         },
         bindingTable: sequencer.bindings,
         context: createSurfaceContext(),
@@ -235,7 +247,7 @@ export function useMidiControls(
         unlogInput();
         await surface.detach().catch(() => {}); // best-effort: release whatever attach() connected before it failed
         setStatus("error");
-        setError(err instanceof Error ? err.message : String(err));
+        setError(describeThrown(err));
         return;
       }
 
@@ -310,6 +322,18 @@ export function useMidiControls(
     connect,
     disconnect,
   };
+}
+
+// surface.attach() can reject with a SurfaceError -- a plain {code, message, cause} object, not an Error
+// instance (midi-core's own stance: surface failures are reported in the surface's own terms, not as
+// Error subclasses). String(err) on that shape gives "[object Object]", so .message is read directly when
+// present, same as the existing surface.onError handler already assumes.
+export function describeThrown(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err && typeof (err as { message: unknown }).message === "string") {
+    return (err as { message: string }).message;
+  }
+  return String(err);
 }
 
 function describeMessage(message: MidiMessage): string {
