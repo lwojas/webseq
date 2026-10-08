@@ -278,14 +278,19 @@ select {
   flex-wrap: wrap;
 }
 
+/* ECS-119: a container (not a button itself) so the select action (.pattern-chip-name) and the
+   manual-launch action (.pattern-chip-launch) are two independent buttons, same structural
+   split as .chain-chip's move/remove controls below -- selecting a pattern to edit must never
+   queue or cancel a launch, and vice versa. */
 .pattern-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   background: var(--panel-alt);
   border: 1px solid var(--border-strong);
   color: var(--text-dim);
-  padding: 4px 10px;
+  padding: 2px 4px;
   border-radius: 3px;
-  cursor: pointer;
-  font-size: 11px;
 }
 
 .pattern-chip.active {
@@ -306,6 +311,36 @@ select {
 .pattern-chip.queued {
   border-style: dashed;
   border-color: var(--accent);
+}
+
+.pattern-chip-name {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 11px;
+}
+
+/* ECS-119: queues/cancels a manual launch (Transport.requestPatternLaunch/cancelQueuedLaunch,
+   ECS-117's contract) -- one toggling button, same "active" modifier + glyph-swap convention
+   as .track-trigger (TrackRow) and the audition button (AssetsPanel), sized like the
+   equivalent per-chip action buttons in ChainEditor (.chain-move/.chain-remove). */
+.pattern-chip-launch {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 3px;
+  font-size: 12px;
+}
+
+.pattern-chip-launch:hover {
+  color: var(--accent);
+}
+
+.pattern-chip-launch.active {
+  color: var(--danger);
 }
 
 .pattern-edit-fields {
@@ -1638,9 +1673,17 @@ select {
     padding: 9px 12px;
   }
 
-  .pattern-chip,
   .chain-chip {
     padding: 8px 10px;
+  }
+
+  .pattern-chip-name {
+    padding: 8px 10px;
+  }
+
+  .pattern-chip-launch {
+    padding: 6px 8px;
+    font-size: 13px;
   }
 
   .track-header .load-btn,

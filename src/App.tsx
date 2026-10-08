@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
+import type { Asset, AssetId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -213,6 +213,23 @@ export function App() {
   const handleStop = useCallback(() => {
     transportRef.current?.stop();
     setStatus(transportRef.current?.getStatus() ?? "stopped");
+  }, []);
+
+  // requestPatternLaunch()/cancelQueuedLaunch() mutate Transport directly (same ref-based
+  // reasoning as play/pause/stop above), so nothing re-renders PatternBar's queued-chip
+  // highlight on its own -- this nudge forces the re-render the user's own click expects.
+  // Automatic consumption at a completion boundary stays un-nudged, same accepted imprecision
+  // already documented where queuedPatternId/playingPatternId are read (ECS-117).
+  const [, setLaunchNudge] = useState(0);
+
+  const handleRequestLaunch = useCallback((patternId: PatternId) => {
+    transportRef.current?.requestPatternLaunch(patternId);
+    setLaunchNudge((n) => n + 1);
+  }, []);
+
+  const handleCancelLaunch = useCallback(() => {
+    transportRef.current?.cancelQueuedLaunch();
+    setLaunchNudge((n) => n + 1);
   }, []);
 
   const midi = useMidiControls(
@@ -828,6 +845,8 @@ export function App() {
         onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
         playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
         queuedPatternId={queuedPatternId}
+        onRequestLaunch={handleRequestLaunch}
+        onCancelLaunch={handleCancelLaunch}
       />
 
       <ChainEditor

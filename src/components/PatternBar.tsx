@@ -10,21 +10,25 @@ interface Props {
   onRenamePattern: (id: PatternId, name: string) => void;
   onSetBars: (id: PatternId, bars: number) => void;
   /** The pattern currently sounding, or null while stopped/paused (ECS-117) — independent of
-   * `selectedPatternId`, which is only the editing selection. Purely a visualization of
-   * Transport's own state; this component has no launch controls of its own yet. */
+   * `selectedPatternId`, which is only the editing selection. */
   playingPatternId?: PatternId | null;
   /** The pending manual-launch request, or null if none (ECS-117) — see Transport's launch
    * contract module comment for exactly when this is set/cleared. */
   queuedPatternId?: PatternId | null;
+  /** Queues `id` to take over at the current pattern's next completion boundary, using
+   * Transport's manual-launch contract (ECS-117) — replaces any previously queued pattern. */
+  onRequestLaunch: (id: PatternId) => void;
+  /** Cancels a pending queued launch, if any. */
+  onCancelLaunch: () => void;
 }
 
 /** Pattern selector + editor: which pattern is currently open in the timeline below, plus
  * create/duplicate/remove/rename and the pattern's own bar count. Playback of the pattern
  * *chain* is independent of this selection — see ChainEditor and Transport's doc comments —
- * this only controls what you're looking at/editing. `playingPatternId`/`queuedPatternId` are
- * shown here too (not just in ChainEditor) because a manual launch works for any pattern,
- * chained or not (ECS-117) — visualization only; queuing/cancelling a launch from this bar is
- * for a later pattern-launcher ticket (ECS-118/ECS-120). */
+ * this only controls what you're looking at/editing. Each chip also exposes the manual-launch
+ * control from the shared Transport contract (ECS-117/ECS-119): a dedicated toggling button
+ * (queue / cancel), never the chip's own select click, so picking a pattern to look at never
+ * launches it (and vice versa). */
 export function PatternBar({
   patterns,
   selectedPatternId,
@@ -36,6 +40,8 @@ export function PatternBar({
   onSetBars,
   playingPatternId = null,
   queuedPatternId = null,
+  onRequestLaunch,
+  onCancelLaunch,
 }: Props) {
   const selected = patterns.find((p) => p.id === selectedPatternId);
 
@@ -44,14 +50,28 @@ export function PatternBar({
       <span className="pattern-bar-label">Patterns</span>
       <div className="pattern-chips">
         {patterns.map((p) => (
-          <button
+          <div
             key={p.id}
             className={`pattern-chip ${p.id === selectedPatternId ? "active" : ""} ${p.id === playingPatternId ? "playing" : ""} ${p.id === queuedPatternId ? "queued" : ""}`}
-            onClick={() => onSelectPattern(p.id)}
-            title={`${p.bars} bar${p.bars > 1 ? "s" : ""}${p.id === queuedPatternId ? " · queued" : ""}`}
           >
-            {p.name}
-          </button>
+            <button
+              className="pattern-chip-name"
+              onClick={() => onSelectPattern(p.id)}
+              title={`${p.bars} bar${p.bars > 1 ? "s" : ""}${p.id === queuedPatternId ? " · queued" : ""}`}
+            >
+              {p.name}
+            </button>
+            {p.id !== playingPatternId && (
+              <button
+                className={`pattern-chip-launch ${p.id === queuedPatternId ? "active" : ""}`}
+                onClick={() => (p.id === queuedPatternId ? onCancelLaunch() : onRequestLaunch(p.id))}
+                title={p.id === queuedPatternId ? "Cancel queued launch" : "Queue to launch at the next completion boundary"}
+                aria-label={p.id === queuedPatternId ? `Cancel queued launch of ${p.name}` : `Queue ${p.name} to launch`}
+              >
+                {p.id === queuedPatternId ? "×" : "▶"}
+              </button>
+            )}
+          </div>
         ))}
         <button className="btn small" onClick={onAddPattern}>
           + Pattern
