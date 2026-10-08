@@ -17,6 +17,7 @@ import { saveProject, loadProject, listProjects, deleteProject } from "./persist
 import { remapAssetIds } from "./model/project";
 import { TransportBar, type ResamplePhase } from "./components/TransportBar";
 import { PatternBar } from "./components/PatternBar";
+import { PatternLauncher } from "./components/PatternLauncher";
 import { ChainEditor } from "./components/ChainEditor";
 import { AssetsPanel, type ImportBatchResult } from "./components/AssetsPanel";
 import { MidiPanel } from "./components/MidiPanel";
@@ -216,10 +217,10 @@ export function App() {
   }, []);
 
   // requestPatternLaunch()/cancelQueuedLaunch() mutate Transport directly (same ref-based
-  // reasoning as play/pause/stop above), so nothing re-renders PatternBar's queued-chip
-  // highlight on its own -- this nudge forces the re-render the user's own click expects.
-  // Automatic consumption at a completion boundary stays un-nudged, same accepted imprecision
-  // already documented where queuedPatternId/playingPatternId are read (ECS-117).
+  // reasoning as play/pause/stop above), so nothing re-renders PatternBar/PatternLauncher's
+  // queued-chip highlight on its own -- this nudge forces the re-render the user's own click
+  // expects. Automatic consumption at a completion boundary stays un-nudged, same accepted
+  // imprecision already documented where queuedPatternId/playingPatternId are read (ECS-117).
   const [, setLaunchNudge] = useState(0);
 
   const handleRequestLaunch = useCallback((patternId: PatternId) => {
@@ -843,6 +844,12 @@ export function App() {
         onRemovePattern={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
         onRenamePattern={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
         onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
+        playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
+        queuedPatternId={queuedPatternId}
+      />
+
+      <PatternLauncher
+        patterns={project.patterns}
         playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
         queuedPatternId={queuedPatternId}
         onRequestLaunch={handleRequestLaunch}
