@@ -4,7 +4,7 @@ import { Transport } from "../src/audio/transport";
 import { Playback } from "../src/audio/playback";
 import { secondsPerBeat } from "../src/audio/compile";
 import { addAsset, addNote } from "../src/model/project";
-import { addPattern, appendToChain, assignAsset, createInitialProject, setBpm, setSwing, setTrackVoiceMode } from "../src/model/project";
+import { addPattern, appendToChain, assignAsset, createInitialProject, removePattern, setBpm, setChain, setSwing, setTrackVoiceMode } from "../src/model/project";
 import type { Asset, Project } from "../src/model/types";
 
 // AudioRuntime needs a real browser (AudioContext/AudioWorklet) — not available under
@@ -285,6 +285,187 @@ describe("Transport", () => {
 
     transport.play();
     expect(transport.getPlayheadBeat()).toBeCloseTo(4, 4);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+});
+
+// ECS-117: the manual pattern-launch contract (test cases from transport.ts's module comment).
+describe("Transport manual pattern launch", () => {
+  /** Two one-bar patterns (A, B), each with a note on track-1, chained [A] by default. */
+  function twoPatternProject() {
+    let project = setBpm(createInitialProject(), 120);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    project = assignAsset(project, "track-1", 1);
+    const patternA = project.patterns[0].id;
+    project = addNote(project, patternA, "track-1", 0);
+    project = addPattern(project, "Pattern B", 1);
+    const patternB = project.patterns[1].id;
+    project = addNote(project, patternB, "track-1", 0);
+    return { project, patternA, patternB };
+  }
+
+  it("launches the requested pattern at the next boundary even with an empty chain", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, advance } = fakeRuntime();
+    const { project: base, patternB } = twoPatternProject();
+    const project = setChain(base, []); // no predefined chain at all
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    expect(transport.getPlayheadInfo().patternId).toBeNull(); // empty chain -> silence so far
+
+    transport.requestPatternLaunch(patternB);
+    vi.advanceTimersByTime(25); // the next tick picks up the request immediately
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0].sampleId).toBe(1);
+    expect(transport.getQueuedPatternId()).toBeNull(); // consumed
+
+    advance(2.0 + 0.1); // B's one-bar loop completes -> chain is still empty, so silence, not a repeat
+    vi.advanceTimersByTime(25);
+    expect(scheduled).toHaveLength(1);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("a manual launch wins over the chain for exactly one step, then the chain resumes", () => {
+    vi.useFakeTimers();
+    const { runtime, advance } = fakeRuntime();
+    let { project, patternB } = twoPatternProject();
+    project = addPattern(project, "Pattern C", 1);
+    const patternC = project.patterns[2].id;
+    project = addNote(project, patternC, "track-1", 0);
+    project = appendToChain(project, patternC); // chain: [A, C]
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    transport.requestPatternLaunch(patternB);
+    advance(2.0 + 0.1); // past A's boundary, a little into B
+    vi.advanceTimersByTime(25);
+    expect(transport.getPlayheadInfo().patternId).toBe(patternB);
+
+    advance(2.0); // a full B-length further -> the chain resumes exactly where it left off: C
+    vi.advanceTimersByTime(25);
+    expect(transport.getPlayheadInfo().patternId).toBe(patternC);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("a second request replaces the first (last request wins)", () => {
+    const { runtime } = fakeRuntime();
+    const { project, patternB } = twoPatternProject();
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    transport.requestPatternLaunch(patternB);
+    transport.requestPatternLaunch(patternB); // calling it twice is itself a no-op on the value
+    expect(transport.getQueuedPatternId()).toBe(patternB);
+
+    transport.stop();
+  });
+
+  it("requesting the already-playing pattern cancels any pending request instead of relaunching it", () => {
+    const { runtime } = fakeRuntime();
+    const { project, patternA, patternB } = twoPatternProject();
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play(); // A is playing
+    transport.requestPatternLaunch(patternB);
+    expect(transport.getQueuedPatternId()).toBe(patternB);
+
+    transport.requestPatternLaunch(patternA); // "return to the playing pattern"
+    expect(transport.getQueuedPatternId()).toBeNull();
+
+    transport.stop();
+  });
+
+  it("cancelQueuedLaunch() clears a pending request before its boundary", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, advance } = fakeRuntime();
+    const { project, patternA, patternB } = twoPatternProject();
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    transport.requestPatternLaunch(patternB);
+    transport.cancelQueuedLaunch();
+    expect(transport.getQueuedPatternId()).toBeNull();
+
+    advance(2.0); // chain's own next step (A again, the default 1-entry chain) plays, not B
+    vi.advanceTimersByTime(25);
+    expect(transport.getPlayheadInfo().patternId).toBe(patternA);
+    expect(scheduled.map((s) => s.sampleId)).toEqual([1, 1]);
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("a request for a pattern deleted before its boundary falls through to the chain", () => {
+    vi.useFakeTimers();
+    const { runtime, advance } = fakeRuntime();
+    const { project: base, patternA, patternB } = twoPatternProject();
+    let project = base;
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    transport.requestPatternLaunch(patternB);
+    project = removePattern(project, patternB); // dangling request now
+
+    advance(2.0);
+    vi.advanceTimersByTime(25);
+    expect(transport.getPlayheadInfo().patternId).toBe(patternA); // chain's own step, not a crash
+    expect(transport.getQueuedPatternId()).toBeNull(); // still consumed, same as any dangling step
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("stop() always clears a pending request", () => {
+    const { runtime } = fakeRuntime();
+    const { project, patternB } = twoPatternProject();
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    transport.requestPatternLaunch(patternB);
+    transport.stop();
+    expect(transport.getQueuedPatternId()).toBeNull();
+
+    transport.play(); // restart: nothing queued
+    expect(transport.getQueuedPatternId()).toBeNull();
+    transport.stop();
+  });
+
+  it("pause() mid-step does not consume a pending request, but resuming never lets it hijack the resumed step", () => {
+    vi.useFakeTimers();
+    const { runtime, advance } = fakeRuntime();
+    let { project, patternA, patternB } = twoPatternProject();
+    project = appendToChain(project, patternB); // chain: [A, B]
+    project = addPattern(project, "Pattern C", 1);
+    const patternC = project.patterns[2].id;
+    project = addNote(project, patternC, "track-1", 0);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play(); // schedules A (chain position 0 -> 1)
+    advance(0.05 + 0.5); // 4 beats into A
+    transport.requestPatternLaunch(patternC);
+    transport.pause();
+    expect(transport.getQueuedPatternId()).toBe(patternC);
+
+    transport.play(); // resumes mid-A -- C must not hijack this step
+    expect(transport.getPlayheadInfo().patternId).toBe(patternA);
+    expect(transport.getPlayheadBeat()).toBeCloseTo(4, 4);
+    expect(transport.getQueuedPatternId()).toBe(patternC); // still pending, not consumed by the resume
+
+    advance(1.6); // past A's remaining audible duration -> its real completion boundary
+    vi.advanceTimersByTime(25);
+    expect(transport.getPlayheadInfo().patternId).toBe(patternC); // the request is honored here instead
+    expect(transport.getQueuedPatternId()).toBeNull();
+
+    advance(2.0); // C's one-bar loop completes -> the chain resumes at its own next entry (B),
+    vi.advanceTimersByTime(25); // not A again -- the substitution never corrupted the chain walk
+    expect(transport.getPlayheadInfo().patternId).toBe(patternB);
 
     transport.stop();
     vi.useRealTimers();

@@ -224,6 +224,10 @@ export function App() {
       // ECS-131: the same Transport.getPlayheadInfo()/getStatus() the on-screen playhead already reads.
       getPlayheadInfo: () => transportRef.current?.getPlayheadInfo() ?? { patternId: null, beat: 0 },
       isPlaying: () => transportRef.current?.getStatus() === "playing",
+      // ECS-117: the manual pattern-launch contract — see Transport's module comment.
+      getQueuedPatternId: () => transportRef.current?.getQueuedPatternId() ?? null,
+      requestPatternLaunch: (patternId) => transportRef.current?.requestPatternLaunch(patternId),
+      cancelQueuedLaunch: () => transportRef.current?.cancelQueuedLaunch(),
     },
     selectedPatternId,
     activeBank,
@@ -740,6 +744,9 @@ export function App() {
   const selectedTrack = selectedTarget !== "master" ? trackById(project, selectedTarget) : undefined;
   const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
   const playheadInfo = transportRef.current?.getPlayheadInfo();
+  // ECS-117: read fresh at render time, same as playheadInfo above -- not RAF-driven, so this
+  // reflects the last render's transport state, not necessarily this exact instant.
+  const queuedPatternId = transportRef.current?.getQueuedPatternId() ?? null;
 
   return (
     <div className="app" data-mobile-tab={mobileTab}>
@@ -819,6 +826,8 @@ export function App() {
         onRemovePattern={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
         onRenamePattern={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
         onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
+        playingPatternId={status === "playing" ? (playheadInfo?.patternId ?? null) : null}
+        queuedPatternId={queuedPatternId}
       />
 
       <ChainEditor

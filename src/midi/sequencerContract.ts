@@ -43,6 +43,17 @@ export interface SequencerRegistryDeps {
    * has to invent. Omitted means never playing.
    */
   readonly isPlaying?: () => boolean;
+  /**
+   * The pending manual pattern-launch request, if any (ECS-117) — the same
+   * `Transport.getQueuedPatternId()` the launch contract's module comment in
+   * `src/audio/transport.ts` documents. Polled, same rationale as `getPlayhead` above. Omitted
+   * means no queued-pattern feedback and no `pattern.<n>.queued` control can be set.
+   */
+  readonly getQueuedPatternId?: () => PatternId | null;
+  /** Requests `patternId` for manual launch at the next completion boundary (ECS-117) — `Transport.requestPatternLaunch()`. Omitted means `pattern.<n>.queued` controls are feedback-only. */
+  readonly requestPatternLaunch?: (patternId: PatternId) => void;
+  /** Cancels a pending manual launch request (ECS-117) — `Transport.cancelQueuedLaunch()`. */
+  readonly cancelQueuedLaunch?: () => void;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -57,6 +68,14 @@ export interface SequencerRegistry extends ControlRegistry {
    * already-cached control, the same as `repaintFaders()` does for faders.
    */
   pollPlayhead(): void;
+  /**
+   * Re-reads the playing/queued pattern state and fires `pattern.<n>.playing`/`pattern.<n>.queued`
+   * listeners for any resolved control whose value moved (ECS-117) — the manual-launch
+   * counterpart to `pollPlayhead()` above, for the same reason: playing/queued state changes
+   * on the transport's own clock (a step boundary consuming a queued request), not only on a
+   * Project dispatch, so it needs the same animation-frame polling `pollPlayhead()` gets.
+   */
+  pollPatternLaunch(): void;
 }
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
@@ -67,6 +86,8 @@ const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 const BANK_ID = "bank.active";
 const PLAYHEAD_ID = "transport.playhead";
+const PATTERN_PLAYING_ID = /^pattern\.(\d+)\.playing$/;
+const PATTERN_QUEUED_ID = /^pattern\.(\d+)\.queued$/;
 
 function selectedPattern(project: Project, patternId: PatternId): Pattern {
   return project.patterns.find((pattern) => pattern.id === patternId) ?? project.patterns[0]!;
@@ -149,6 +170,82 @@ function playheadColumn(deps: SequencerRegistryDeps): number {
   const info = deps.getPlayhead?.();
   if (!info || info.patternId !== deps.getPatternId()) return -1;
   return Math.floor(info.beat);
+}
+
+/** The currently-playing pattern id, or null while stopped/paused (ECS-117) — same "a resting
+ * position must not look like a live one" rule as playheadColumn above, factored out because
+ * createPatternPlayingControl needs it independent of any one sequencer's displayed pattern. */
+function activePlayingPatternId(deps: SequencerRegistryDeps): PatternId | null {
+  if (!deps.isPlaying?.()) return null;
+  return deps.getPlayhead?.()?.patternId ?? null;
+}
+
+/**
+ * pattern.<n>.playing (ECS-117): whether `project.patterns[index]` is the pattern currently
+ * sounding. Feedback-only, same as the step/length/track-count controls above — there's no
+ * sensible "set playing" write, only `transport.playhead`'s existing boundary-safe transitions.
+ */
+function createPatternPlayingControl(index: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id: `pattern.${index}.playing`, label: `Pattern ${index + 1} playing`, kind: "boolean", default: false };
+  const isPlaying = (project: Project) => project.patterns[index]?.id === activePlayingPatternId(deps);
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = isPlaying(deps.getProject());
+
+  return {
+    def,
+    getValue: () => isPlaying(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = isPlaying(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * pattern.<n>.queued (ECS-117): whether `project.patterns[index]` is the pending manual-launch
+ * request — see `Transport`'s launch contract module comment for exactly when this becomes
+ * true/false. Unlike playing, this one is also writable: setting it true requests that pattern
+ * for launch, setting it false cancels a pending request for it — the same "a pad is both
+ * feedback and input" shape `mute.<n>` already has.
+ */
+function createPatternQueuedControl(index: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id: `pattern.${index}.queued`, label: `Pattern ${index + 1} queued`, kind: "boolean", default: false };
+  const isQueued = (project: Project) => {
+    const pattern = project.patterns[index];
+    return pattern !== undefined && pattern.id === (deps.getQueuedPatternId?.() ?? null);
+  };
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = isQueued(deps.getProject());
+
+  return {
+    def,
+    getValue: () => isQueued(deps.getProject()),
+    setValue(value) {
+      const pattern = deps.getProject().patterns[index];
+      if (!pattern) return;
+      if (value) deps.requestPatternLaunch?.(pattern.id);
+      else deps.cancelQueuedLaunch?.();
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = isQueued(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
 }
 
 function createPlayheadControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
@@ -389,8 +486,16 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
     } else {
       const fader = FADER_VOLUME_ID.exec(id);
+      const patternPlaying = PATTERN_PLAYING_ID.exec(id);
+      const patternQueued = PATTERN_QUEUED_ID.exec(id);
       // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.
-      if (fader && Number(fader[1]) < deps.faderPageSize) created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
+      if (fader && Number(fader[1]) < deps.faderPageSize) {
+        created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
+      } else if (patternPlaying && project.patterns[Number(patternPlaying[1])]) {
+        created = createPatternPlayingControl(Number(patternPlaying[1]), deps) as ProjectControl<ControlDef>;
+      } else if (patternQueued && project.patterns[Number(patternQueued[1])]) {
+        created = createPatternQueuedControl(Number(patternQueued[1]), deps) as ProjectControl<ControlDef>;
+      }
     }
 
     if (created) cache.set(id, created);
@@ -411,6 +516,12 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     },
     pollPlayhead() {
       (resolve(PLAYHEAD_ID) as ProjectControl<ControlDef> | undefined)?.syncFromProject(deps.getProject());
+    },
+    pollPatternLaunch() {
+      const project = deps.getProject();
+      for (const [id, control] of cache) {
+        if (PATTERN_PLAYING_ID.test(id) || PATTERN_QUEUED_ID.test(id)) control.syncFromProject(project);
+      }
     },
   };
 }

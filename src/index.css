@@ -294,6 +294,20 @@ select {
   color: #eafffa;
 }
 
+/* ECS-117: visualizes Transport's playing/queued pattern-launch state, independent of
+   .active above (the editing selection) -- a chip can be selected, playing and/or queued at
+   once. Reuses .chain-chip.playing's amber glow for "playing" so the two surfaces read the
+   same cue; "queued" gets a dashed accent outline for "about to happen, not yet true". */
+.pattern-chip.playing {
+  border-color: var(--amber);
+  box-shadow: 0 0 4px rgba(240, 168, 60, 0.4);
+}
+
+.pattern-chip.queued {
+  border-style: dashed;
+  border-color: var(--accent);
+}
+
 .pattern-edit-fields {
   display: flex;
   align-items: center;

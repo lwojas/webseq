@@ -186,6 +186,109 @@ describe("sequencer contract: playhead (ECS-131)", () => {
   });
 });
 
+describe("sequencer contract: pattern launch (ECS-117)", () => {
+  function launchHarness() {
+    let project: Project = createInitialProject();
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    dispatch({ type: "ADD_PATTERN" }); // patterns[1] exists for pattern.1.*
+    let playing = false;
+    let playhead = { patternId: null as string | null, beat: 0 };
+    let queuedPatternId: string | null = null;
+    const launchCalls: string[] = [];
+    const cancelCalls: string[] = [];
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getPlayhead: () => playhead,
+      isPlaying: () => playing,
+      getQueuedPatternId: () => queuedPatternId,
+      requestPatternLaunch: (patternId) => launchCalls.push(patternId),
+      cancelQueuedLaunch: () => cancelCalls.push("cancel"),
+    });
+    return {
+      registry,
+      getProject: () => project,
+      setPlaying: (value: boolean) => {
+        playing = value;
+      },
+      setPlayhead: (next: { patternId: string | null; beat: number }) => {
+        playhead = next;
+      },
+      setQueuedPatternId: (id: string | null) => {
+        queuedPatternId = id;
+      },
+      launchCalls,
+      cancelCalls,
+    };
+  }
+
+  it("pattern.<n>.playing is false until that pattern is both playing and the active one", () => {
+    const { registry, getProject, setPlaying, setPlayhead } = launchHarness();
+    const patternB = getProject().patterns[1]!.id;
+
+    expect(registry.getControl("pattern.1.playing")!.getValue()).toBe(false);
+    setPlaying(true);
+    setPlayhead({ patternId: patternB, beat: 0 });
+    expect(registry.getControl("pattern.1.playing")!.getValue()).toBe(true);
+    expect(registry.getControl("pattern.0.playing")!.getValue()).toBe(false);
+
+    setPlaying(false); // stopped -- a resting position must not still read as playing
+    expect(registry.getControl("pattern.1.playing")!.getValue()).toBe(false);
+  });
+
+  it("pattern.<n>.playing is feedback-only", () => {
+    const { registry, launchCalls, cancelCalls } = launchHarness();
+    registry.getControl("pattern.0.playing")!.setValue(true);
+    expect(launchCalls).toEqual([]);
+    expect(cancelCalls).toEqual([]);
+  });
+
+  it("pattern.<n>.queued reflects the transport's queued pattern, and setValue requests/cancels a launch", () => {
+    const { registry, getProject, setQueuedPatternId, launchCalls, cancelCalls } = launchHarness();
+    const patternB = getProject().patterns[1]!.id;
+
+    expect(registry.getControl("pattern.1.queued")!.getValue()).toBe(false);
+    setQueuedPatternId(patternB);
+    expect(registry.getControl("pattern.1.queued")!.getValue()).toBe(true);
+    expect(registry.getControl("pattern.0.queued")!.getValue()).toBe(false);
+
+    registry.getControl("pattern.1.queued")!.setValue(true);
+    expect(launchCalls).toEqual([patternB]);
+
+    registry.getControl("pattern.1.queued")!.setValue(false);
+    expect(cancelCalls).toEqual(["cancel"]);
+  });
+
+  it("no control resolves for a pattern index past the project's pattern count", () => {
+    const { registry } = launchHarness();
+    expect(registry.getControl("pattern.2.playing")).toBeUndefined();
+    expect(registry.getControl("pattern.2.queued")).toBeUndefined();
+  });
+
+  it("pollPatternLaunch() re-syncs both playing and queued controls from the transport's clock", () => {
+    const { registry, getProject, setPlaying, setPlayhead, setQueuedPatternId } = launchHarness();
+    const patternB = getProject().patterns[1]!.id;
+    registry.getControl("pattern.1.playing"); // resolve + cache, same precondition pollPlayhead() has
+    registry.getControl("pattern.1.queued");
+
+    const playingSeen: boolean[] = [];
+    const queuedSeen: boolean[] = [];
+    registry.getControl("pattern.1.playing")!.onChange((value) => playingSeen.push(value as boolean));
+    registry.getControl("pattern.1.queued")!.onChange((value) => queuedSeen.push(value as boolean));
+
+    setPlaying(true);
+    setPlayhead({ patternId: patternB, beat: 0 });
+    setQueuedPatternId(patternB);
+    registry.pollPatternLaunch();
+    expect(playingSeen).toEqual([true]);
+    expect(queuedSeen).toEqual([true]);
+  });
+});
+
 describe("sequencer contract: the Launchpad configuration drives it", () => {
   it("a pad press on the device toggles a step in the sequencer, through midi-core's surface", async () => {
     const { registry, getProject } = harness();

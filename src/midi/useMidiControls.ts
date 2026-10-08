@@ -26,6 +26,12 @@ export interface TransportCallbacks {
   readonly getPlayheadInfo?: () => { readonly patternId: PatternId | null; readonly beat: number };
   /** Whether the transport is actually playing right now (ECS-131) — `Transport.getStatus() === "playing"`. */
   readonly isPlaying?: () => boolean;
+  /** The pending manual-launch request, if any (ECS-117) — `Transport.getQueuedPatternId()`. */
+  readonly getQueuedPatternId?: () => PatternId | null;
+  /** Requests a manual pattern launch (ECS-117) — `Transport.requestPatternLaunch()`. */
+  readonly requestPatternLaunch?: (patternId: PatternId) => void;
+  /** Cancels a pending manual launch request (ECS-117) — `Transport.cancelQueuedLaunch()`. */
+  readonly cancelQueuedLaunch?: () => void;
 }
 
 export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "connected" | "error";
@@ -165,6 +171,9 @@ export function useMidiControls(
         faderPageSize,
         getPlayhead: () => transportRef.current.getPlayheadInfo?.() ?? { patternId: null, beat: 0 },
         isPlaying: () => transportRef.current.isPlaying?.() ?? false,
+        getQueuedPatternId: () => transportRef.current.getQueuedPatternId?.() ?? null,
+        requestPatternLaunch: (patternId) => transportRef.current.requestPatternLaunch?.(patternId),
+        cancelQueuedLaunch: () => transportRef.current.cancelQueuedLaunch?.(),
       });
       const actions = {
         play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),
@@ -272,11 +281,14 @@ export function useMidiControls(
   // on-screen playhead (ECS-131) -- not a second, hardware-specific timer. Only runs while a device is actually
   // connected: there's nothing to repaint otherwise, and this is the one place in this file with an animation-frame
   // loop of its own, so it starts and stops with the connection rather than running for the component's whole life.
+  // pollPatternLaunch() rides the same frame: playing/queued pattern state (ECS-117) also moves on the
+  // transport's own clock, not only on a Project dispatch.
   useEffect(() => {
     if (status !== "connected") return;
     let frame: number;
     const poll = () => {
       connectionRef.current?.registry.pollPlayhead();
+      connectionRef.current?.registry.pollPatternLaunch();
       frame = requestAnimationFrame(poll);
     };
     frame = requestAnimationFrame(poll);
