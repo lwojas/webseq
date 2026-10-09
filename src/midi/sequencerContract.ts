@@ -108,6 +108,7 @@ const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 const BANK_ID = "bank.active";
 const PLAYHEAD_ID = "transport.playhead";
+const IS_PLAYING_ID = "transport.isPlaying";
 const PATTERN_PLAYING_ID = /^pattern\.(\d+)\.playing$/;
 const PATTERN_QUEUED_ID = /^pattern\.(\d+)\.queued$/;
 const PATTERN_SELECTED_ID = /^pattern\.(\d+)\.selected$/;
@@ -519,6 +520,37 @@ function createPlayheadControl(deps: SequencerRegistryDeps): ProjectControl<Nume
   };
 }
 
+/**
+ * transport.isPlaying (ECS-145 follow-up): `1` while the transport is actually playing, `0` otherwise -- a plain
+ * numeric mirror of `deps.isPlaying()` for midi-core's `IndicatorBinding` (which matches a number against a `lit`
+ * value, not a boolean) to drive the device's Play button LED persistently. Same "moves from the transport's
+ * clock, not from project edits" ignored-`project`-argument shape as createPlayheadControl above, and synced from
+ * the same per-frame poll, not a second clock of its own.
+ */
+function createIsPlayingControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: IS_PLAYING_ID, label: "Transport is playing", kind: "number", min: 0, max: 1, default: 0 };
+  const value = () => (deps.isPlaying?.() ? 1 : 0);
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = value();
+
+  return {
+    def,
+    getValue: value,
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject() {
+      const next = value();
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
 // createTrackMutedControl reports its cached value, which only updates on sync. A toggle reads the value it is about to
 // flip, so a read here must reflect the project as it is now, not as of the last sync.
 function liveMuteControl(trackId: TrackId, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
@@ -769,6 +801,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createBankControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PLAYHEAD_ID) {
       created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === IS_PLAYING_ID) {
+      created = createIsPlayingControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PATTERNS_COUNT_ID) {
       created = createPatternsCountControl(deps) as ProjectControl<ControlDef>;
     } else if (id === QUEUE_LENGTH_ID) {
@@ -820,6 +854,7 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     },
     pollPlayhead() {
       (resolve(PLAYHEAD_ID) as ProjectControl<ControlDef> | undefined)?.syncFromProject(deps.getProject());
+      (resolve(IS_PLAYING_ID) as ProjectControl<ControlDef> | undefined)?.syncFromProject(deps.getProject());
     },
     pollPatternLaunch() {
       const project = deps.getProject();

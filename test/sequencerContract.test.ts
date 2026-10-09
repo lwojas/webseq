@@ -186,6 +186,62 @@ describe("sequencer contract: playhead (ECS-131)", () => {
   });
 });
 
+describe("sequencer contract: transport.isPlaying (ECS-145 follow-up)", () => {
+  function isPlayingHarness() {
+    const project: Project = createInitialProject();
+    let playing = false;
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch: () => {},
+      faderPageSize: 8,
+      isPlaying: () => playing,
+    });
+    return {
+      registry,
+      setPlaying: (value: boolean) => {
+        playing = value;
+      },
+    };
+  }
+
+  it("reports 1 while playing, 0 while stopped", () => {
+    const { registry, setPlaying } = isPlayingHarness();
+    expect(registry.getControl("transport.isPlaying")!.getValue()).toBe(0);
+    setPlaying(true);
+    expect(registry.getControl("transport.isPlaying")!.getValue()).toBe(1);
+    setPlaying(false);
+    expect(registry.getControl("transport.isPlaying")!.getValue()).toBe(0);
+  });
+
+  it("is feedback-only: setValue never calls back into the transport", () => {
+    const { registry, setPlaying } = isPlayingHarness();
+    setPlaying(true);
+    registry.getControl("transport.isPlaying")!.setValue(0);
+    expect(registry.getControl("transport.isPlaying")!.getValue()).toBe(1);
+  });
+
+  it("pollPlayhead() fires onChange only when isPlaying actually flips", () => {
+    const { registry, setPlaying } = isPlayingHarness();
+    const seen: number[] = [];
+    registry.getControl("transport.isPlaying")!.onChange((value) => seen.push(value as number));
+
+    registry.pollPlayhead();
+    expect(seen).toEqual([]); // already at the right value
+
+    setPlaying(true);
+    registry.pollPlayhead();
+    expect(seen).toEqual([1]);
+
+    registry.pollPlayhead(); // still playing -- no second notification
+    expect(seen).toEqual([1]);
+
+    setPlaying(false);
+    registry.pollPlayhead();
+    expect(seen).toEqual([1, 0]);
+  });
+});
+
 describe("sequencer contract: pattern launch", () => {
   function launchHarness() {
     let project: Project = createInitialProject();

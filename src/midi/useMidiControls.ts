@@ -236,6 +236,9 @@ export function useMidiControls(
           muteTemplate: "mute.{track}",
           trackCountControl: "tracks.count",
           playheadControl: "transport.playhead",
+          // ECS-145 follow-up: the device's Play button LED reflects this persistently (full while playing, dim
+          // otherwise), in place of lighting only while physically held.
+          isPlayingControl: "transport.isPlaying",
           actions,
           faderActions,
           faderTemplates: { volume: "mixer.volume.{index}" },
