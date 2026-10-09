@@ -20,8 +20,9 @@ import {
   type StringControlDef,
 } from "midi-core/control-api";
 import type { SequencerContract } from "midi-core/configurations";
-import { totalBeats, trackById } from "../model/types";
-import type { ChainEntryId, Pattern, PatternId, Project, Track, TrackId } from "../model/types";
+import { totalBeats, trackById, fxOwner } from "../model/types";
+import type { ChainEntryId, FxId, FxInstance, FxTarget, Pattern, PatternId, Project, Track, TrackId } from "../model/types";
+import { FX_DEFS } from "../model/fx";
 import type { Action } from "../model/reducer";
 import { BANK_COUNT, BANK_SIZE, MAX_TRACK_VOLUME, MIN_TRACK_VOLUME, DEFAULT_TRACK_VOLUME } from "../model/project";
 import { createTrackMutedControl, type ProjectControl } from "./controlAdapter";
@@ -65,6 +66,24 @@ export interface SequencerRegistryDeps {
    * is feedback-only.
    */
   readonly selectPattern?: (patternId: PatternId) => void;
+  /**
+   * The FX target whose chain the `fx.*` controls below expose (ECS-149) — `App.tsx`'s
+   * `selectedTarget`, the same track-or-"master" scoping the FX panel itself already shows one of
+   * at a time. Omitted means no `fx.*` control resolves — there's no chain to address.
+   */
+  readonly getTarget?: () => FxTarget;
+  /**
+   * The FX currently selected for editing within that target's chain (ECS-149) — `App.tsx`'s
+   * `selectedFxId`. Omitted means `fx.selected.*` always reports "nothing selected" and
+   * `fx.<n>.selected` is always false.
+   */
+  readonly getSelectedFxId?: () => FxId | null;
+  /**
+   * Selects `fxId` within the current target's chain for editing — the same thing clicking its
+   * chip in `FxChainStrip` does (`App.tsx`'s `setSelectedFxId`). Omitted means `fx.<n>.selected`/
+   * `fx.selected.*`/`fx.next`/`fx.previous` are feedback-only.
+   */
+  readonly selectFx?: (fxId: FxId) => void;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -122,6 +141,29 @@ const PATTERN_DUPLICATE_ID = /^pattern\.(\d+)\.duplicate$/;
 const PATTERN_DELETE_ID = /^pattern\.(\d+)\.delete$/;
 const PATTERNS_CREATE_ID = "patterns.create";
 const QUEUE_SLOT_REMOVE_ID = /^queue\.(\d+)\.remove$/;
+
+// FX (ECS-149). All position-indexed by `fx.<n>.*` resolve against the currently selected
+// target's chain (deps.getTarget()), in chain order -- the FX panel only ever shows one target's
+// chain at a time, the same scoping step.<row>.<column> already gets from the selected pattern.
+// The `fx.selected.*` ids are a second, index-independent way to reach exactly the same data --
+// whichever FX `fx.<n>.selected`/fx.next/fx.previous (or the UI) most recently selected -- so a
+// device with a fixed encoder bank (e.g. Push mk1) can bind straight to "the selected FX's
+// parameters" without resolving which index is currently selected itself, the same reason
+// transport.playhead/transport.isPlaying exist as fixed ids alongside step.<row>.<column>'s grid
+// addressing.
+const FX_COUNT_ID = "fx.count";
+const FX_ENABLED_ID = /^fx\.(\d+)\.enabled$/;
+const FX_SELECTED_ID = /^fx\.(\d+)\.selected$/;
+const FX_NAME_ID = /^fx\.(\d+)\.name$/;
+const FX_PARAMS_COUNT_ID = /^fx\.(\d+)\.params\.count$/;
+const FX_PARAM_ID = /^fx\.(\d+)\.param\.(\d+)$/;
+const FX_SELECTED_INDEX_ID = "fx.selected.index";
+const FX_SELECTED_ENABLED_ID = "fx.selected.enabled";
+const FX_SELECTED_NAME_ID = "fx.selected.name";
+const FX_SELECTED_PARAMS_COUNT_ID = "fx.selected.params.count";
+const FX_SELECTED_PARAM_ID = /^fx\.selected\.param\.(\d+)$/;
+const FX_NEXT_ID = "fx.next";
+const FX_PREVIOUS_ID = "fx.previous";
 
 function selectedPattern(project: Project, patternId: PatternId): Pattern {
   return project.patterns.find((pattern) => pattern.id === patternId) ?? project.patterns[0]!;
@@ -725,6 +767,299 @@ export function createBankActions(getBank: () => number, setBank: (bank: number)
   };
 }
 
+/** The currently selected target's FX chain, in order, or empty if `getTarget` is unset or the
+ * target no longer exists (e.g. its track was deleted) -- the one place that needs to branch on
+ * FxTarget for every fx.* control below, same role `selectedPattern` plays for step.*. */
+function currentFxChain(deps: SequencerRegistryDeps, project: Project): readonly FxInstance[] {
+  const target = deps.getTarget?.();
+  if (!target) return [];
+  return fxOwner(project, target)?.fx ?? [];
+}
+
+/** Resolves which FxInstance a given fx.* control reads/writes, against a specific project
+ * snapshot -- a plain function rather than a cached reference, so it always reflects FX being
+ * added, removed, enabled/bypassed, or (re)selected, never a stale instance. */
+type FxLocator = (project: Project) => FxInstance | undefined;
+
+function fxByIndex(index: number, deps: SequencerRegistryDeps): FxLocator {
+  return (project) => currentFxChain(deps, project)[index];
+}
+
+/** ECS-149: whichever FX `deps.getSelectedFxId()` currently names, within the current target's
+ * chain -- undefined while nothing is selected, or while the selected id no longer belongs to
+ * this target's chain (App.tsx's own selection-validity effect already clears selectedFxId in
+ * that case; this just has nothing to resolve until the next render does). */
+function selectedFx(deps: SequencerRegistryDeps): FxLocator {
+  return (project) => {
+    const selectedId = deps.getSelectedFxId?.();
+    if (!selectedId) return undefined;
+    return currentFxChain(deps, project).find((f) => f.id === selectedId);
+  };
+}
+
+/** fx.count: how many FX exist in the currently selected target's chain, so a caller can bound
+ * its own fx.<n> iteration -- same role tracks.count/patterns.count already play. 0 while
+ * `getTarget` is unset or the target doesn't exist. */
+function createFxCountControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: FX_COUNT_ID, label: "FX count", kind: "number", min: 0, max: 64, default: 0 };
+  const count = (project: Project) => currentFxChain(deps, project).length;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = count(deps.getProject());
+
+  return {
+    def,
+    getValue: () => count(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = count(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** fx.<n>.enabled / fx.selected.enabled: the FX's `On` control (ECS-149) -- `locate` picks which
+ * FX this particular id means. Writable: setValue dispatches SET_FX_ENABLED against whichever FX
+ * `locate` currently resolves to, mirroring createPatternQueuedControl's "a pad is both feedback
+ * and input" shape. */
+function createFxEnabledControl(id: string, label: string, locate: FxLocator, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id, label, kind: "boolean", default: false };
+  const isEnabled = (project: Project) => locate(project)?.enabled ?? false;
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = isEnabled(deps.getProject());
+
+  return {
+    def,
+    getValue: () => isEnabled(deps.getProject()),
+    setValue(value) {
+      const instance = locate(deps.getProject());
+      const target = deps.getTarget?.();
+      if (instance && target) deps.dispatch({ type: "SET_FX_ENABLED", target, fxId: instance.id, enabled: value });
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = isEnabled(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * fx.<n>.selected: whether `project`'s currently selected target's chain[index] is the FX
+ * selected for editing (App.tsx's selectedFxId) -- the direct, pad-grid-style counterpart to
+ * `fx.next`/`fx.previous` below. Writable the same way pattern.<n>.selected already is:
+ * setValue(true) selects it, setValue(false) is a no-op (no "deselect" affordance anywhere in
+ * the UI either).
+ */
+function createFxSelectedControl(id: string, index: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id, label: `FX ${index + 1} selected`, kind: "boolean", default: false };
+  const locate = fxByIndex(index, deps);
+  const isSelected = (project: Project) => {
+    const instance = locate(project);
+    return instance !== undefined && instance.id === deps.getSelectedFxId?.();
+  };
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = isSelected(deps.getProject());
+
+  return {
+    def,
+    getValue: () => isSelected(deps.getProject()),
+    setValue(value) {
+      if (!value) return;
+      const instance = locate(deps.getProject());
+      if (instance) deps.selectFx?.(instance.id);
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = isSelected(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** fx.selected.index: the 0-based position of the selected FX within the current target's
+ * chain, or -1 while nothing is selected -- lets a device identify the current selection without
+ * probing every fx.<n>.selected itself, the same role bank.active plays for the selected bank.
+ * Feedback-only: selection is always made through fx.<n>.selected/fx.next/fx.previous, which is
+ * the application's own "select by id, not by position" boundary -- see selectedFx's doc comment. */
+function createFxSelectedIndexControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: FX_SELECTED_INDEX_ID, label: "Selected FX index", kind: "number", min: -1, max: 1024, default: -1 };
+  const index = (project: Project) => {
+    const selectedId = deps.getSelectedFxId?.();
+    if (!selectedId) return -1;
+    return currentFxChain(deps, project).findIndex((f) => f.id === selectedId);
+  };
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = index(deps.getProject());
+
+  return {
+    def,
+    getValue: () => index(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = index(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** fx.<n>.name / fx.selected.name: the FX type's display label (ECS-149) -- e.g. "Filter",
+ * "Delay". Doubles as the stable, human-distinguishing identifier the ticket also asks for:
+ * model/fx.ts's own engine constraint (at most one FX of each type per chain, see its module doc
+ * comment) means a chain's FX are already distinguishable by type/label alone, so no separate id
+ * control is needed. Read-only, the first real StringControlDef consumer outside pattern.<n>.name. */
+function createFxNameControl(id: string, label: string, locate: FxLocator, deps: SequencerRegistryDeps): ProjectControl<StringControlDef> {
+  const def: StringControlDef = { id, label, kind: "string", default: "" };
+  const name = (project: Project) => {
+    const instance = locate(project);
+    return instance ? FX_DEFS[instance.type].label : "";
+  };
+  const listeners = new Set<(value: string, previous: string) => void>();
+  let last = name(deps.getProject());
+
+  return {
+    def,
+    getValue: () => name(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = name(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** fx.<n>.params.count / fx.selected.params.count: how many parameters that FX's type defines
+ * (FX_DEFS[type].params.length), so a caller can bound its own per-FX parameter paging -- same
+ * role tracks.count/patterns.count already play for their own domains. 0 while `locate` resolves
+ * to nothing. */
+function createFxParamsCountControl(id: string, label: string, locate: FxLocator, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id, label, kind: "number", min: 0, max: 64, default: 0 };
+  const count = (project: Project) => {
+    const instance = locate(project);
+    return instance ? FX_DEFS[instance.type].params.length : 0;
+  };
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = count(deps.getProject());
+
+  return {
+    def,
+    getValue: () => count(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = count(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** A fx.<n>.param.<p>/fx.selected.param.<p> control, tagged with the id of the FxInstance its
+ * (type-specific) min/max/step/unit/default were built from -- `resolve()`'s own staleness check
+ * below uses this to tell whether the FX occupying that position/selection has since changed to
+ * a different one (added/removed/reselected), since unlike every other control in this file, an
+ * FX param's *definition* -- not just its value -- depends on which FX is actually there. */
+type FxParamControl = ProjectControl<NumericControlDef> & { readonly boundFxId: FxId };
+
+/**
+ * fx.<n>.param.<p> / fx.selected.param.<p>: the value of parameter `p` (its position within
+ * FX_DEFS[instance.type].params -- a fixed, never-reordered array, so a position is always a
+ * stable reference to the same parameter for a given FX type) of whichever FX `locate` resolves
+ * to. Range/step/unit/label are read straight from that FxParamDef (ECS-149 requirement: "do not
+ * assume every parameter is a conventional linear 0-127 control") -- including the filter's
+ * "mode" param, which is already modeled as a stepped 0..1 number (model/fx.ts mirrors webdsp's
+ * FilterMode), not a separate enum. midi-core's EnumControlDef needs string option values and
+ * these are numeric to match the engine, so mode stays a NumericControlDef like every other
+ * param; a connected display can still show its own def.label ("Mode"), just not a per-value
+ * name like "Low Pass" -- a real but narrow gap, noted in this change's own summary rather than
+ * worked around here with a second, parallel control kind.
+ */
+function createFxParamControl(
+  id: string,
+  instance: FxInstance,
+  paramIndex: number,
+  locate: FxLocator,
+  deps: SequencerRegistryDeps,
+): FxParamControl | undefined {
+  const paramDef = FX_DEFS[instance.type].params[paramIndex];
+  if (!paramDef) return undefined;
+  const def: NumericControlDef = {
+    id,
+    label: paramDef.label,
+    kind: "number",
+    min: paramDef.min,
+    max: paramDef.max,
+    step: paramDef.step,
+    unit: paramDef.unit,
+    default: paramDef.default,
+  };
+  const read = (project: Project) => {
+    const current = locate(project);
+    return current ? current.params[paramDef.id] ?? paramDef.default : paramDef.default;
+  };
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = read(deps.getProject());
+
+  return {
+    def,
+    boundFxId: instance.id,
+    getValue: () => read(deps.getProject()),
+    setValue(value) {
+      const current = locate(deps.getProject());
+      const target = deps.getTarget?.();
+      if (current && target) deps.dispatch({ type: "SET_FX_PARAM", target, fxId: current.id, paramId: paramDef.id, value });
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = read(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
 /**
  * Resolves a fire-and-forget pattern/queue command by id against the live project -- the
  * `getAction` counterpart to `resolve()`'s controls below. A command whose index/slot is out of
@@ -762,6 +1097,24 @@ function resolveAction(id: string, deps: SequencerRegistryDeps): MidiAction | un
       if (entry) deps.dispatch({ type: "REMOVE_CHAIN_ENTRY", entryId: entry.id });
     });
   }
+  if (id === FX_NEXT_ID || id === FX_PREVIOUS_ID) {
+    // Steps through the current target's chain in order and stops at the ends (same "clamp, don't
+    // wrap" choice createBankActions makes for banks), over every FX present regardless of its own
+    // enabled/bypassed state -- FxChainStrip.tsx lets a bypassed FX's chip be selected exactly like
+    // an enabled one (only its CSS class differs), so "available for navigation" here means
+    // "present in the chain", not "enabled" (ECS-149's own navigation-vs-enabled distinction).
+    // Starting with nothing selected goes to the first FX for `next`, the last for `previous` --
+    // rather than a no-op -- so a lone Next/Previous pair works from a cold start.
+    return createAction({ id, label: id === FX_NEXT_ID ? "Next FX" : "Previous FX" }, () => {
+      const chain = currentFxChain(deps, deps.getProject());
+      if (chain.length === 0) return;
+      const selectedId = deps.getSelectedFxId?.();
+      const currentIndex = selectedId ? chain.findIndex((f) => f.id === selectedId) : -1;
+      const delta = id === FX_NEXT_ID ? 1 : -1;
+      const nextIndex = currentIndex === -1 ? (delta > 0 ? 0 : chain.length - 1) : Math.min(chain.length - 1, Math.max(0, currentIndex + delta));
+      deps.selectFx?.(chain[nextIndex]!.id);
+    });
+  }
   return undefined;
 }
 
@@ -771,7 +1124,19 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
 
   function resolve(id: string): Control<ControlDef> | undefined {
     const cached = cache.get(id);
-    if (cached) return cached;
+    // A fx.*.param control's def (min/max/step/unit) is specific to the FX it was built from --
+    // unlike every other cached control in this file, so a cache hit here isn't automatically
+    // still correct: the FX at that position/selection may since have changed (added, removed, or
+    // reselected). Evict and fall through to recreate it fresh against whatever is there now,
+    // rather than silently reading/writing a stale param id against the wrong FX.
+    if (cached && (FX_PARAM_ID.test(id) || FX_SELECTED_PARAM_ID.test(id))) {
+      const indexed = FX_PARAM_ID.exec(id);
+      const live = indexed ? fxByIndex(Number(indexed[1]), deps)(deps.getProject()) : selectedFx(deps)(deps.getProject());
+      if (live?.id !== (cached as FxParamControl).boundFxId) cache.delete(id);
+      else return cached;
+    } else if (cached) {
+      return cached;
+    }
 
     const project = deps.getProject();
     let created: ProjectControl<ControlDef> | undefined;
@@ -807,6 +1172,16 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createPatternsCountControl(deps) as ProjectControl<ControlDef>;
     } else if (id === QUEUE_LENGTH_ID) {
       created = createQueueLengthControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === FX_COUNT_ID) {
+      created = createFxCountControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === FX_SELECTED_INDEX_ID) {
+      created = createFxSelectedIndexControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === FX_SELECTED_ENABLED_ID) {
+      created = createFxEnabledControl(id, "Selected FX enabled", selectedFx(deps), deps) as ProjectControl<ControlDef>;
+    } else if (id === FX_SELECTED_NAME_ID) {
+      created = createFxNameControl(id, "Selected FX name", selectedFx(deps), deps) as ProjectControl<ControlDef>;
+    } else if (id === FX_SELECTED_PARAMS_COUNT_ID) {
+      created = createFxParamsCountControl(id, "Selected FX param count", selectedFx(deps), deps) as ProjectControl<ControlDef>;
     } else {
       const fader = FADER_VOLUME_ID.exec(id);
       const patternPlaying = PATTERN_PLAYING_ID.exec(id);
@@ -816,6 +1191,12 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       const patternBars = PATTERN_BARS_ID.exec(id);
       const queueSlotPattern = QUEUE_SLOT_PATTERN_ID.exec(id);
       const queueSlotPlaying = QUEUE_SLOT_PLAYING_ID.exec(id);
+      const fxEnabled = FX_ENABLED_ID.exec(id);
+      const fxSelected = FX_SELECTED_ID.exec(id);
+      const fxName = FX_NAME_ID.exec(id);
+      const fxParamsCount = FX_PARAMS_COUNT_ID.exec(id);
+      const fxParam = FX_PARAM_ID.exec(id);
+      const fxSelectedParam = FX_SELECTED_PARAM_ID.exec(id);
       // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.
       if (fader && Number(fader[1]) < deps.faderPageSize) {
         created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
@@ -833,6 +1214,24 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
         created = createQueueSlotPatternControl(Number(queueSlotPattern[1]), deps) as ProjectControl<ControlDef>;
       } else if (queueSlotPlaying && project.patternChain[Number(queueSlotPlaying[1])]) {
         created = createQueueSlotPlayingControl(Number(queueSlotPlaying[1]), deps) as ProjectControl<ControlDef>;
+      } else if (fxEnabled && currentFxChain(deps, project)[Number(fxEnabled[1])]) {
+        const index = Number(fxEnabled[1]);
+        created = createFxEnabledControl(id, `FX ${index + 1} enabled`, fxByIndex(index, deps), deps) as ProjectControl<ControlDef>;
+      } else if (fxSelected && currentFxChain(deps, project)[Number(fxSelected[1])]) {
+        created = createFxSelectedControl(id, Number(fxSelected[1]), deps) as ProjectControl<ControlDef>;
+      } else if (fxName && currentFxChain(deps, project)[Number(fxName[1])]) {
+        const index = Number(fxName[1]);
+        created = createFxNameControl(id, `FX ${index + 1} name`, fxByIndex(index, deps), deps) as ProjectControl<ControlDef>;
+      } else if (fxParamsCount && currentFxChain(deps, project)[Number(fxParamsCount[1])]) {
+        const index = Number(fxParamsCount[1]);
+        created = createFxParamsCountControl(id, `FX ${index + 1} param count`, fxByIndex(index, deps), deps) as ProjectControl<ControlDef>;
+      } else if (fxParam) {
+        const index = Number(fxParam[1]);
+        const instance = currentFxChain(deps, project)[index];
+        if (instance) created = createFxParamControl(id, instance, Number(fxParam[2]), fxByIndex(index, deps), deps) as ProjectControl<ControlDef> | undefined;
+      } else if (fxSelectedParam) {
+        const instance = selectedFx(deps)(project);
+        if (instance) created = createFxParamControl(id, instance, Number(fxSelectedParam[1]), selectedFx(deps), deps) as ProjectControl<ControlDef> | undefined;
       }
     }
 

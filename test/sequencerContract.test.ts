@@ -7,7 +7,8 @@ import { findDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings } from "midi-core/surface";
 import { createInitialProject } from "../src/model/project";
 import { projectReducer, type Action } from "../src/model/reducer";
-import { totalBeats, type Project } from "../src/model/types";
+import { totalBeats, type FxTarget, type Project } from "../src/model/types";
+import { FX_DEFS } from "../src/model/fx";
 import { createBankActions, createSequencerRegistry } from "../src/midi/sequencerContract";
 
 function harness() {
@@ -461,6 +462,227 @@ describe("sequencer contract: pattern launch", () => {
     expect(registry.getAction("pattern.2.duplicate")).toBeUndefined();
     expect(registry.getAction("pattern.2.delete")).toBeUndefined();
     expect(registry.getAction("queue.1.remove")).toBeUndefined();
+  });
+});
+
+describe("sequencer contract: fx (ECS-149)", () => {
+  function fxHarness() {
+    let project: Project = createInitialProject();
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    let target: FxTarget = "master";
+    let selectedFxId: string | null = null;
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getTarget: () => target,
+      getSelectedFxId: () => selectedFxId,
+      selectFx: (id) => {
+        selectedFxId = id;
+      },
+    });
+    return {
+      registry,
+      dispatch,
+      getProject: () => project,
+      setTarget: (next: FxTarget) => {
+        target = next;
+      },
+      getSelectedFxId: () => selectedFxId,
+    };
+  }
+
+  it("fx.count reflects the current target's chain size, scoped to that target only", () => {
+    const { registry, dispatch, getProject, setTarget } = fxHarness();
+    expect(registry.getControl("fx.count")!.getValue()).toBe(0);
+
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    expect(registry.getControl("fx.count")!.getValue()).toBe(1);
+
+    const trackId = getProject().tracks[0]!.id;
+    setTarget(trackId);
+    expect(registry.getControl("fx.count")!.getValue()).toBe(0); // master's FX doesn't leak into a track's count
+
+    dispatch({ type: "ADD_FX", target: trackId, fxType: "delay" });
+    expect(registry.getControl("fx.count")!.getValue()).toBe(1);
+  });
+
+  it("fx.<n>.enabled reads the FX's On state, and setValue dispatches SET_FX_ENABLED", () => {
+    const { registry, dispatch, getProject } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    const fxId = getProject().master.fx[0]!.id;
+
+    expect(registry.getControl("fx.0.enabled")!.getValue()).toBe(true); // addFx defaults to enabled
+    registry.getControl("fx.0.enabled")!.setValue(false);
+    expect(getProject().master.fx.find((f) => f.id === fxId)!.enabled).toBe(false);
+    expect(registry.getControl("fx.0.enabled")!.getValue()).toBe(false);
+  });
+
+  it("fx.<n>.name is the FX type's display label, read-only", () => {
+    const { registry, dispatch, getProject } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" });
+    const before = getProject();
+
+    expect(registry.getControl("fx.0.name")!.getValue()).toBe("Delay");
+    registry.getControl("fx.0.name")!.setValue("ignored");
+    expect(getProject()).toBe(before); // unchanged -- no dispatch fired
+  });
+
+  it("fx.<n>.selected reflects the editing selection, and setValue(true) selects it -- setValue(false) is a no-op", () => {
+    const { registry, dispatch, getProject, getSelectedFxId } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" });
+    const delayId = getProject().master.fx[1]!.id;
+
+    expect(registry.getControl("fx.0.selected")!.getValue()).toBe(false);
+    expect(registry.getControl("fx.1.selected")!.getValue()).toBe(false);
+
+    registry.getControl("fx.1.selected")!.setValue(true);
+    expect(getSelectedFxId()).toBe(delayId);
+    expect(registry.getControl("fx.1.selected")!.getValue()).toBe(true);
+    expect(registry.getControl("fx.0.selected")!.getValue()).toBe(false);
+
+    registry.getControl("fx.1.selected")!.setValue(false);
+    expect(getSelectedFxId()).toBe(delayId); // no-op -- nothing to "deselect" to
+  });
+
+  it("navigation treats a bypassed FX as present/selectable, same as FxChainStrip's own chips", () => {
+    const { registry, dispatch, getProject, getSelectedFxId } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    const fxId = getProject().master.fx[0]!.id;
+    dispatch({ type: "SET_FX_ENABLED", target: "master", fxId, enabled: false });
+
+    expect(registry.getControl("fx.0.selected")).toBeDefined(); // still resolves/selectable while bypassed
+    registry.getControl("fx.0.selected")!.setValue(true);
+    expect(getSelectedFxId()).toBe(fxId);
+  });
+
+  it("fx.selected.index is -1 with nothing selected, and tracks the selected FX's position", () => {
+    const { registry, dispatch } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" });
+
+    expect(registry.getControl("fx.selected.index")!.getValue()).toBe(-1);
+    registry.getControl("fx.1.selected")!.setValue(true);
+    expect(registry.getControl("fx.selected.index")!.getValue()).toBe(1);
+    expect(registry.getControl("fx.selected.enabled")!.getValue()).toBe(true);
+    expect(registry.getControl("fx.selected.name")!.getValue()).toBe("Delay");
+  });
+
+  it("fx.<n>.params.count / fx.selected.params.count match that FX type's parameter count", () => {
+    const { registry, dispatch } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" }); // mode, cutoff, resonance
+    registry.getControl("fx.0.selected")!.setValue(true);
+
+    expect(registry.getControl("fx.0.params.count")!.getValue()).toBe(FX_DEFS.filter.params.length);
+    expect(registry.getControl("fx.selected.params.count")!.getValue()).toBe(FX_DEFS.filter.params.length);
+  });
+
+  it("fx.<n>.param.<p> reads and writes the parameter at that ordered position, with that type's own range/unit/step", () => {
+    const { registry, dispatch, getProject } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    const fxId = getProject().master.fx[0]!.id;
+    const cutoff = registry.getControl("fx.0.param.1")!; // filter: [mode, cutoff, resonance]
+
+    expect(cutoff.def.kind).toBe("number");
+    expect((cutoff.def as { min: number; max: number; unit?: string }).min).toBe(FX_DEFS.filter.params[1]!.min);
+    expect((cutoff.def as { unit?: string }).unit).toBe("Hz");
+    expect(cutoff.getValue()).toBe(FX_DEFS.filter.params[1]!.default);
+
+    cutoff.setValue(1000);
+    expect(getProject().master.fx.find((f) => f.id === fxId)!.params.cutoff).toBe(1000);
+    expect(cutoff.getValue()).toBe(1000);
+  });
+
+  it("no fx.<n>.param control resolves past that FX type's own parameter count", () => {
+    const { registry, dispatch } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" }); // 3 params: indices 0-2
+    expect(registry.getControl("fx.0.param.2")).toBeDefined();
+    expect(registry.getControl("fx.0.param.3")).toBeUndefined();
+  });
+
+  it("no fx control resolves past fx.count, or without a target", () => {
+    const { registry, dispatch, setTarget } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    expect(registry.getControl("fx.1.enabled")).toBeUndefined();
+    expect(registry.getControl("fx.1.selected")).toBeUndefined();
+
+    setTarget("no-such-track");
+    expect(registry.getControl("fx.0.enabled")).toBeUndefined();
+    expect(registry.getControl("fx.count")!.getValue()).toBe(0);
+  });
+
+  it("fx.selected.param.<p> re-resolves to the newly selected FX's own def/value when the selection changes -- not the previously selected FX's stale def", () => {
+    const { registry, dispatch } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" }); // index 0
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" }); // index 1
+
+    registry.getControl("fx.0.selected")!.setValue(true); // select the filter
+    const asFilter = registry.getControl("fx.selected.param.1")!; // filter.cutoff: 40..18000 Hz
+    expect(asFilter.getValue()).toBe(18000);
+    expect((asFilter.def as { max: number }).max).toBe(18000);
+
+    registry.getControl("fx.1.selected")!.setValue(true); // reselect the delay
+    const asDelay = registry.getControl("fx.selected.param.1")!; // delay.feedback: 0..0.95, default 0.3
+    expect(asDelay.getValue()).toBe(0.3);
+    expect((asDelay.def as { max: number }).max).toBe(0.95);
+    expect(asDelay.def.id).toBe("fx.selected.param.1");
+  });
+
+  it("fx.<n>.param.<p> re-resolves correctly after an earlier FX's removal shifts a different-typed FX into that position", () => {
+    const { registry, dispatch, getProject } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" }); // index 0: mode, cutoff, resonance
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" }); // index 1: time, feedback, mix
+    const filterId = getProject().master.fx[0]!.id;
+
+    const asFilter = registry.getControl("fx.0.param.1")!; // cached: filter.cutoff
+    expect(asFilter.getValue()).toBe(18000);
+
+    dispatch({ type: "REMOVE_FX", target: "master", fxId: filterId }); // delay shifts down to index 0
+    const asDelay = registry.getControl("fx.0.param.1")!; // must now mean delay.feedback, not stale filter.cutoff
+    expect(asDelay.getValue()).toBe(0.3);
+    expect((asDelay.def as { max: number }).max).toBe(0.95);
+  });
+
+  it("fx.next/fx.previous page through the chain in order and clamp at the ends; starting unselected goes to the first/last", () => {
+    const { registry, dispatch, getProject, getSelectedFxId } = fxHarness();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" });
+    dispatch({ type: "ADD_FX", target: "master", fxType: "reverb" });
+    const [filterId, , reverbId] = getProject().master.fx.map((f) => f.id);
+
+    registry.getAction("fx.next")!.invoke(); // nothing selected -- goes to the first
+    expect(getSelectedFxId()).toBe(filterId);
+
+    registry.getAction("fx.next")!.invoke();
+    registry.getAction("fx.next")!.invoke();
+    expect(getSelectedFxId()).toBe(reverbId);
+    registry.getAction("fx.next")!.invoke(); // clamps at the end
+    expect(getSelectedFxId()).toBe(reverbId);
+
+    registry.getAction("fx.previous")!.invoke();
+    registry.getAction("fx.previous")!.invoke();
+    registry.getAction("fx.previous")!.invoke();
+    expect(getSelectedFxId()).toBe(filterId);
+    registry.getAction("fx.previous")!.invoke(); // clamps at the start
+    expect(getSelectedFxId()).toBe(filterId);
+  });
+
+  it("fx.previous with nothing selected goes to the last FX, and both actions are safe no-ops on an empty chain", () => {
+    const { registry, dispatch, getProject, getSelectedFxId } = fxHarness();
+    expect(registry.getAction("fx.next")).toBeDefined();
+    registry.getAction("fx.next")!.invoke(); // empty chain -- no-op, no throw
+    expect(getSelectedFxId()).toBeNull();
+
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" });
+    dispatch({ type: "ADD_FX", target: "master", fxType: "delay" });
+    const delayId = getProject().master.fx[1]!.id;
+
+    registry.getAction("fx.previous")!.invoke();
+    expect(getSelectedFxId()).toBe(delayId);
   });
 });
 

@@ -13,7 +13,7 @@ import { createSequencerBindings, sequencerFaderCount, type SequencerDevices } f
 import { findDawPorts, requiresOutput, resolveDevice } from "midi-core/devices";
 import { createControlSurface, generateControlMappings, type ControlSurface } from "midi-core/surface";
 import type { Action } from "../model/reducer";
-import type { ChainEntryId, PatternId, Project } from "../model/types";
+import type { ChainEntryId, FxId, FxTarget, PatternId, Project } from "../model/types";
 import { createBankActions, createSequencerRegistry, faderPagesPerBank, type SequencerRegistry } from "./sequencerContract";
 
 export interface TransportCallbacks {
@@ -48,6 +48,11 @@ export function useMidiControls(
   activeBank: number,
   selectBank: (bank: number) => void,
   selectPattern: (patternId: PatternId) => void,
+  // ECS-149: App.tsx's own FX-panel selection (selectedTarget/selectedFxId/setSelectedFxId) --
+  // same "the app owns it, the device only asks for one" shape bank/pattern selection already have.
+  fxTarget: FxTarget,
+  selectedFxId: FxId | null,
+  selectFx: (fxId: FxId) => void,
 ) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [ports, setPorts] = useState<readonly MidiPortInfo[]>([]);
@@ -83,6 +88,12 @@ export function useMidiControls(
   selectBankRef.current = selectBank;
   const selectPatternRef = useRef(selectPattern);
   selectPatternRef.current = selectPattern;
+  const fxTargetRef = useRef(fxTarget);
+  fxTargetRef.current = fxTarget;
+  const selectedFxIdRef = useRef(selectedFxId);
+  selectedFxIdRef.current = selectedFxId;
+  const selectFxRef = useRef(selectFx);
+  selectFxRef.current = selectFx;
 
   const appendLog = useCallback((line: string) => {
     setLog((lines) => [...lines.slice(-(MAX_LOG_LINES - 1)), line]);
@@ -187,6 +198,9 @@ export function useMidiControls(
         isPlaying: () => transportRef.current.isPlaying?.() ?? false,
         getCurrentChainEntryId: () => transportRef.current.getCurrentChainEntryId?.() ?? null,
         selectPattern: (id) => selectPatternRef.current(id),
+        getTarget: () => fxTargetRef.current,
+        getSelectedFxId: () => selectedFxIdRef.current,
+        selectFx: (id) => selectFxRef.current(id),
       });
       const actions = {
         // The device's Play button toggles: pressed while already playing, it pauses in place rather than starting
@@ -330,6 +344,14 @@ export function useMidiControls(
     connectionRef.current?.registry.syncFromProject(projectRef.current);
     connectionRef.current?.registry.repaintFaders();
   }, [activeBank]);
+
+  // ECS-149: selecting a different FX target/instance (App.tsx's selectedTarget/selectedFxId) is
+  // its own React state, not part of Project -- the project-watching effect above has nothing to
+  // re-render from when only this changes, so this re-syncs the registry directly, the same
+  // reason the activeBank effect above exists for bank switches.
+  useEffect(() => {
+    connectionRef.current?.registry.syncFromProject(projectRef.current);
+  }, [fxTarget, selectedFxId]);
 
   useEffect(() => () => void disconnect(), [disconnect]);
 

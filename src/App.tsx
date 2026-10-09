@@ -260,6 +260,9 @@ export function App() {
     activeBank,
     setActiveBank,
     setSelectedPatternId,
+    selectedTarget,
+    selectedFxId,
+    setSelectedFxId,
   );
 
   const handleBpmChange = useCallback((bpm: number) => {
