@@ -41,6 +41,7 @@ export function useMidiControls(
   patternId: PatternId,
   activeBank: number,
   selectBank: (bank: number) => void,
+  selectPattern: (patternId: PatternId) => void,
 ) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [ports, setPorts] = useState<readonly MidiPortInfo[]>([]);
@@ -74,6 +75,8 @@ export function useMidiControls(
   bankRef.current = activeBank;
   const selectBankRef = useRef(selectBank);
   selectBankRef.current = selectBank;
+  const selectPatternRef = useRef(selectPattern);
+  selectPatternRef.current = selectPattern;
 
   const appendLog = useCallback((line: string) => {
     setLog((lines) => [...lines.slice(-(MAX_LOG_LINES - 1)), line]);
@@ -177,6 +180,7 @@ export function useMidiControls(
         getPlayhead: () => transportRef.current.getPlayheadInfo?.() ?? { patternId: null, beat: 0 },
         isPlaying: () => transportRef.current.isPlaying?.() ?? false,
         getCurrentChainEntryId: () => transportRef.current.getCurrentChainEntryId?.() ?? null,
+        selectPattern: (id) => selectPatternRef.current(id),
       });
       const actions = {
         play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),

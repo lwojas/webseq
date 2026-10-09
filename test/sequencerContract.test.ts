@@ -196,14 +196,18 @@ describe("sequencer contract: pattern launch", () => {
     let playing = false;
     let playhead = { patternId: null as string | null, beat: 0 };
     let currentChainEntryId: string | null = null;
+    let selectedPatternId = project.patterns[0]!.id;
     const registry = createSequencerRegistry({
       getProject: () => project,
-      getPatternId: () => project.patterns[0]!.id,
+      getPatternId: () => selectedPatternId,
       dispatch,
       faderPageSize: 8,
       getPlayhead: () => playhead,
       isPlaying: () => playing,
       getCurrentChainEntryId: () => currentChainEntryId,
+      selectPattern: (id) => {
+        selectedPatternId = id;
+      },
     });
     return {
       registry,
@@ -217,6 +221,7 @@ describe("sequencer contract: pattern launch", () => {
       setCurrentChainEntryId: (id: string | null) => {
         currentChainEntryId = id;
       },
+      getSelectedPatternId: () => selectedPatternId,
     };
   }
 
@@ -288,6 +293,118 @@ describe("sequencer contract: pattern launch", () => {
     registry.pollPatternLaunch(); // re-reads the live project/clock and fires both
     expect(playingSeen).toEqual([true]);
     expect(queuedSeen).toEqual([true]);
+  });
+
+  it("pattern.<n>.selected reflects the editing selection, and setValue(true) selects it -- setValue(false) is a no-op", () => {
+    const { registry, getProject, getSelectedPatternId } = launchHarness();
+    const patternB = getProject().patterns[1]!.id;
+
+    expect(registry.getControl("pattern.0.selected")!.getValue()).toBe(true);
+    expect(registry.getControl("pattern.1.selected")!.getValue()).toBe(false);
+
+    registry.getControl("pattern.1.selected")!.setValue(true);
+    expect(getSelectedPatternId()).toBe(patternB);
+    expect(registry.getControl("pattern.1.selected")!.getValue()).toBe(true);
+    expect(registry.getControl("pattern.0.selected")!.getValue()).toBe(false);
+
+    registry.getControl("pattern.1.selected")!.setValue(false);
+    expect(getSelectedPatternId()).toBe(patternB); // no-op -- nothing to "deselect" to
+  });
+
+  it("pattern.<n>.name is the pattern's display name, feedback-only", () => {
+    const { registry, getProject } = launchHarness();
+    const before = getProject();
+
+    expect(registry.getControl("pattern.0.name")!.getValue()).toBe("Pattern A");
+    expect(registry.getControl("pattern.1.name")!.getValue()).toBe("Pattern B");
+
+    registry.getControl("pattern.0.name")!.setValue("ignored");
+    expect(getProject()).toBe(before); // unchanged -- no dispatch fired
+  });
+
+  it("pattern.<n>.bars reads and writes the pattern's bar count", () => {
+    const { registry, getProject } = launchHarness();
+    const patternB = getProject().patterns[1]!.id;
+
+    expect(registry.getControl("pattern.1.bars")!.getValue()).toBe(1);
+    registry.getControl("pattern.1.bars")!.setValue(4);
+    expect(getProject().patterns.find((p) => p.id === patternB)!.bars).toBe(4);
+    expect(registry.getControl("pattern.1.bars")!.getValue()).toBe(4);
+  });
+
+  it("patterns.count tracks the pattern library size", () => {
+    const { registry, getProject } = launchHarness();
+    expect(registry.getControl("patterns.count")!.getValue()).toBe(2);
+
+    registry.getAction("patterns.create")!.invoke();
+    expect(getProject().patterns).toHaveLength(3);
+    expect(registry.getControl("patterns.count")!.getValue()).toBe(3); // read fresh, no sync needed
+  });
+
+  it("pattern.<n>.duplicate duplicates that pattern", () => {
+    const { registry, getProject } = launchHarness();
+    registry.getAction("pattern.1.duplicate")!.invoke();
+    expect(getProject().patterns).toHaveLength(3);
+    expect(getProject().patterns[2]!.name).toBe("Pattern B copy");
+  });
+
+  it("pattern.<n>.delete deletes that pattern, but is a safe no-op for the last remaining one", () => {
+    const { registry, getProject } = launchHarness();
+    registry.getAction("pattern.1.delete")!.invoke();
+    expect(getProject().patterns).toHaveLength(1);
+
+    // Only one pattern left -- pattern.1.delete no longer resolves (out of range), and
+    // pattern.0.delete is refused by the model itself (removePattern's own guard).
+    expect(registry.getAction("pattern.1.delete")).toBeUndefined();
+    registry.getAction("pattern.0.delete")!.invoke();
+    expect(getProject().patterns).toHaveLength(1);
+  });
+
+  it("queue.<slot>.pattern/.playing reflect the queue in order, entry-level not pattern-level", () => {
+    const { registry, getProject, setPlaying, setCurrentChainEntryId } = launchHarness();
+    registry.getControl("pattern.1.queued")!.setValue(true); // queue: [A, B]
+
+    expect(registry.getControl("queue.0.pattern")!.getValue()).toBe("Pattern A");
+    expect(registry.getControl("queue.1.pattern")!.getValue()).toBe("Pattern B");
+    expect(registry.getControl("queue.2.pattern")).toBeUndefined();
+
+    setPlaying(true);
+    setCurrentChainEntryId(getProject().patternChain[1]!.id); // slot 1 (B) is the one sounding
+    expect(registry.getControl("queue.0.playing")!.getValue()).toBe(false);
+    expect(registry.getControl("queue.1.playing")!.getValue()).toBe(true);
+  });
+
+  it("queue.length tracks the queue size", () => {
+    const { registry } = launchHarness();
+    expect(registry.getControl("queue.length")!.getValue()).toBe(1);
+
+    registry.getControl("pattern.1.queued")!.setValue(true); // queue: [A, B]
+    expect(registry.getControl("queue.length")!.getValue()).toBe(2); // read fresh, no sync needed
+  });
+
+  it("queue.<slot>.remove removes exactly that entry, and is a safe no-op for the only one", () => {
+    const { registry, getProject } = launchHarness();
+    registry.getControl("pattern.1.queued")!.setValue(true); // queue: [A, B]
+
+    registry.getAction("queue.1.remove")!.invoke();
+    expect(getProject().patternChain.map((e) => e.patternId)).toEqual([getProject().patterns[0]!.id]);
+
+    // Only one entry left -- queue.1.remove no longer resolves (out of range).
+    expect(registry.getAction("queue.1.remove")).toBeUndefined();
+    registry.getAction("queue.0.remove")!.invoke(); // refused by the model itself -- queue never empties
+    expect(getProject().patternChain).toHaveLength(1);
+  });
+
+  it("no control/action resolves past the pattern/queue count", () => {
+    const { registry } = launchHarness();
+    expect(registry.getControl("pattern.2.selected")).toBeUndefined();
+    expect(registry.getControl("pattern.2.name")).toBeUndefined();
+    expect(registry.getControl("pattern.2.bars")).toBeUndefined();
+    expect(registry.getControl("queue.1.pattern")).toBeUndefined();
+    expect(registry.getControl("queue.1.playing")).toBeUndefined();
+    expect(registry.getAction("pattern.2.duplicate")).toBeUndefined();
+    expect(registry.getAction("pattern.2.delete")).toBeUndefined();
+    expect(registry.getAction("queue.1.remove")).toBeUndefined();
   });
 });
 

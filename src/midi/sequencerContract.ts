@@ -9,7 +9,16 @@
 // Each resolved control is cached, and syncFromProject() keeps every cached control's change notifications
 // in step with the project, the same way controlAdapter.ts's ProjectControl already does for track mutes.
 
-import { createAction, type BooleanControlDef, type Control, type ControlDef, type ControlRegistry, type NumericControlDef } from "midi-core/control-api";
+import {
+  createAction,
+  type Action as MidiAction,
+  type BooleanControlDef,
+  type Control,
+  type ControlDef,
+  type ControlRegistry,
+  type NumericControlDef,
+  type StringControlDef,
+} from "midi-core/control-api";
 import type { SequencerContract } from "midi-core/configurations";
 import { totalBeats, trackById } from "../model/types";
 import type { ChainEntryId, Pattern, PatternId, Project, Track, TrackId } from "../model/types";
@@ -50,6 +59,12 @@ export interface SequencerRegistryDeps {
    * `pattern.<n>.queued` controls are feedback-only.
    */
   readonly getCurrentChainEntryId?: () => ChainEntryId | null;
+  /**
+   * Selects `patternId` for editing — the same thing clicking its row in `PatternList`/its chip
+   * in `PatternBar` does (`App.tsx`'s `setSelectedPatternId`). Omitted means `pattern.<n>.selected`
+   * is feedback-only.
+   */
+  readonly selectPattern?: (patternId: PatternId) => void;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -65,13 +80,24 @@ export interface SequencerRegistry extends ControlRegistry {
    */
   pollPlayhead(): void;
   /**
-   * Re-reads the playing/queued pattern state and fires `pattern.<n>.playing`/`pattern.<n>.queued`
-   * listeners for any resolved control whose value moved (ECS-117) — the manual-launch
-   * counterpart to `pollPlayhead()` above, for the same reason: playing/queued state changes
-   * on the transport's own clock (a step boundary consuming a queued request), not only on a
-   * Project dispatch, so it needs the same animation-frame polling `pollPlayhead()` gets.
+   * Re-reads the playing/queued pattern state and fires `pattern.<n>.playing`/`pattern.<n>.queued`/
+   * `queue.<slot>.playing` listeners for any resolved control whose value moved — the manual-
+   * launch counterpart to `pollPlayhead()` above, for the same reason: which pattern/queue entry
+   * is sounding changes on the transport's own clock (a step boundary), not only on a Project
+   * dispatch, so it needs the same animation-frame polling `pollPlayhead()` gets. The other new
+   * pattern/queue controls (`.selected`, `.name`, `.bars`, `.pattern`, the `.count`/`.length`
+   * pair) only ever change via a Project dispatch, so `syncFromProject()` alone already covers
+   * them — no polling needed.
    */
   pollPatternLaunch(): void;
+  /**
+   * Resolves a fire-and-forget command by id (`pattern.<n>.duplicate`/`.delete`,
+   * `patterns.create`, `queue.<slot>.remove`) — midi-core's `Action`, not a `Control`: these have
+   * an effect but no persistent value to read back, so they don't fit `getControl`'s shape.
+   * `ControlRegistry` (midi-core's base interface this extends) has no such lookup; this is a
+   * webseq-only addition, same as `pollPatternLaunch`/`repaintFaders` already are. Resolved
+   * fresh on every call rather than cached — an `Action` has no `onChange` state to preserve. */
+  getAction(id: string): MidiAction | undefined;
 }
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
@@ -84,6 +110,17 @@ const BANK_ID = "bank.active";
 const PLAYHEAD_ID = "transport.playhead";
 const PATTERN_PLAYING_ID = /^pattern\.(\d+)\.playing$/;
 const PATTERN_QUEUED_ID = /^pattern\.(\d+)\.queued$/;
+const PATTERN_SELECTED_ID = /^pattern\.(\d+)\.selected$/;
+const PATTERN_NAME_ID = /^pattern\.(\d+)\.name$/;
+const PATTERN_BARS_ID = /^pattern\.(\d+)\.bars$/;
+const PATTERNS_COUNT_ID = "patterns.count";
+const QUEUE_SLOT_PATTERN_ID = /^queue\.(\d+)\.pattern$/;
+const QUEUE_SLOT_PLAYING_ID = /^queue\.(\d+)\.playing$/;
+const QUEUE_LENGTH_ID = "queue.length";
+const PATTERN_DUPLICATE_ID = /^pattern\.(\d+)\.duplicate$/;
+const PATTERN_DELETE_ID = /^pattern\.(\d+)\.delete$/;
+const PATTERNS_CREATE_ID = "patterns.create";
+const QUEUE_SLOT_REMOVE_ID = /^queue\.(\d+)\.remove$/;
 
 function selectedPattern(project: Project, patternId: PatternId): Pattern {
   return project.patterns.find((pattern) => pattern.id === patternId) ?? project.patterns[0]!;
@@ -238,6 +275,216 @@ function createPatternQueuedControl(index: number, deps: SequencerRegistryDeps):
     },
     syncFromProject(project) {
       const next = isQueued(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * pattern.<n>.selected: whether `project.patterns[index]` is the one selected for editing
+ * (`App.tsx`'s `selectedPatternId`) — independent of playing/queued, same separation `PatternBar`/
+ * `PatternList` already keep. Writable: `setValue(true)` selects it (the same action clicking its
+ * row does); `setValue(false)` is a no-op, since there's always exactly one selected pattern and
+ * no "deselect" affordance anywhere in the UI either.
+ */
+function createPatternSelectedControl(index: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id: `pattern.${index}.selected`, label: `Pattern ${index + 1} selected`, kind: "boolean", default: false };
+  const isSelected = (project: Project) => project.patterns[index]?.id === deps.getPatternId();
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = isSelected(deps.getProject());
+
+  return {
+    def,
+    getValue: () => isSelected(deps.getProject()),
+    setValue(value) {
+      if (!value) return;
+      const pattern = deps.getProject().patterns[index];
+      if (pattern) deps.selectPattern?.(pattern.id);
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = isSelected(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * pattern.<n>.name: `project.patterns[index]`'s display name. Read-only — the first real
+ * consumer of `StringControlDef` in this app, for exactly the use case that control kind was
+ * built for (midi-core's doc comment: "the current pattern name shown on a device's LCD").
+ */
+function createPatternNameControl(index: number, deps: SequencerRegistryDeps): ProjectControl<StringControlDef> {
+  const def: StringControlDef = { id: `pattern.${index}.name`, label: `Pattern ${index + 1} name`, kind: "string", default: "" };
+  const name = (project: Project) => project.patterns[index]?.name ?? "";
+  const listeners = new Set<(value: string, previous: string) => void>();
+  let last = name(deps.getProject());
+
+  return {
+    def,
+    getValue: () => name(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = name(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** pattern.<n>.bars: `project.patterns[index]`'s bar count. Writable, same bounds as `PatternBar`/`PatternList`'s own bars input. */
+function createPatternBarsControl(index: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: `pattern.${index}.bars`, label: `Pattern ${index + 1} bars`, kind: "number", min: 1, max: 64, default: 1 };
+  const bars = (project: Project) => project.patterns[index]?.bars ?? def.default;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = bars(deps.getProject());
+
+  return {
+    def,
+    getValue: () => bars(deps.getProject()),
+    setValue(value) {
+      const pattern = deps.getProject().patterns[index];
+      if (pattern) deps.dispatch({ type: "SET_PATTERN_BARS", patternId: pattern.id, bars: value });
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = bars(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** patterns.count: how many patterns exist, so a caller can bound its own pattern-pad iteration -- same role `tracks.count` already plays for the step grid. */
+function createPatternsCountControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: PATTERNS_COUNT_ID, label: "Pattern count", kind: "number", min: 0, max: 1024, default: 0 };
+  const count = (project: Project) => project.patterns.length;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = count(deps.getProject());
+
+  return {
+    def,
+    getValue: () => count(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = count(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * queue.<slot>.pattern: the name of whichever pattern occupies that position in the queue
+ * (project.patternChain — see its doc comment), 0-based. Separate from pattern.<n>.name since a
+ * pattern can occupy more than one slot. Empty string past the queue's current length or for a
+ * dangling entry (its pattern deleted -- shouldn't normally happen, removePattern already cleans
+ * the queue, but this stays safe rather than throwing either way).
+ */
+function createQueueSlotPatternControl(slot: number, deps: SequencerRegistryDeps): ProjectControl<StringControlDef> {
+  const def: StringControlDef = { id: `queue.${slot}.pattern`, label: `Queue slot ${slot + 1} pattern`, kind: "string", default: "" };
+  const name = (project: Project) => {
+    const entry = project.patternChain[slot];
+    if (!entry) return "";
+    return project.patterns.find((p) => p.id === entry.patternId)?.name ?? "";
+  };
+  const listeners = new Set<(value: string, previous: string) => void>();
+  let last = name(deps.getProject());
+
+  return {
+    def,
+    getValue: () => name(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = name(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * queue.<slot>.playing: whether that exact queue slot is the entry currently sounding
+ * (Transport.getCurrentChainEntryId()) -- entry-level, not pattern-level, so two slots holding
+ * the same pattern are told apart correctly (pattern.<n>.playing can't do that on its own).
+ */
+function createQueueSlotPlayingControl(slot: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id: `queue.${slot}.playing`, label: `Queue slot ${slot + 1} playing`, kind: "boolean", default: false };
+  const isPlaying = (project: Project) => {
+    const entry = project.patternChain[slot];
+    if (!entry || !deps.isPlaying?.()) return false;
+    return entry.id === (deps.getCurrentChainEntryId?.() ?? null);
+  };
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = isPlaying(deps.getProject());
+
+  return {
+    def,
+    getValue: () => isPlaying(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = isPlaying(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/** queue.length: how many entries are actually in the queue right now, so a caller can bound its own queue-slot iteration -- same role patterns.count plays for the pattern library. */
+function createQueueLengthControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: QUEUE_LENGTH_ID, label: "Queue length", kind: "number", min: 0, max: 1024, default: 0 };
+  const length = (project: Project) => project.patternChain.length;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = length(deps.getProject());
+
+  return {
+    def,
+    getValue: () => length(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = length(project);
       if (next === last) return;
       const previous = last;
       last = next;
@@ -446,6 +693,46 @@ export function createBankActions(getBank: () => number, setBank: (bank: number)
   };
 }
 
+/**
+ * Resolves a fire-and-forget pattern/queue command by id against the live project -- the
+ * `getAction` counterpart to `resolve()`'s controls below. A command whose index/slot is out of
+ * range (or, for the two delete-ish ones, whose target no longer exists by the time it's
+ * actually invoked) resolves to `undefined`/is a harmless no-op, same bounds-checking and
+ * never-empty-queue guards the Patterns view's own buttons already respect.
+ */
+function resolveAction(id: string, deps: SequencerRegistryDeps): MidiAction | undefined {
+  const project = deps.getProject();
+  const duplicate = PATTERN_DUPLICATE_ID.exec(id);
+  const del = PATTERN_DELETE_ID.exec(id);
+  const queueRemove = QUEUE_SLOT_REMOVE_ID.exec(id);
+
+  if (duplicate && project.patterns[Number(duplicate[1])]) {
+    const index = Number(duplicate[1]);
+    return createAction({ id, label: `Duplicate pattern ${index + 1}` }, () => {
+      const pattern = deps.getProject().patterns[index];
+      if (pattern) deps.dispatch({ type: "DUPLICATE_PATTERN", patternId: pattern.id });
+    });
+  }
+  if (del && project.patterns[Number(del[1])]) {
+    const index = Number(del[1]);
+    return createAction({ id, label: `Delete pattern ${index + 1}` }, () => {
+      const pattern = deps.getProject().patterns[index];
+      if (pattern) deps.dispatch({ type: "REMOVE_PATTERN", patternId: pattern.id });
+    });
+  }
+  if (id === PATTERNS_CREATE_ID) {
+    return createAction({ id, label: "Create pattern" }, () => deps.dispatch({ type: "ADD_PATTERN" }));
+  }
+  if (queueRemove && project.patternChain[Number(queueRemove[1])]) {
+    const slot = Number(queueRemove[1]);
+    return createAction({ id, label: `Remove queue slot ${slot + 1}` }, () => {
+      const entry = deps.getProject().patternChain[slot];
+      if (entry) deps.dispatch({ type: "REMOVE_CHAIN_ENTRY", entryId: entry.id });
+    });
+  }
+  return undefined;
+}
+
 /** A registry that resolves the sequencer's contract ids against the live project. */
 export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerRegistry {
   const cache = new Map<string, ProjectControl<ControlDef>>();
@@ -482,10 +769,19 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createBankControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PLAYHEAD_ID) {
       created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === PATTERNS_COUNT_ID) {
+      created = createPatternsCountControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === QUEUE_LENGTH_ID) {
+      created = createQueueLengthControl(deps) as ProjectControl<ControlDef>;
     } else {
       const fader = FADER_VOLUME_ID.exec(id);
       const patternPlaying = PATTERN_PLAYING_ID.exec(id);
       const patternQueued = PATTERN_QUEUED_ID.exec(id);
+      const patternSelected = PATTERN_SELECTED_ID.exec(id);
+      const patternName = PATTERN_NAME_ID.exec(id);
+      const patternBars = PATTERN_BARS_ID.exec(id);
+      const queueSlotPattern = QUEUE_SLOT_PATTERN_ID.exec(id);
+      const queueSlotPlaying = QUEUE_SLOT_PLAYING_ID.exec(id);
       // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.
       if (fader && Number(fader[1]) < deps.faderPageSize) {
         created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
@@ -493,6 +789,16 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
         created = createPatternPlayingControl(Number(patternPlaying[1]), deps) as ProjectControl<ControlDef>;
       } else if (patternQueued && project.patterns[Number(patternQueued[1])]) {
         created = createPatternQueuedControl(Number(patternQueued[1]), deps) as ProjectControl<ControlDef>;
+      } else if (patternSelected && project.patterns[Number(patternSelected[1])]) {
+        created = createPatternSelectedControl(Number(patternSelected[1]), deps) as ProjectControl<ControlDef>;
+      } else if (patternName && project.patterns[Number(patternName[1])]) {
+        created = createPatternNameControl(Number(patternName[1]), deps) as ProjectControl<ControlDef>;
+      } else if (patternBars && project.patterns[Number(patternBars[1])]) {
+        created = createPatternBarsControl(Number(patternBars[1]), deps) as ProjectControl<ControlDef>;
+      } else if (queueSlotPattern && project.patternChain[Number(queueSlotPattern[1])]) {
+        created = createQueueSlotPatternControl(Number(queueSlotPattern[1]), deps) as ProjectControl<ControlDef>;
+      } else if (queueSlotPlaying && project.patternChain[Number(queueSlotPlaying[1])]) {
+        created = createQueueSlotPlayingControl(Number(queueSlotPlaying[1]), deps) as ProjectControl<ControlDef>;
       }
     }
 
@@ -518,8 +824,9 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     pollPatternLaunch() {
       const project = deps.getProject();
       for (const [id, control] of cache) {
-        if (PATTERN_PLAYING_ID.test(id) || PATTERN_QUEUED_ID.test(id)) control.syncFromProject(project);
+        if (PATTERN_PLAYING_ID.test(id) || PATTERN_QUEUED_ID.test(id) || QUEUE_SLOT_PLAYING_ID.test(id)) control.syncFromProject(project);
       }
     },
+    getAction: (id) => resolveAction(id, deps),
   };
 }

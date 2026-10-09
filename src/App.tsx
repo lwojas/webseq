@@ -258,6 +258,7 @@ export function App() {
     selectedPatternId,
     activeBank,
     setActiveBank,
+    setSelectedPatternId,
   );
 
   const handleBpmChange = useCallback((bpm: number) => {
