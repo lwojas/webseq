@@ -20,6 +20,12 @@ export interface TransportCallbacks {
   readonly play: () => void;
   readonly stop: () => void;
   /**
+   * Pauses playback in place, leaving the transport's position where it was (unlike `stop`, which resets to 0) —
+   * the same `Transport.pause()` App.tsx's own pause button already calls. Omitted means the device's Play button
+   * can only ever start playback, never toggle it off: see `actions.play` below.
+   */
+  readonly pause?: () => void;
+  /**
    * Current transport position (ECS-131) — the same `Transport.getPlayheadInfo()` the on-screen playhead already
    * reads (`App.tsx`'s `getPlayheadBeat`). Omitted means no playhead feedback on a connected device.
    */
@@ -183,7 +189,16 @@ export function useMidiControls(
         selectPattern: (id) => selectPatternRef.current(id),
       });
       const actions = {
-        play: createAction({ id: "transport.play", label: "Play" }, () => transportRef.current.play()),
+        // The device's Play button toggles: pressed while already playing, it pauses in place rather than starting
+        // a second time. Falls back to starting playback unconditionally when the app gives no isPlaying/pause (both
+        // optional) -- the exact previous behavior for any caller that hasn't wired those up.
+        play: createAction({ id: "transport.play", label: "Play / Pause" }, () => {
+          if (transportRef.current.isPlaying?.() && transportRef.current.pause) {
+            transportRef.current.pause();
+          } else {
+            transportRef.current.play();
+          }
+        }),
         stop: createAction({ id: "transport.stop", label: "Stop" }, () => transportRef.current.stop()),
       };
 
