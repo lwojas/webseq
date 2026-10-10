@@ -336,11 +336,23 @@ export function useMidiControls(
   // re-deriving each binding's syncFromProject() from the current connection on every Project
   // change. Connecting/disconnecting doesn't touch this effect; it just has nothing to sync
   // while connectionRef is empty.
+  //
+  // `[project]` (ECS-152): this was missing its dependency array entirely, so React reran it
+  // after *every* render of App, not just a Project change as the comment above always said it
+  // should -- `connectionRef.current` being non-null (device connected) was the only gate, so
+  // every one of those extra runs did a full resync of every cached control (steps, mutes,
+  // bank, faders -- several scanning the pattern's notes) only while a device was attached.
+  // That's real work even when nothing changed (each control's own syncFromProject still has to
+  // recompute its current value before it can compare and bail), and it was happening up to
+  // once per animation frame: real MIDI traffic re-renders App (even batched to one commit/frame
+  // by the log buffering above), which re-ran this, which occasionally found something to
+  // repaint and send, generating more traffic for the next frame to log -- a self-feeding loop
+  // tied to the display's refresh rate, not to anything actually changing in the project.
   useEffect(() => {
     const connection = connectionRef.current;
     if (!connection) return;
     connection.registry.syncFromProject(project);
-  });
+  }, [project]);
 
   // Drives the playhead's MIDI feedback from the same clock usePlayheadAnimation.ts already polls for the
   // on-screen playhead (ECS-131) -- not a second, hardware-specific timer. Only runs while a device is actually

@@ -207,7 +207,7 @@ function createStepControl(id: string, track: Track, start: number, deps: Sequen
 // midi-core's "how many cells this step's duration spans" unit, since a column here is one beat. Feedback-only:
 // a pad's press toggles the note on/off (createStepControl above), never its length, so setValue is a no-op.
 function createStepDurationControl(id: string, track: Track, start: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
-  const def: NumericControlDef = { id, label: `${track.id} step ${start + 1} duration`, kind: "number", min: 0, max: 1024, default: 0 };
+  const label = `${track.id} step ${start + 1} duration`;
   const duration = (project: Project) => {
     const pattern = selectedPattern(project, deps.getPatternId());
     const noteId = noteIdAt(pattern, track.id, start);
@@ -217,7 +217,21 @@ function createStepDurationControl(id: string, track: Track, start: number, deps
   let last = duration(deps.getProject());
 
   return {
-    def,
+    // A getter, not a fixed `max: 1024` (ECS-152): `max` bounds midi-core's duration-
+    // continuation backward scan (bindStepFeedback's `lookback()`, `sample.def.max - 1`), and a
+    // note can never be longer than its *own* pattern -- so the current pattern's actual length
+    // is always a safe, correct bound, just a far tighter one than the worst case across every
+    // pattern this project could ever hold (64 bars, matching the fixed 1024 this replaces).
+    // Recomputed on every access rather than once at creation so it can never go stale as the
+    // pattern's own length changes later (adding/removing bars) -- unlike a plain stored field,
+    // which this control (like every other one here) is cached and reused across many ticks.
+    // Measured at 128 beats for a realistic project versus the 1024 ceiling: roughly an 8x
+    // reduction in how far every pad on the grid rescans on each playhead tick.
+    get def(): NumericControlDef {
+      const project = deps.getProject();
+      const pattern = selectedPattern(project, deps.getPatternId());
+      return { id, label, kind: "number", min: 0, max: Math.max(1, totalBeats(pattern, project.beatsPerBar)), default: 0 };
+    },
     getValue: () => duration(deps.getProject()),
     setValue: () => {},
     onChange(listener) {
@@ -1122,7 +1136,29 @@ function resolveAction(id: string, deps: SequencerRegistryDeps): MidiAction | un
 export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerRegistry {
   const cache = new Map<string, ProjectControl<ControlDef>>();
 
+  // An id that resolves to nothing (e.g. a step/duration id past the current pattern's length,
+  // asked for by midi-core's duration-continuation scan reaching back toward a cell with no
+  // covering note -- see bindStepFeedback()'s `lookback()`, bounded by this control's own
+  // declared `max` of up to 1024) used to redo the *entire* branch chain below from scratch on
+  // every single ask, forever: `cache` only ever remembered a *successful* resolution, never a
+  // "this id exists, there's just nothing there" one, so none of those negative asks got any
+  // cheaper the second time (ECS-152). That scan asks for up to ~1023 positions per visible pad
+  // every time the playhead advances, nearly all of them negative, which measured at 75-90ms of
+  // main-thread time per advance -- enough to visibly stall the on-screen playhead too, since
+  // it shares the same thread. Caching the negative result here (invalidated by clearing the
+  // whole set whenever `project` is a new reference, the same "an edit replaces the whole
+  // object" assumption the reducer already guarantees) turns the second and later ask for the
+  // same negative id back into a single Set lookup.
+  let negativeCache = new Set<string>();
+  let negativeCacheProject: Project | undefined;
+
   function resolve(id: string): Control<ControlDef> | undefined {
+    const project = deps.getProject();
+    if (project !== negativeCacheProject) {
+      negativeCache = new Set();
+      negativeCacheProject = project;
+    }
+
     const cached = cache.get(id);
     // A fx.*.param control's def (min/max/step/unit) is specific to the FX it was built from --
     // unlike every other cached control in this file, so a cache hit here isn't automatically
@@ -1136,9 +1172,10 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       else return cached;
     } else if (cached) {
       return cached;
+    } else if (negativeCache.has(id)) {
+      return undefined;
     }
 
-    const project = deps.getProject();
     let created: ProjectControl<ControlDef> | undefined;
     const step = STEP_ID.exec(id);
     const stepDuration = STEP_DURATION_ID.exec(id);
@@ -1236,6 +1273,7 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     }
 
     if (created) cache.set(id, created);
+    else negativeCache.add(id);
     return created;
   }
 
