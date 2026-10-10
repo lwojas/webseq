@@ -12,6 +12,12 @@
 // rather than snapping to 0, per the brief's "playhead may fall outside the viewport, don't
 // auto-scroll" guidance: it's fine for it to be off-screen, but it should never lie about
 // which pattern is playing.
+//
+// Moves the element with `transform: translateX()`, not `left` (ECS-152): `left` forces a
+// synchronous layout + paint on every one of these ~60/sec writes, which is cheap enough to
+// hide on desktop but visibly choppy on mobile — independently of whether a MIDI device is
+// also driving feedback off the same clock (see useMidiControls.ts). `transform` is
+// compositor-only, so the browser never re-lays-out the page to redraw this line.
 import { useEffect, useRef } from "react";
 
 export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: number) {
@@ -27,7 +33,7 @@ export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: nu
           el.style.display = "none";
         } else {
           el.style.display = "";
-          el.style.left = `${beat * pxPerBeat}px`;
+          el.style.transform = `translateX(${beat * pxPerBeat}px)`;
         }
       }
       frame = requestAnimationFrame(draw);

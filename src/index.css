@@ -1096,6 +1096,9 @@ select {
   box-shadow: 0 0 6px var(--amber);
   pointer-events: none;
   left: 0;
+  /* usePlayheadAnimation.ts drives position via `transform`, not `left` (ECS-152) — this stays
+     a compositor-only move. will-change promotes it to its own layer up front. */
+  will-change: transform;
   z-index: 3;
 }
 
