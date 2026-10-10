@@ -269,6 +269,12 @@ export function useMidiControls(
         {
           stepTemplate: "step.{row}.{column}",
           stepDurationTemplate: "step.{row}.{column}.duration",
+          // ECS-153: computed directly from pattern.notes (sequencerContract.ts's createStepCoveredControl),
+          // so midi-core's bindStepFeedback() reads this one precomputed fact per cell instead of
+          // backward-scanning stepDurationTemplate. Its presence alone makes midi-core take that fast path;
+          // stepDurationTemplate stays declared alongside it for any other consumer of this contract shape
+          // without midi-core's own fast-path support (ECS-153's additive design).
+          stepCoverageTemplate: "step.{row}.{column}.covered",
           lengthControl: "steps.length",
           muteTemplate: "mute.{track}",
           trackCountControl: "tracks.count",

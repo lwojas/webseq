@@ -121,6 +121,7 @@ export interface SequencerRegistry extends ControlRegistry {
 
 const STEP_ID = /^step\.(\d+)\.(\d+)$/;
 const STEP_DURATION_ID = /^step\.(\d+)\.(\d+)\.duration$/;
+const STEP_COVERED_ID = /^step\.(\d+)\.(\d+)\.covered$/;
 const MUTE_ID = /^mute\.(\d+)$/;
 const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 const LENGTH_ID = "steps.length";
@@ -240,6 +241,43 @@ function createStepDurationControl(id: string, track: Track, start: number, deps
     },
     syncFromProject(project) {
       const next = duration(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * step.<row>.<column>.covered (ECS-153): whether an earlier note on this track reaches forward across this
+ * position, already resolved here from `pattern.notes` -- a flat, already-indexed `{start, duration}` list, cheap
+ * to scan directly -- instead of midi-core having to re-derive it one registry query at a time via
+ * `step.{row}.{column}.duration`'s backward scan (`bindStepFeedback`'s `lookback()`). Deliberately does not also
+ * exclude "a note starts exactly here": midi-core's own `paint()` always checks this cell's `step.{row}.{column}`
+ * first and never consults this control when that's true, the same precedence the duration scan already had, so
+ * there's nothing to gain from duplicating that exclusion here. Feedback-only, same as
+ * createStepDurationControl above -- a pad's press only ever toggles its own step.{row}.{column}.
+ */
+function createStepCoveredControl(id: string, track: Track, start: number, deps: SequencerRegistryDeps): ProjectControl<BooleanControlDef> {
+  const def: BooleanControlDef = { id, label: `${track.id} step ${start + 1} covered`, kind: "boolean", default: false };
+  const covered = (project: Project) => {
+    const pattern = selectedPattern(project, deps.getPatternId());
+    return Object.values(pattern.notes).some((note) => note.trackId === track.id && note.start < start && note.start + note.duration > start);
+  };
+  const listeners = new Set<(value: boolean, previous: boolean) => void>();
+  let last = covered(deps.getProject());
+
+  return {
+    def,
+    getValue: () => covered(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = covered(project);
       if (next === last) return;
       const previous = last;
       last = next;
@@ -1179,6 +1217,7 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
     let created: ProjectControl<ControlDef> | undefined;
     const step = STEP_ID.exec(id);
     const stepDuration = STEP_DURATION_ID.exec(id);
+    const stepCovered = STEP_COVERED_ID.exec(id);
     const mute = MUTE_ID.exec(id);
     if (step) {
       const track = project.tracks[Number(step[1])];
@@ -1191,6 +1230,12 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       const column = Number(stepDuration[2]);
       if (track && column < totalBeats(selectedPattern(project, deps.getPatternId()), project.beatsPerBar)) {
         created = createStepDurationControl(id, track, column, deps) as ProjectControl<ControlDef>;
+      }
+    } else if (stepCovered) {
+      const track = project.tracks[Number(stepCovered[1])];
+      const column = Number(stepCovered[2]);
+      if (track && column < totalBeats(selectedPattern(project, deps.getPatternId()), project.beatsPerBar)) {
+        created = createStepCoveredControl(id, track, column, deps) as ProjectControl<ControlDef>;
       }
     } else if (mute) {
       const track = project.tracks[Number(mute[1]) - 1];
