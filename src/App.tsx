@@ -65,7 +65,10 @@ const MOBILE_TABS: { id: MobileTab; label: string }[] = [
  * mounted; only CSS `display` toggles between them (the same mechanism `data-mobile-tab`
  * already uses, deliberately not conditional JSX unmount/remount) so switching never loses
  * SequencerGrid's scroll position/virtualization state, and costs nothing beyond a style
- * recalc. */
+ * recalc. Rendered as a `.mode-toggle` pill switch, not the `-tab`-suffixed strip used by the
+ * local panel views below, so this page-level mode change doesn't read as just another tab
+ * (ECS-151). PatternBar is also keyed off `data-main-view` (hidden, not unmounted, in the
+ * Patterns view) since it edits the sequencer's current pattern, which isn't relevant there. */
 type MainView = "sequencer" | "patterns";
 const MAIN_VIEWS: { id: MainView; label: string }[] = [
   { id: "sequencer", label: "Sequencer" },
@@ -850,6 +853,20 @@ export function App() {
         getResampleLabel={getResampleLabel}
       />
 
+      <nav className="mode-toggle">
+        <div className="mode-toggle-track">
+          {MAIN_VIEWS.map((view) => (
+            <button
+              key={view.id}
+              className={`mode-toggle-option ${mainView === view.id ? "active" : ""}`}
+              onClick={() => setMainView(view.id)}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
       <PatternBar
         patterns={project.patterns}
         selectedPatternId={selectedPatternId}
@@ -861,18 +878,6 @@ export function App() {
         onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
         playingPatternId={playingPatternId}
       />
-
-      <nav className="main-view-tabs">
-        {MAIN_VIEWS.map((view) => (
-          <button
-            key={view.id}
-            className={`main-view-tab ${mainView === view.id ? "active" : ""}`}
-            onClick={() => setMainView(view.id)}
-          >
-            {view.label}
-          </button>
-        ))}
-      </nav>
 
       <div className="workspace">
         <aside className="side-panel">
