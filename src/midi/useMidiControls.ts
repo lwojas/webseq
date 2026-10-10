@@ -95,8 +95,31 @@ export function useMidiControls(
   const selectFxRef = useRef(selectFx);
   selectFxRef.current = selectFx;
 
+  // Buffers log lines in a ref and commits them to React state at most once per animation
+  // frame (ECS-152), rather than once per call: appendLog fires once per MIDI message in *or*
+  // out, and this hook is called directly in App's own body, so every individual setLog would
+  // re-render the whole App -- competing with the playhead's own rAF-driven redraw for the same
+  // frame budget, and scaling with however much MIDI traffic a connected device happens to
+  // produce rather than with anything the UI actually needs to show. Same "collect now, commit
+  // on the next frame" shape usePlayheadAnimation.ts/useVisibleColumnWindow.ts already use for
+  // the same reason -- most frames add nothing to the log and skip the commit entirely.
+  const pendingLogRef = useRef<string[]>([]);
   const appendLog = useCallback((line: string) => {
-    setLog((lines) => [...lines.slice(-(MAX_LOG_LINES - 1)), line]);
+    pendingLogRef.current.push(line);
+  }, []);
+
+  useEffect(() => {
+    let frame: number;
+    const flush = () => {
+      if (pendingLogRef.current.length > 0) {
+        const pending = pendingLogRef.current;
+        pendingLogRef.current = [];
+        setLog((lines) => [...lines, ...pending].slice(-MAX_LOG_LINES));
+      }
+      frame = requestAnimationFrame(flush);
+    };
+    frame = requestAnimationFrame(flush);
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const requestAccess = useCallback(async () => {
