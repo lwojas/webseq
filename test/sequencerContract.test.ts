@@ -1031,8 +1031,10 @@ describe("sequencer contract: the Push mk1's contextual selection buttons drive 
     // the real app's [fxTarget] effect then syncs to the registry -- appChangedTarget() is that step.
     registry.getControl("selection.index")!.setValue(5); // track-6
     appChangedTarget();
-    expect(lastValue(41)).toBe(127); // button-select-6, column 5: now lit full
-    expect(lastValue(36)).toBe(1); // button-select-1: still just dim
+    // ECS-155 hardware correction: the selection buttons are a velocity-color-led family, confirmed hands-on --
+    // 22 (a steady green) for the selected button, 10 (a steady white-ish tier) for every other available one.
+    expect(lastValue(41)).toBe(22); // button-select-6, column 5: now selected
+    expect(lastValue(36)).toBe(10); // button-select-1: still just its resting tier
     await surface.detach();
   });
 });
