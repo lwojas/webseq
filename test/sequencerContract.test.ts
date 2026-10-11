@@ -154,6 +154,34 @@ describe("sequencer contract: tracks", () => {
   });
 });
 
+describe("sequencer contract: track.selected.name (ECS-139)", () => {
+  it("reads the selected track's name, follows selection and renames, and is blank for master", () => {
+    let project: Project = createInitialProject();
+    let target: FxTarget = "master";
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch: (action: Action) => {
+        project = projectReducer(project, action);
+      },
+      faderPageSize: 8,
+      getTarget: () => target,
+    });
+    const control = registry.getControl("track.selected.name")!;
+    const seen: string[] = [];
+    control.onChange((value) => seen.push(value as string));
+
+    expect(control.getValue()).toBe("");
+    target = project.tracks[1]!.id;
+    registry.syncFromProject(project);
+    expect(control.getValue()).toBe(project.tracks[1]!.name);
+    expect(seen).toEqual([project.tracks[1]!.name]);
+
+    control.setValue("ignored");
+    expect(control.getValue()).toBe(project.tracks[1]!.name);
+  });
+});
+
 describe("sequencer contract: track.selected.volume (ECS-140)", () => {
   function targetHarness() {
     let project: Project = createInitialProject();

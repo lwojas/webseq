@@ -350,6 +350,16 @@ export function useMidiControls(
           // retargeted by page. "volume" is the one category with a template this phase; "devices" gets its
           // button and indicator (via encoderBankModes) but no template, an explicit gap matching this phase's
           // own scope, not a guess at a future FX-parameter binding.
+          // ECS-139: authoritative state as text for a device's display — the selected track and FX by name, the
+          // FX's lead parameter by name and value (its own label/value, not a text copy), and the transport.
+          // "parameter" is "from-selection" for the same stale-def reason "effects" above is. Which physical line
+          // each role lands on is the device profile's business, never named here.
+          displayLines: {
+            track: { kind: "static", controlId: "track.selected.name" },
+            effect: { kind: "static", controlId: "fx.selected.name" },
+            parameter: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
+            transport: { kind: "static", controlId: "transport.isPlaying" },
+          },
           encoderBankTemplates: { volume: "track.{track}.volume" },
           encoderBankModeControl: "encoder.mode",
           encoderBankModes: { volume: 0, devices: 1 },

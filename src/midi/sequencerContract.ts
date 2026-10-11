@@ -145,6 +145,7 @@ const MUTE_ID = /^mute\.(\d+)$/;
 const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 /** ECS-140: the "selected target" counterpart to mixer.volume.<index> — see createTrackSelectedVolumeControl. */
 const TRACK_SELECTED_VOLUME_ID = "track.selected.volume";
+const TRACK_SELECTED_NAME_ID = "track.selected.name";
 /**
  * Phase 2: the Push mk1's generic encoder bank counterpart to `mixer.volume.<index>` — `{track}` is the track's
  * plain, 1-based position in `project.tracks`, the same absolute addressing `mute.<track>`/`step.<row>.<column>`
@@ -938,6 +939,39 @@ function createTrackSelectedVolumeControl(deps: SequencerRegistryDeps): ProjectC
 }
 
 /**
+ * track.selected.name (ECS-139): the display name of whichever track `deps.getTarget()` currently names — the same
+ * "selected" indirection `track.selected.volume` uses, as text, so a device's display can show which track its
+ * encoders are driving. Reads "" while nothing is selected, the target is "master" or it names a track that no
+ * longer exists. Read-only: renaming a track is not a device action.
+ */
+function createTrackSelectedNameControl(deps: SequencerRegistryDeps): ProjectControl<StringControlDef> {
+  const def: StringControlDef = { id: TRACK_SELECTED_NAME_ID, label: "Selected track name", kind: "string", default: "" };
+  const read = (project: Project) => {
+    const target = deps.getTarget?.();
+    return (target && target !== "master" ? trackById(project, target)?.name : undefined) ?? "";
+  };
+  const listeners = new Set<(value: string, previous: string) => void>();
+  let last = read(deps.getProject());
+
+  return {
+    def,
+    getValue: () => read(deps.getProject()),
+    setValue: () => {},
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = read(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
  * track.<n>.volume (Phase 2): the volume of the track at plain, 1-based position `n` — the encoder-bank
  * counterpart to `mixer.volume.<index>` (bank/page-relative) and `track.selected.volume` (selection-relative).
  * `n` past the end of `project.tracks` resolves to nothing at all (see this file's `resolve()`), the same "no
@@ -1473,6 +1507,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createSelectionIndexControl(deps) as ProjectControl<ControlDef>;
     } else if (id === TRACK_SELECTED_VOLUME_ID) {
       created = createTrackSelectedVolumeControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === TRACK_SELECTED_NAME_ID) {
+      created = createTrackSelectedNameControl(deps) as ProjectControl<ControlDef>;
     } else if (id === ENCODER_MODE_ID) {
       created = createEncoderModeControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PLAYHEAD_ID) {
