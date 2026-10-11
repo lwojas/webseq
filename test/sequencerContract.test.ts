@@ -1121,7 +1121,7 @@ describe("sequencer contract: the Push mk1's contextual selection buttons drive 
   });
 });
 
-describe("sequencer contract: the Push mk1's parameter encoders drive volume/effects (ECS-140)", () => {
+describe("sequencer contract: the Push mk1's encoders: bank volume and the selected FX's parameters (ECS-140)", () => {
   function encoderHarness() {
     let project: Project = createInitialProject("Test", 16);
     const dispatch = (action: Action) => {
@@ -1129,6 +1129,7 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
     };
     let target: FxTarget = "track-1";
     let selectedFxId: string | null = null;
+    let encoderMode = 0;
     const registry = createSequencerRegistry({
       getProject: () => project,
       getPatternId: () => project.patterns[0]!.id,
@@ -1136,6 +1137,11 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
       faderPageSize: 8,
       getTarget: () => target,
       getSelectedFxId: () => selectedFxId,
+      getEncoderMode: () => encoderMode,
+      setEncoderMode: (mode) => {
+        encoderMode = mode;
+        registry.syncFromProject(project);
+      },
     });
 
     const rawInput = new MockMidiInput({ id: "user-port-in", type: "input", name: "in", manufacturer: null });
@@ -1144,8 +1150,8 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
     const output = createMidiOutput(rawOutput);
     const noop = createAction({ id: "noop", label: "noop" }, () => {});
     const push = findDevice({ name: "Ableton Push User Port" })!;
-    // ECS-140: the same "fx-selection" scope useMidiControls.ts's own context.setSelection() now drives —
-    // setFx below is this test's stand-in for that effect.
+    // The same "fx-selection" scope useMidiControls.ts's own context.setSelection() drives -- select() below is
+    // this test's stand-in for that effect.
     const context = createSurfaceContext([{ scope: "fx-selection", id: `${target}:${selectedFxId}` }]);
     const surface = createControlSurface({
       profile: { ...push.profile, setup: undefined },
@@ -1156,9 +1162,14 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
         muteTemplate: "mute.{track}",
         trackCountControl: "tracks.count",
         actions: { play: noop, stop: noop },
-        encoderParameters: {
-          volume: { kind: "static", controlId: "track.selected.volume" },
-          effects: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
+        selectionIndexControl: "selection.index",
+        selectionClearValue: -1,
+        encoderBankTemplates: { volume: "track.{track}.volume", devices: "fx.selected.param.{row}" },
+        encoderBankModeControl: "encoder.mode",
+        encoderBankModes: { volume: 0, devices: 1 },
+        encoderBankModeActions: {
+          volume: createAction({ id: "encoder-bank.volume", label: "Volume" }, () => registry.getControl("encoder.mode")!.setValue(0)),
+          devices: createAction({ id: "encoder-bank.devices", label: "Devices" }, () => registry.getControl("encoder.mode")!.setValue(1)),
         },
       }).bindings,
       context,
@@ -1168,54 +1179,75 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
     });
 
     const turn = (controller: number, delta: 1 | -1) => rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, delta === 1 ? 1 : 127));
+    const press = (controller: number) => {
+      rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, 127));
+      rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, 0));
+    };
 
     return {
       surface,
-      registry,
       getProject: () => project,
       dispatch,
       turn,
-      setFx(fxId: string | null) {
+      press,
+      select(nextTarget: FxTarget, fxId: string | null) {
+        target = nextTarget;
         selectedFxId = fxId;
         context.setSelection({ scope: "fx-selection", id: `${target}:${selectedFxId}` });
       },
     };
   }
 
-  it("Encoder 1 (CC 71) drives the selected track's volume, in both directions", async () => {
-    const { surface, getProject, turn } = encoderHarness();
-    await surface.attach();
-    const before = getProject().tracks[0]!.volume;
+  const DEVICES_MODE_CC = 110;
 
+  it("Volume mode: encoder 1 drives only bank track 1, with or without a selected track, and no encoder gains the selected track as a second target", async () => {
+    const { surface, getProject, turn, select } = encoderHarness();
+    await surface.attach();
+    const before = getProject().tracks.map((track) => track.volume);
+
+    turn(71, 1); // nothing selected beyond the default target
+    expect(getProject().tracks[0]!.volume).toBeGreaterThan(before[0]!);
+    expect(getProject().tracks.slice(1).map((track) => track.volume)).toEqual(before.slice(1));
+
+    select("track-4", null); // selecting a different track must not add a target to any encoder
+    const afterSelect = getProject().tracks.map((track) => track.volume);
     turn(71, 1);
-    expect(getProject().tracks[0]!.volume).toBeGreaterThan(before);
+    const delta = getProject().tracks[0]!.volume - afterSelect[0]!;
+    expect(delta).toBeGreaterThan(0);
+    expect(getProject().tracks[3]!.volume).toBe(afterSelect[3]!); // the selected track is not under encoder 1
+
     turn(71, -1);
-    turn(71, -1);
-    expect(getProject().tracks[0]!.volume).toBeLessThan(before);
+    expect(getProject().tracks[0]!.volume).toBeCloseTo(afterSelect[0]!, 5); // one detent each way: exactly one target
     await surface.detach();
   });
 
-  it("Encoder 3 (CC 73) drives the selected FX's first parameter, and re-resolves to a newly selected FX's own def/value rather than reusing the previous one's", async () => {
-    const { surface, getProject, dispatch, turn, setFx } = encoderHarness();
-    dispatch({ type: "ADD_FX", target: "track-1", fxType: "filter" }); // param 0: mode, 0..1 step 1
-    dispatch({ type: "ADD_FX", target: "track-1", fxType: "delay" }); // param 0: time, 0.02..1.5s
+  it("Devices mode: each encoder drives its own parameter of the selected FX, and re-resolves on FX reselection", async () => {
+    const { surface, getProject, dispatch, turn, press, select } = encoderHarness();
+    dispatch({ type: "ADD_FX", target: "track-1", fxType: "filter" });
+    dispatch({ type: "ADD_FX", target: "track-1", fxType: "delay" });
     const [filterFx, delayFx] = getProject().tracks[0]!.fx;
     await surface.attach();
+    press(DEVICES_MODE_CC);
 
-    setFx(filterFx!.id);
-    turn(73, 1); // mode: 0 -> 1 (step 1)
-    expect(getProject().tracks[0]!.fx[0]!.params.mode).toBe(1);
-    expect(getProject().tracks[0]!.fx[1]!.params.time).toBe(FX_DEFS.delay.params[0]!.default); // untouched
+    select("track-1", filterFx!.id);
+    const filterParams = FX_DEFS.filter.params;
+    expect(filterParams.length).toBeGreaterThan(1);
+    const delayBefore = { ...getProject().tracks[0]!.fx[1]!.params };
+    filterParams.forEach((param, index) => {
+      const before = getProject().tracks[0]!.fx[0]!.params[param.id] ?? param.default;
+      turn(71 + index, param.default >= param.max ? -1 : 1); // away from the range's own edge
+      const after = getProject().tracks[0]!.fx[0]!.params[param.id] ?? param.default;
+      expect(after, `filter param ${param.id} via encoder ${index + 1}`).not.toBe(before);
+    });
+    expect(getProject().tracks[0]!.fx[1]!.params).toEqual(delayBefore);
 
-    setFx(delayFx!.id);
-    turn(73, 1);
-    // A relative encoder tick moves the control by its own declared `step` (mapping/value.ts's
-    // resolveIncomingValue/relativeIncrement()) -- delay.time's step is 0.01s, so one tick from its 0.25s default
-    // lands at 0.26s. The point of this assertion isn't that number itself, but that it's delay's own time value
-    // moving at all (re-resolved fresh against the newly selected FX), not filter's stale 0/1 mode value from the
-    // previous turn still being written to.
-    expect(getProject().tracks[0]!.fx[1]!.params.time).toBeCloseTo(0.26, 5);
-    expect(getProject().tracks[0]!.fx[0]!.params.mode).toBe(1); // filter's own param untouched by the delay turn
+    select("track-1", delayFx!.id);
+    FX_DEFS.delay.params.forEach((param, index) => {
+      const before = getProject().tracks[0]!.fx[1]!.params[param.id] ?? param.default;
+      turn(71 + index, param.default >= param.max ? -1 : 1);
+      const after = getProject().tracks[0]!.fx[1]!.params[param.id] ?? param.default;
+      expect(after, `delay param ${param.id} via encoder ${index + 1}`).not.toBe(before);
+    });
     await surface.detach();
   });
 });

@@ -44,8 +44,7 @@ const MAX_LOG_LINES = 20;
  * ECS-140: the identity midi-core's `SurfaceContext` tracks for the "fx-selection" scope — changes whenever
  * `fxTarget`/`selectedFxId` does, which is exactly the signal the Push's "effects" encoder role needs to
  * re-resolve `fx.selected.param.0` fresh rather than keep using a `Control` object bound to whatever FX instance
- * was selected when the device's mode was first bound. Its *value* is never read back by anything (the contract's
- * `encoderParameters.effects` template names a fixed id, with no `{id}` placeholder) — only that it *changes* and
+ * was selected when the device's mode was first bound. Its *value* is never read back by anything (the contract's templates name fixed ids, with no `{id}` placeholder) — only that it *changes* and
  * so retriggers `createContextBoundControl()`'s retarget, the same "from-selection" mechanism a template that does
  * use `{id}` relies on. See sequencerContract.ts's own `FX_SELECTED_PARAM_ID` doc comment for why a stale
  * reference here would be a real bug (a different FX type's def/paramId pairing silently misapplied), not just a
@@ -334,25 +333,17 @@ export function useMidiControls(
           // shared control — the sentinel matches sequencerContract.ts's own SELECTION_NO_TARGET.
           selectionIndexControl: "selection.index",
           selectionClearValue: -1,
-          // ECS-140: representative volume/send/effects parameter-encoder roles. "volume" is a plain static
-          // control (track.selected.volume's def never varies by which track is selected, so there's no
-          // staleness to guard against). "effects" is "from-selection", not "static", specifically so a later
-          // FX reselection re-resolves fx.selected.param.0 instead of reusing a Control bound to whichever FX
-          // was selected when the device's mode was first bound — see fxSelectionId's own doc comment for why
-          // that distinction is a real correctness fix, not just tidiness. "send" has no backing model in this
-          // app yet (no aux/send-bus concept exists) — left unassigned, an explicit gap, not a guess.
-          encoderParameters: {
-            volume: { kind: "static", controlId: "track.selected.volume" },
-            effects: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
-          },
-          // Phase 2: the Push mk1's generic encoder bank (CC114 "Volume"/CC110 "Devices") — unlike
-          // encoderParameters above (one fixed encoder, retargeted by selection), this is the whole bank at once,
-          // retargeted by page. "volume" is the one category with a template this phase; "devices" gets its
-          // button and indicator (via encoderBankModes) but no template, an explicit gap matching this phase's
-          // own scope, not a guess at a future FX-parameter binding.
+          // The Push's encoders 1-8 belong entirely to the generic encoder bank below (one owner per physical
+          // control), so no fixed `encoderParameters` role is declared for them: selecting a track or an FX
+          // never adds a second target to an encoder.
+          // Phase 2: the generic encoder bank (CC114 "Volume"/CC110 "Devices"), the whole bank at once, retargeted
+          // by page. "volume" is one track per encoder; "devices" is one parameter of the selected FX per
+          // encoder (`{row}` is the 0-based parameter position, matching fx.selected.param.<p>), re-resolved
+          // on FX reselection through the "fx-selection" context below. A position past the FX's own
+          // parameter count simply resolves to nothing.
           // ECS-139: authoritative state as text for a device's display — the selected track and FX by name, the
           // FX's lead parameter by name and value (its own label/value, not a text copy), and the transport.
-          // "parameter" is "from-selection" for the same stale-def reason "effects" above is. Which physical line
+          // "parameter" is "from-selection" so a later FX reselection re-resolves fx.selected.param.0 rather than keeping a Control bound to the previously selected FX. Which physical line
           // each role lands on is the device profile's business, never named here.
           displayLines: {
             track: { kind: "static", controlId: "track.selected.name" },
@@ -360,7 +351,7 @@ export function useMidiControls(
             parameter: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
             transport: { kind: "static", controlId: "transport.isPlaying" },
           },
-          encoderBankTemplates: { volume: "track.{track}.volume" },
+          encoderBankTemplates: { volume: "track.{track}.volume", devices: "fx.selected.param.{row}" },
           encoderBankModeControl: "encoder.mode",
           encoderBankModes: { volume: 0, devices: 1 },
           encoderBankModeActions,
@@ -369,7 +360,7 @@ export function useMidiControls(
       );
       for (const role of sequencer.unresolved) appendLog(`unresolved: ${role}`);
 
-      // ECS-140: backs the "effects" encoder role's "from-selection" resolution above — see fxSelectionId's own
+      // ECS-140: backs the "from-selection" resolutions above (the display's "parameter" line) and retargets the encoder bank's "devices" windows — see fxSelectionId's own
       // doc comment. Seeded with the current selection immediately so the role resolves from the first attach,
       // not only after the first later change (resolveControlId() reports "nothing selected" until setSelection()
       // has been called at least once for a scope).
@@ -477,7 +468,7 @@ export function useMidiControls(
   // no separate effect of its own.
   useEffect(() => {
     connectionRef.current?.registry.syncFromProject(projectRef.current);
-    // ECS-140: retargets the "effects" encoder role's fx.selected.param.0 control — see fxSelectionId's own doc
+    // ECS-140: retargets everything resolved through fx.selected.* (display line, "devices" encoder windows) — see fxSelectionId's own doc
     // comment for why this needs its own signal rather than riding along on syncFromProject() above.
     connectionRef.current?.context.setSelection({ scope: "fx-selection", id: fxSelectionId(fxTarget, selectedFxId) });
   }, [fxTarget, selectedFxId]);
