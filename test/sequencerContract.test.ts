@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createMidiInput, createMidiOutput } from "midi-core";
-import { createMockDevice } from "midi-core/adapters/mock";
+import { createMockDevice, MockMidiInput, MockMidiOutput } from "midi-core/adapters/mock";
 import { createAction, createSurfaceContext } from "midi-core/control-api";
 import { createSequencerBindings, sequencerFaderCount } from "midi-core/configurations";
 import { findDevice } from "midi-core/devices";
@@ -935,6 +935,108 @@ describe("sequencer contract: the Launchpad configuration drives it", () => {
   });
 });
 
+describe("sequencer contract: the Push mk1's contextual selection buttons drive track selection (ECS-155)", () => {
+  // The Push mk1 profile declares no setup/handshake (push-mk1.ts's own doc comment), unlike the
+  // Launchpad above -- a plain MockMidiInput/MockMidiOutput pair is enough, no Device Inquiry reply needed.
+  function pushHarness() {
+    let project: Project = createInitialProject("Test", 16);
+    let target: FxTarget = "master";
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getTarget: () => target,
+      selectTarget: (next) => {
+        target = next;
+      },
+    });
+
+    const rawInput = new MockMidiInput({ id: "user-port-in", type: "input", name: "in", manufacturer: null });
+    const rawOutput = new MockMidiOutput({ id: "user-port-out", type: "output", name: "out", manufacturer: null });
+    const input = createMidiInput(rawInput);
+    const output = createMidiOutput(rawOutput);
+    const noop = createAction({ id: "noop", label: "noop" }, () => {});
+    const push = findDevice({ name: "Ableton Push User Port" })!;
+    const surface = createControlSurface({
+      profile: { ...push.profile, setup: undefined },
+      ports: { inputs: { "user-port-in": input }, outputs: { "user-port-out": output } },
+      bindingTable: createSequencerBindings(input, push.profile, {
+        stepTemplate: "step.{row}.{column}",
+        lengthControl: "steps.length",
+        muteTemplate: "mute.{track}",
+        trackCountControl: "tracks.count",
+        actions: { play: noop, stop: noop },
+        selectionIndexControl: "selection.index",
+        selectionClearValue: -1,
+      }).bindings,
+      context: createSurfaceContext(),
+      registry,
+      generate: generateControlMappings,
+      initialNavigation: { mode: "steps", gridOffset: { row: 0, column: 0 } },
+    });
+
+    const pressCc = (controller: number) => {
+      rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, 127));
+      rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, 0));
+    };
+    const lastValue = (controller: number): number | undefined => {
+      const matches = rawOutput.sentMessages.filter((bytes) => bytes[0] === 0xb0 && bytes[1] === controller);
+      return matches[matches.length - 1]?.[2];
+    };
+
+    return {
+      registry,
+      surface,
+      pressCc,
+      lastValue,
+      getTarget: () => target,
+      // The app re-renders with the new target, and useMidiControls.ts's own [fxTarget] effect
+      // syncs the registry: this is that step (the same convention launchpadBanks()'s own
+      // appChangedBank already uses for bank.active).
+      appChangedTarget: () => registry.syncFromProject(project),
+    };
+  }
+
+  it("a press on CC 36-43 selects the track at that position: 'slot 3 was activated' resolves to track-4 here, never inside midi-core", async () => {
+    const { surface, pressCc, getTarget } = pushHarness();
+    await surface.attach();
+
+    pressCc(39); // button-select-4, column 3 (page 0)
+    expect(getTarget()).toBe("track-4");
+    await surface.detach();
+  });
+
+  it("CC 28 (Master) clears the selection back to the app's own master FX target", async () => {
+    const { surface, pressCc, getTarget } = pushHarness();
+    await surface.attach();
+
+    pressCc(37); // select track-2
+    expect(getTarget()).toBe("track-2");
+
+    pressCc(28); // Master
+    expect(getTarget()).toBe("master");
+    await surface.detach();
+  });
+
+  it("selecting a track directly in the app lights the matching button on the Push, with no device press at all", async () => {
+    const { surface, registry, lastValue, getTarget, appChangedTarget } = pushHarness();
+    await surface.attach();
+    expect(getTarget()).toBe("master");
+
+    // The same thing clicking a track row in the mixer does: App.tsx's handleSelectTarget, which
+    // the real app's [fxTarget] effect then syncs to the registry -- appChangedTarget() is that step.
+    registry.getControl("selection.index")!.setValue(5); // track-6
+    appChangedTarget();
+    expect(lastValue(41)).toBe(127); // button-select-6, column 5: now lit full
+    expect(lastValue(36)).toBe(1); // button-select-1: still just dim
+    await surface.detach();
+  });
+});
+
 describe("sequencer contract: bank (ECS-113)", () => {
   function bankHarness() {
     let project: Project = createInitialProject("Test", 64);
@@ -987,6 +1089,100 @@ describe("sequencer contract: bank (ECS-113)", () => {
     expect(getBankValue()).toBe(3);
 
     expect(getProject().tracks.map(({ volume, muted }) => ({ volume, muted }))).toEqual(before);
+  });
+});
+
+describe("sequencer contract: selection (ECS-155)", () => {
+  function selectionHarness() {
+    let project: Project = createInitialProject("Test", 8);
+    let target: FxTarget = "master";
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getTarget: () => target,
+      selectTarget: (next) => {
+        target = next;
+      },
+    });
+    return {
+      registry,
+      dispatch,
+      getProject: () => project,
+      getTarget: () => target,
+      // Simulates the app's own UI selecting a track directly (App.tsx's handleSelectTarget), bypassing
+      // the registry's selectTarget dep entirely -- the real-world "Application -> Push" direction.
+      setTargetFromUi: (next: FxTarget) => {
+        target = next;
+      },
+    };
+  }
+
+  it("reports -1 while the target is master, and the track's position once one is selected", () => {
+    const { registry, getTarget } = selectionHarness();
+    const index = registry.getControl("selection.index")!;
+    expect(getTarget()).toBe("master");
+    expect(index.getValue()).toBe(-1);
+
+    index.setValue(2);
+    expect(getTarget()).toBe("track-3");
+    expect(index.getValue()).toBe(2);
+  });
+
+  it("setting -1 selects master, the same thing clicking the mixer's Master strip does", () => {
+    const { registry, getTarget } = selectionHarness();
+    const index = registry.getControl("selection.index")!;
+    index.setValue(0);
+    expect(getTarget()).toBe("track-1");
+
+    index.setValue(-1);
+    expect(getTarget()).toBe("master");
+  });
+
+  it("a value past the track count is a no-op: it never falls back to selecting master", () => {
+    const { registry, getTarget } = selectionHarness();
+    const index = registry.getControl("selection.index")!;
+    index.setValue(1);
+    expect(getTarget()).toBe("track-2");
+
+    index.setValue(99); // no track at position 99 on an 8-track project
+    expect(getTarget()).toBe("track-2"); // unchanged -- not master, not anything else
+  });
+
+  it("follows a track selected directly in the app (not through MIDI): syncFromProject repaints the same control", () => {
+    const { registry, getProject, setTargetFromUi } = selectionHarness();
+    const index = registry.getControl("selection.index")!;
+    const seen: number[] = [];
+    index.onChange((value) => seen.push(value as number));
+
+    // The app's own UI selected track-3 directly, with no device press involved at all --
+    // useMidiControls.ts's [fxTarget] effect is what actually calls registry.syncFromProject() for
+    // this in the real app; this harness calls it directly since there's no React effect here.
+    setTargetFromUi("track-3");
+    registry.syncFromProject(getProject());
+    expect(seen).toEqual([2]);
+    expect(index.getValue()).toBe(2);
+  });
+
+  it("is feedback-only without selectTarget: reading still works, but setValue does nothing", () => {
+    let project: Project = createInitialProject("Test", 8);
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch: (action) => {
+        project = projectReducer(project, action);
+      },
+      faderPageSize: 8,
+      getTarget: () => "track-1",
+    });
+    const index = registry.getControl("selection.index")!;
+    expect(index.getValue()).toBe(0);
+    index.setValue(3); // no selectTarget supplied: nothing to call, no throw
+    expect(index.getValue()).toBe(0);
   });
 });
 

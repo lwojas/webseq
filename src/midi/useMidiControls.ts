@@ -51,6 +51,10 @@ export function useMidiControls(
   // ECS-149: App.tsx's own FX-panel selection (selectedTarget/selectedFxId/setSelectedFxId) --
   // same "the app owns it, the device only asks for one" shape bank/pattern selection already have.
   fxTarget: FxTarget,
+  // ECS-155: the same setter clicking a track row (or the mixer's Master strip) already calls
+  // (App.tsx's handleSelectTarget) -- a device's contextual selection buttons and Master/clear
+  // button select through this, never a second, MIDI-only notion of "selected track".
+  selectTarget: (target: FxTarget) => void,
   selectedFxId: FxId | null,
   selectFx: (fxId: FxId) => void,
 ) {
@@ -90,6 +94,8 @@ export function useMidiControls(
   selectPatternRef.current = selectPattern;
   const fxTargetRef = useRef(fxTarget);
   fxTargetRef.current = fxTarget;
+  const selectTargetRef = useRef(selectTarget);
+  selectTargetRef.current = selectTarget;
   const selectedFxIdRef = useRef(selectedFxId);
   selectedFxIdRef.current = selectedFxId;
   const selectFxRef = useRef(selectFx);
@@ -222,6 +228,7 @@ export function useMidiControls(
         getCurrentChainEntryId: () => transportRef.current.getCurrentChainEntryId?.() ?? null,
         selectPattern: (id) => selectPatternRef.current(id),
         getTarget: () => fxTargetRef.current,
+        selectTarget: (target) => selectTargetRef.current(target),
         getSelectedFxId: () => selectedFxIdRef.current,
         selectFx: (id) => selectFxRef.current(id),
       });
@@ -288,6 +295,10 @@ export function useMidiControls(
           // The bank buttons (ECS-114): the device's layout names which buttons they are; the app's bank is bank.active.
           bankActions: createBankActions(() => bankRef.current, (bank) => selectBankRef.current(bank)),
           bankControl: "bank.active",
+          // ECS-155: a device's contextual selection buttons and Master/clear button both read and write this one
+          // shared control — the sentinel matches sequencerContract.ts's own SELECTION_NO_TARGET.
+          selectionIndexControl: "selection.index",
+          selectionClearValue: -1,
         },
         devices,
       );
@@ -389,7 +400,10 @@ export function useMidiControls(
   // ECS-149: selecting a different FX target/instance (App.tsx's selectedTarget/selectedFxId) is
   // its own React state, not part of Project -- the project-watching effect above has nothing to
   // re-render from when only this changes, so this re-syncs the registry directly, the same
-  // reason the activeBank effect above exists for bank switches.
+  // reason the activeBank effect above exists for bank switches. This is also how a track selected
+  // directly in the UI (not from the device) reaches a connected device's contextual selection
+  // buttons (ECS-155): selection.index resolves from the same fxTarget, so repainting it here needs
+  // no separate effect of its own.
   useEffect(() => {
     connectionRef.current?.registry.syncFromProject(projectRef.current);
   }, [fxTarget, selectedFxId]);

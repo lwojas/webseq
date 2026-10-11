@@ -70,8 +70,19 @@ export interface SequencerRegistryDeps {
    * The FX target whose chain the `fx.*` controls below expose (ECS-149) — `App.tsx`'s
    * `selectedTarget`, the same track-or-"master" scoping the FX panel itself already shows one of
    * at a time. Omitted means no `fx.*` control resolves — there's no chain to address.
+   *
+   * ECS-155: also the thing `selection.index` reads to resolve midi-core's generic selected index back to a
+   * track (or "master") — the app has exactly one notion of "what's currently selected," not a separate
+   * MIDI-only one, so a device's contextual selection buttons and the FX panel always agree.
    */
   readonly getTarget?: () => FxTarget;
+  /**
+   * Selects `target` as the app's FX/selection target (ECS-155) — the same thing clicking a track row (or
+   * the mixer's Master strip) does (`App.tsx`'s `handleSelectTarget`). Omitted means `selection.index` is
+   * feedback-only: MIDI Core can still read the current selection, but a device's contextual selection
+   * buttons (and its Master/clear button) do nothing.
+   */
+  readonly selectTarget?: (target: FxTarget) => void;
   /**
    * The FX currently selected for editing within that target's chain (ECS-149) — `App.tsx`'s
    * `selectedFxId`. Omitted means `fx.selected.*` always reports "nothing selected" and
@@ -127,6 +138,9 @@ const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 const BANK_ID = "bank.active";
+const SELECTION_INDEX_ID = "selection.index";
+/** ECS-155: the value `selection.index` holds while the FX/selection target is "master" — matches midi-core's own `selectionClearValue`. */
+const SELECTION_NO_TARGET = -1;
 const PLAYHEAD_ID = "transport.playhead";
 const IS_PLAYING_ID = "transport.isPlaying";
 const PATTERN_PLAYING_ID = /^pattern\.(\d+)\.playing$/;
@@ -730,6 +744,59 @@ function createBankControl(deps: SequencerRegistryDeps): ProjectControl<NumericC
   };
 }
 
+/**
+ * selection.index (ECS-155): the 0-based position of the selected track within `project.tracks`, or
+ * `SELECTION_NO_TARGET` (-1) while the FX/selection target is "master" (or names a track that no longer
+ * exists). This is midi-core's one generic, writable "which item is selected" control — it resolves against
+ * the *same* `selectedTarget`/`FxTarget` state the FX panel already owns (`deps.getTarget`/`deps.selectTarget`),
+ * never a second, MIDI-only selection. midi-core itself never learns "track" or "master": it only ever moves
+ * this index in and out, via its own contextual selection buttons and Master/clear button.
+ *
+ * Writable: `setValue(n)` selects `project.tracks[n]` as the target (the same thing clicking its row does),
+ * or switches to "master" when `n` is exactly `SELECTION_NO_TARGET`. A value naming no track at all — e.g. a
+ * contextual selection button pressed past the application's actual track count, which midi-core still
+ * writes even though that slot renders "unavailable" — is a no-op: selecting nothing must not silently fall
+ * back to selecting master.
+ */
+function createSelectionIndexControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = {
+    id: SELECTION_INDEX_ID,
+    label: "Selected item index",
+    kind: "number",
+    min: SELECTION_NO_TARGET,
+    max: 1024,
+    default: SELECTION_NO_TARGET,
+  };
+  const index = (project: Project) => {
+    const target = deps.getTarget?.();
+    if (!target || target === "master") return SELECTION_NO_TARGET;
+    return project.tracks.findIndex((track) => track.id === target);
+  };
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = index(deps.getProject());
+
+  return {
+    def,
+    getValue: () => index(deps.getProject()),
+    setValue(value) {
+      const track = deps.getProject().tracks[value];
+      if (track) deps.selectTarget?.(track.id);
+      else if (value === SELECTION_NO_TARGET) deps.selectTarget?.("master");
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = index(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
 /** Pages one bank needs for a device with `faderPageSize` faders: 16 tracks on 8 faders is 2 pages, on 4 faders 4 pages. */
 export function faderPagesPerBank(faderPageSize: number): number {
   return faderPageSize <= 0 ? 1 : Math.ceil(BANK_SIZE / faderPageSize);
@@ -1246,6 +1313,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createTrackCountControl(deps) as ProjectControl<ControlDef>;
     } else if (id === BANK_ID) {
       created = createBankControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === SELECTION_INDEX_ID) {
+      created = createSelectionIndexControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PLAYHEAD_ID) {
       created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
     } else if (id === IS_PLAYING_ID) {

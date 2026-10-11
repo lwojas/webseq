@@ -119,6 +119,14 @@ export function App() {
   const [selectedTarget, setSelectedTarget] = useState<FxTarget>("master");
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
   const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
+  // Declared here, ahead of its original call site further down, because useMidiControls (ECS-155) now
+  // needs it too -- a device's contextual selection buttons and Master/clear button select through the
+  // same function a track row's click already does, never a separate setSelectedTarget call of their own.
+  const handleSelectTarget = useCallback((target: FxTarget) => {
+    setSelectedTarget(target);
+    setSelectedFxId(null);
+    setSelectedAutomationParamId(null);
+  }, []);
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
   // Which bank of 16 tracks the sequencer shows (ECS-84). View state only, not saved with the project.
   const [activeBank, setActiveBank] = useState(0);
@@ -264,6 +272,7 @@ export function App() {
     setActiveBank,
     setSelectedPatternId,
     selectedTarget,
+    handleSelectTarget,
     selectedFxId,
     setSelectedFxId,
   );
@@ -664,12 +673,6 @@ export function App() {
     (trackId: TrackId, voiceMode: VoiceMode) => dispatch({ type: "SET_TRACK_VOICE_MODE", trackId, voiceMode }),
     [],
   );
-
-  const handleSelectTarget = useCallback((target: FxTarget) => {
-    setSelectedTarget(target);
-    setSelectedFxId(null);
-    setSelectedAutomationParamId(null);
-  }, []);
 
   // Keeps desktop's bottomPanelView in sync when mobile nav picks FX/Mixer, so the same
   // state that already decides what renders inside .bottom-panel (see the workspace JSX
