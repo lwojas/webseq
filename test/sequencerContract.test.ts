@@ -1001,11 +1001,14 @@ describe("sequencer contract: the Push mk1's contextual selection buttons drive 
     };
   }
 
+  // ECS-155 hardware correction: these are side buttons, a vertical column descending CC 43 (topmost,
+  // button-select-1, item 0) to CC 36 (bottommost, button-select-8, item 7) -- not an ascending row.
+
   it("a press on CC 36-43 selects the track at that position: 'slot 3 was activated' resolves to track-4 here, never inside midi-core", async () => {
     const { surface, pressCc, getTarget } = pushHarness();
     await surface.attach();
 
-    pressCc(39); // button-select-4, column 3 (page 0)
+    pressCc(40); // button-select-4 (item 3, row 3)
     expect(getTarget()).toBe("track-4");
     await surface.detach();
   });
@@ -1014,7 +1017,7 @@ describe("sequencer contract: the Push mk1's contextual selection buttons drive 
     const { surface, pressCc, getTarget } = pushHarness();
     await surface.attach();
 
-    pressCc(37); // select track-2
+    pressCc(42); // button-select-2 (item 1): select track-2
     expect(getTarget()).toBe("track-2");
 
     pressCc(28); // Master
@@ -1029,12 +1032,12 @@ describe("sequencer contract: the Push mk1's contextual selection buttons drive 
 
     // The same thing clicking a track row in the mixer does: App.tsx's handleSelectTarget, which
     // the real app's [fxTarget] effect then syncs to the registry -- appChangedTarget() is that step.
-    registry.getControl("selection.index")!.setValue(5); // track-6
+    registry.getControl("selection.index")!.setValue(5); // track-6 (item 5, row 5)
     appChangedTarget();
     // ECS-155 hardware correction: the selection buttons are a velocity-color-led family, confirmed hands-on --
     // 22 (a steady green) for the selected button, 10 (a steady white-ish tier) for every other available one.
-    expect(lastValue(41)).toBe(22); // button-select-6, column 5: now selected
-    expect(lastValue(36)).toBe(10); // button-select-1: still just its resting tier
+    expect(lastValue(38)).toBe(22); // button-select-6 (item 5): now selected
+    expect(lastValue(43)).toBe(10); // button-select-1 (item 0): still just its resting tier
     await surface.detach();
   });
 });
