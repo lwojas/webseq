@@ -1192,6 +1192,133 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
   });
 });
 
+describe("sequencer contract: the Push mk1's generic encoder bank drives per-track volume (Phase 2)", () => {
+  function encoderBankHarness(trackCount = 16) {
+    let project: Project = createInitialProject("Test", trackCount);
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    let encoderMode = 0;
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getEncoderMode: () => encoderMode,
+      setEncoderMode: (mode) => {
+        encoderMode = mode;
+        registry.syncFromProject(project);
+      },
+    });
+
+    const rawInput = new MockMidiInput({ id: "user-port-in", type: "input", name: "in", manufacturer: null });
+    const rawOutput = new MockMidiOutput({ id: "user-port-out", type: "output", name: "out", manufacturer: null });
+    const input = createMidiInput(rawInput);
+    const output = createMidiOutput(rawOutput);
+    const noop = createAction({ id: "noop", label: "noop" }, () => {});
+    const push = findDevice({ name: "Ableton Push User Port" })!;
+    const volumeMode = createAction({ id: "encoder-bank.volume", label: "Volume" }, () => registry.getControl("encoder.mode")!.setValue(0));
+    const devicesMode = createAction({ id: "encoder-bank.devices", label: "Devices" }, () => registry.getControl("encoder.mode")!.setValue(1));
+    const surface = createControlSurface({
+      profile: { ...push.profile, setup: undefined },
+      ports: { inputs: { "user-port-in": input }, outputs: { "user-port-out": output } },
+      bindingTable: createSequencerBindings(input, push.profile, {
+        stepTemplate: "step.{row}.{column}",
+        lengthControl: "steps.length",
+        muteTemplate: "mute.{track}",
+        trackCountControl: "tracks.count",
+        actions: { play: noop, stop: noop },
+        encoderBankTemplates: { volume: "track.{track}.volume" },
+        encoderBankModeControl: "encoder.mode",
+        encoderBankModes: { volume: 0, devices: 1 },
+        encoderBankModeActions: { volume: volumeMode, devices: devicesMode },
+      }).bindings,
+      context: createSurfaceContext([]),
+      registry,
+      generate: generateControlMappings,
+      initialNavigation: { mode: "steps", gridOffset: { row: 0, column: 0 } },
+    });
+
+    const turn = (controller: number, delta: 1 | -1) => rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, delta === 1 ? 1 : 127));
+    const press = (controller: number) => {
+      rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, 127));
+      rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, 0));
+    };
+
+    return { surface, getProject: () => project, turn, press };
+  }
+
+  const ENCODER_CCS = [71, 72, 73, 74, 75, 76, 77, 78];
+  const ARROW_DOWN_CC = 47;
+  const ARROW_UP_CC = 46;
+  const VOLUME_MODE_CC = 114;
+  const DEVICES_MODE_CC = 110;
+
+  it("encoders 1-8 (CC71-78) drive tracks 1-8's own volume", async () => {
+    const { surface, getProject, turn } = encoderBankHarness();
+    await surface.attach();
+    const before = getProject().tracks[0]!.volume;
+
+    turn(ENCODER_CCS[0]!, 1);
+    expect(getProject().tracks[0]!.volume).toBeGreaterThan(before);
+    turn(ENCODER_CCS[7]!, 1);
+    expect(getProject().tracks[7]!.volume).toBeGreaterThan(before);
+    expect(getProject().tracks[1]!.volume).toBe(before); // track 2, untouched
+    await surface.detach();
+  });
+
+  it("Arrow Down pages the whole bank to tracks 9-16, re-targeting every encoder", async () => {
+    const { surface, getProject, press, turn } = encoderBankHarness();
+    await surface.attach();
+    const track1Before = getProject().tracks[0]!.volume;
+    const track9Before = getProject().tracks[8]!.volume;
+
+    press(ARROW_DOWN_CC);
+    turn(ENCODER_CCS[0]!, 1);
+    expect(getProject().tracks[8]!.volume).toBeGreaterThan(track9Before); // track 9, now under encoder 1
+    expect(getProject().tracks[0]!.volume).toBe(track1Before); // track 1, no longer under encoder 1 -- untouched
+    await surface.detach();
+  });
+
+  it("Arrow Up pages back, restoring the original assignments", async () => {
+    const { surface, getProject, press, turn } = encoderBankHarness();
+    await surface.attach();
+    const track1Before = getProject().tracks[0]!.volume;
+
+    press(ARROW_DOWN_CC);
+    press(ARROW_UP_CC);
+    turn(ENCODER_CCS[0]!, 1);
+    expect(getProject().tracks[0]!.volume).toBeGreaterThan(track1Before);
+    await surface.detach();
+  });
+
+  it("switching to Devices mode (CC110) stops the bank from driving track volume, without disturbing the page", async () => {
+    const { surface, getProject, press, turn } = encoderBankHarness();
+    await surface.attach();
+
+    press(ARROW_DOWN_CC); // page to tracks 9-16
+    press(DEVICES_MODE_CC);
+    const before = getProject().tracks[8]!.volume;
+    turn(ENCODER_CCS[0]!, 1);
+    expect(getProject().tracks[8]!.volume).toBe(before); // gated off
+
+    press(VOLUME_MODE_CC);
+    turn(ENCODER_CCS[0]!, 1);
+    expect(getProject().tracks[8]!.volume).toBeGreaterThan(before); // track 9 again -- the page survived the mode switch
+    await surface.detach();
+  });
+
+  it("an encoder windowed past the end of a short project drives nothing", async () => {
+    const { surface, getProject, turn } = encoderBankHarness(4);
+    await surface.attach();
+    const before = getProject().tracks.map((t) => t.volume);
+
+    turn(ENCODER_CCS[7]!, 1); // would be track 8, which doesn't exist
+    expect(getProject().tracks.map((t) => t.volume)).toEqual(before);
+    await surface.detach();
+  });
+});
+
 describe("sequencer contract: bank (ECS-113)", () => {
   function bankHarness() {
     let project: Project = createInitialProject("Test", 64);

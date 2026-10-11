@@ -95,6 +95,14 @@ export interface SequencerRegistryDeps {
    * `fx.selected.*`/`fx.next`/`fx.previous` are feedback-only.
    */
   readonly selectFx?: (fxId: FxId) => void;
+  /**
+   * Phase 2: which category the Push mk1's generic encoder bank currently drives (0 = volume, 1 = devices) — a
+   * plain, device-facing view ref, the same role `getBank`/`getFaderPage` already play for the mixer's own
+   * bank/page state. Omitted means `encoder.mode` always reads 0 (volume).
+   */
+  readonly getEncoderMode?: () => number;
+  /** Sets the active encoder-bank category (Phase 2) — written only by the device's own mode buttons. Omitted means `encoder.mode` is feedback-only. */
+  readonly setEncoderMode?: (mode: number) => void;
 }
 
 export interface SequencerRegistry extends ControlRegistry {
@@ -137,6 +145,16 @@ const MUTE_ID = /^mute\.(\d+)$/;
 const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
 /** ECS-140: the "selected target" counterpart to mixer.volume.<index> — see createTrackSelectedVolumeControl. */
 const TRACK_SELECTED_VOLUME_ID = "track.selected.volume";
+/**
+ * Phase 2: the Push mk1's generic encoder bank counterpart to `mixer.volume.<index>` — `{track}` is the track's
+ * plain, 1-based position in `project.tracks`, the same absolute addressing `mute.<track>`/`step.<row>.<column>`
+ * already use, rather than `mixer.volume.<index>`'s bank-and-page-relative one: the encoder bank has no fader
+ * page of its own (midi-core's `layout.encoderBank` shares the step grid's page offset directly), so there's no
+ * separate bank/page state here to resolve against.
+ */
+const TRACK_VOLUME_BY_INDEX_ID = /^track\.(\d+)\.volume$/;
+/** Phase 2: which category the Push mk1's encoder bank currently drives — see `createEncoderModeControl`. */
+const ENCODER_MODE_ID = "encoder.mode";
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 const BANK_ID = "bank.active";
@@ -920,6 +938,80 @@ function createTrackSelectedVolumeControl(deps: SequencerRegistryDeps): ProjectC
 }
 
 /**
+ * track.<n>.volume (Phase 2): the volume of the track at plain, 1-based position `n` — the encoder-bank
+ * counterpart to `mixer.volume.<index>` (bank/page-relative) and `track.selected.volume` (selection-relative).
+ * `n` past the end of `project.tracks` resolves to nothing at all (see this file's `resolve()`), the same "no
+ * track here" treatment `mute.<n>` already gets, so an encoder windowed past the end of a short project simply
+ * has nothing to turn.
+ */
+function createTrackVolumeByIndexControl(index: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = {
+    id: `track.${index + 1}.volume`,
+    label: `Volume, track ${index + 1}`,
+    kind: "number",
+    min: MIN_TRACK_VOLUME,
+    max: MAX_TRACK_VOLUME,
+    default: DEFAULT_TRACK_VOLUME,
+  };
+  const track = (project: Project) => project.tracks[index];
+  const read = (project: Project) => track(project)?.volume ?? 0;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = read(deps.getProject());
+
+  return {
+    def,
+    getValue: () => read(deps.getProject()),
+    setValue(value) {
+      const current = track(deps.getProject());
+      if (current) deps.dispatch({ type: "SET_TRACK_VOLUME", trackId: current.id, volume: value });
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = read(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
+ * encoder.mode (Phase 2): which category the Push mk1's generic encoder bank currently drives (0 = volume,
+ * 1 = devices) — the same "view state, not track state" role `bank.active` already plays for the A-D bank.
+ * Written only by the device's own mode buttons (`deps.setEncoderMode`); the application has no UI of its own
+ * for this yet, so there's nothing else to keep in sync with.
+ */
+function createEncoderModeControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = { id: ENCODER_MODE_ID, label: "Encoder bank mode", kind: "number", min: 0, max: 1, default: 0 };
+  const mode = () => deps.getEncoderMode?.() ?? 0;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = mode();
+
+  return {
+    def,
+    getValue: mode,
+    setValue(value) {
+      deps.setEncoderMode?.(Math.min(def.max, Math.max(def.min, Math.round(value))));
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject() {
+      const next = mode();
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
  * The bank actions a device's bank buttons invoke (ECS-114): previous and next step through A-D and stop at the ends, and
  * select[n] selects bank n (0 = A). A bank change only moves the view: it changes no track's level or mute (ECS-113).
  */
@@ -1381,6 +1473,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createSelectionIndexControl(deps) as ProjectControl<ControlDef>;
     } else if (id === TRACK_SELECTED_VOLUME_ID) {
       created = createTrackSelectedVolumeControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === ENCODER_MODE_ID) {
+      created = createEncoderModeControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PLAYHEAD_ID) {
       created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
     } else if (id === IS_PLAYING_ID) {
@@ -1414,9 +1508,12 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       const fxParamsCount = FX_PARAMS_COUNT_ID.exec(id);
       const fxParam = FX_PARAM_ID.exec(id);
       const fxSelectedParam = FX_SELECTED_PARAM_ID.exec(id);
+      const trackVolumeByIndex = TRACK_VOLUME_BY_INDEX_ID.exec(id);
       // A fader exists only within the device's page (ECS-102): mixer.volume.<index> for an index below the page size.
       if (fader && Number(fader[1]) < deps.faderPageSize) {
         created = createFaderVolumeControl(Number(fader[1]), deps) as ProjectControl<ControlDef>;
+      } else if (trackVolumeByIndex && project.tracks[Number(trackVolumeByIndex[1]) - 1]) {
+        created = createTrackVolumeByIndexControl(Number(trackVolumeByIndex[1]) - 1, deps) as ProjectControl<ControlDef>;
       } else if (patternPlaying && project.patterns[Number(patternPlaying[1])]) {
         created = createPatternPlayingControl(Number(patternPlaying[1]), deps) as ProjectControl<ControlDef>;
       } else if (patternQueued && project.patterns[Number(patternQueued[1])]) {

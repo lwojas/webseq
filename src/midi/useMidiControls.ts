@@ -99,6 +99,10 @@ export function useMidiControls(
   const transportRef = useRef(transport);
   // The fader page (ECS-96): which group of the selected bank's tracks the faders show. Owned here, not by the device.
   const faderPageRef = useRef(0);
+  // Phase 2: which category the Push mk1's generic encoder bank currently drives (0 = volume, 1 = devices). Owned
+  // here, not by the device, the same "plain view ref, synced manually since it's not React state" shape
+  // faderPageRef already uses.
+  const encoderModeRef = useRef(0);
   transportRef.current = transport;
   const bankRef = useRef(activeBank);
   bankRef.current = activeBank;
@@ -245,6 +249,11 @@ export function useMidiControls(
         selectTarget: (target) => selectTargetRef.current(target),
         getSelectedFxId: () => selectedFxIdRef.current,
         selectFx: (id) => selectFxRef.current(id),
+        getEncoderMode: () => encoderModeRef.current,
+        setEncoderMode: (mode) => {
+          encoderModeRef.current = mode;
+          connectionRef.current?.registry.syncFromProject(projectRef.current);
+        },
       });
       const actions = {
         // The device's Play button toggles: pressed while already playing, it pauses in place rather than starting
@@ -271,6 +280,18 @@ export function useMidiControls(
       const faderActions = {
         pageLeft: createAction({ id: "faders.pageLeft", label: "Fader page left" }, () => turnFaderPage(-1)),
         pageRight: createAction({ id: "faders.pageRight", label: "Fader page right" }, () => turnFaderPage(1)),
+      };
+
+      encoderModeRef.current = 0;
+      // Phase 2: a category button sets which category the encoder bank drives and resyncs the mode control's own
+      // indicator, the same explicit-resync shape turnFaderPage already uses for a plain ref (not React state).
+      const setEncoderMode = (mode: number) => {
+        encoderModeRef.current = mode;
+        connectionRef.current?.registry.syncFromProject(projectRef.current);
+      };
+      const encoderBankModeActions = {
+        volume: createAction({ id: "encoder-bank.volume", label: "Encoder bank: Volume" }, () => setEncoderMode(0)),
+        devices: createAction({ id: "encoder-bank.devices", label: "Encoder bank: Devices" }, () => setEncoderMode(1)),
       };
 
       // The DAW ports the system has. Each is passed on its own: the DAW input carries the bank arrows on any device that has one
@@ -324,6 +345,15 @@ export function useMidiControls(
             volume: { kind: "static", controlId: "track.selected.volume" },
             effects: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
           },
+          // Phase 2: the Push mk1's generic encoder bank (CC114 "Volume"/CC110 "Devices") — unlike
+          // encoderParameters above (one fixed encoder, retargeted by selection), this is the whole bank at once,
+          // retargeted by page. "volume" is the one category with a template this phase; "devices" gets its
+          // button and indicator (via encoderBankModes) but no template, an explicit gap matching this phase's
+          // own scope, not a guess at a future FX-parameter binding.
+          encoderBankTemplates: { volume: "track.{track}.volume" },
+          encoderBankModeControl: "encoder.mode",
+          encoderBankModes: { volume: 0, devices: 1 },
+          encoderBankModeActions,
         },
         devices,
       );
