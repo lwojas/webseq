@@ -1181,12 +1181,12 @@ describe("sequencer contract: the Push mk1's parameter encoders drive volume/eff
 
     setFx(delayFx!.id);
     turn(73, 1);
-    // A relative encoder tick adds a raw delta of 1 directly onto the control's current value (mapping/value.ts's
-    // resolveIncomingValue, unchanged by this ticket) -- for delay.time's 0.02..1.5s range, one tick from its
-    // 0.25s default lands at 1.25s. The point of this assertion isn't that number itself, but that it's delay's
-    // own time value moving at all (re-resolved fresh against the newly selected FX), not filter's stale 0/1
-    // mode value from the previous turn still being written to.
-    expect(getProject().tracks[0]!.fx[1]!.params.time).toBeCloseTo(1.25, 5);
+    // A relative encoder tick moves the control by its own declared `step` (mapping/value.ts's
+    // resolveIncomingValue/relativeIncrement()) -- delay.time's step is 0.01s, so one tick from its 0.25s default
+    // lands at 0.26s. The point of this assertion isn't that number itself, but that it's delay's own time value
+    // moving at all (re-resolved fresh against the newly selected FX), not filter's stale 0/1 mode value from the
+    // previous turn still being written to.
+    expect(getProject().tracks[0]!.fx[1]!.params.time).toBeCloseTo(0.26, 5);
     expect(getProject().tracks[0]!.fx[0]!.params.mode).toBe(1); // filter's own param untouched by the delay turn
     await surface.detach();
   });
