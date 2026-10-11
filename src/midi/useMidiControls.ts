@@ -40,6 +40,19 @@ export type MidiConnectionStatus = "unavailable" | "idle" | "connecting" | "conn
 
 const MAX_LOG_LINES = 20;
 
+/**
+ * ECS-140: the identity midi-core's `SurfaceContext` tracks for the "fx-selection" scope — changes whenever
+ * `fxTarget`/`selectedFxId` does, which is exactly the signal the Push's "effects" encoder role needs to
+ * re-resolve `fx.selected.param.0` fresh rather than keep using a `Control` object bound to whatever FX instance
+ * was selected when the device's mode was first bound. Its *value* is never read back by anything (the contract's
+ * `encoderParameters.effects` template names a fixed id, with no `{id}` placeholder) — only that it *changes* and
+ * so retriggers `createContextBoundControl()`'s retarget, the same "from-selection" mechanism a template that does
+ * use `{id}` relies on. See sequencerContract.ts's own `FX_SELECTED_PARAM_ID` doc comment for why a stale
+ * reference here would be a real bug (a different FX type's def/paramId pairing silently misapplied), not just a
+ * missed repaint.
+ */
+const fxSelectionId = (target: FxTarget, selectedFxId: FxId | null): string => `${target}:${selectedFxId ?? "none"}`;
+
 export function useMidiControls(
   project: Project,
   dispatch: (action: Action) => void,
@@ -72,6 +85,7 @@ export function useMidiControls(
     output: MidiOutput | undefined;
     surface: ControlSurface;
     registry: SequencerRegistry;
+    context: ReturnType<typeof createSurfaceContext>;
     unwatchSurface: () => void;
   } | null>(null);
 
@@ -299,10 +313,27 @@ export function useMidiControls(
           // shared control — the sentinel matches sequencerContract.ts's own SELECTION_NO_TARGET.
           selectionIndexControl: "selection.index",
           selectionClearValue: -1,
+          // ECS-140: representative volume/send/effects parameter-encoder roles. "volume" is a plain static
+          // control (track.selected.volume's def never varies by which track is selected, so there's no
+          // staleness to guard against). "effects" is "from-selection", not "static", specifically so a later
+          // FX reselection re-resolves fx.selected.param.0 instead of reusing a Control bound to whichever FX
+          // was selected when the device's mode was first bound — see fxSelectionId's own doc comment for why
+          // that distinction is a real correctness fix, not just tidiness. "send" has no backing model in this
+          // app yet (no aux/send-bus concept exists) — left unassigned, an explicit gap, not a guess.
+          encoderParameters: {
+            volume: { kind: "static", controlId: "track.selected.volume" },
+            effects: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
+          },
         },
         devices,
       );
       for (const role of sequencer.unresolved) appendLog(`unresolved: ${role}`);
+
+      // ECS-140: backs the "effects" encoder role's "from-selection" resolution above — see fxSelectionId's own
+      // doc comment. Seeded with the current selection immediately so the role resolves from the first attach,
+      // not only after the first later change (resolveControlId() reports "nothing selected" until setSelection()
+      // has been called at least once for a scope).
+      const context = createSurfaceContext([{ scope: "fx-selection", id: fxSelectionId(fxTargetRef.current, selectedFxIdRef.current) }]);
 
       const surface = createControlSurface({
         profile: device.profile,
@@ -311,7 +342,7 @@ export function useMidiControls(
           outputs: outputsByPortId,
         },
         bindingTable: sequencer.bindings,
-        context: createSurfaceContext(),
+        context,
         registry,
         generate: generateControlMappings,
         initialNavigation: { mode: "steps", gridOffset: { row: 0, column: 0 } },
@@ -342,7 +373,7 @@ export function useMidiControls(
         surface.detach().catch((err) => appendLog(`release error: ${err instanceof Error ? err.message : String(err)}`));
       });
 
-      connectionRef.current = { input, output, surface, registry, unwatchSurface };
+      connectionRef.current = { input, output, surface, registry, context, unwatchSurface };
       setStatus("connected");
     },
     [access, ports, dispatch, disconnect, appendLog],
@@ -406,6 +437,9 @@ export function useMidiControls(
   // no separate effect of its own.
   useEffect(() => {
     connectionRef.current?.registry.syncFromProject(projectRef.current);
+    // ECS-140: retargets the "effects" encoder role's fx.selected.param.0 control — see fxSelectionId's own doc
+    // comment for why this needs its own signal rather than riding along on syncFromProject() above.
+    connectionRef.current?.context.setSelection({ scope: "fx-selection", id: fxSelectionId(fxTarget, selectedFxId) });
   }, [fxTarget, selectedFxId]);
 
   useEffect(() => () => void disconnect(), [disconnect]);

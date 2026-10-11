@@ -154,6 +154,57 @@ describe("sequencer contract: tracks", () => {
   });
 });
 
+describe("sequencer contract: track.selected.volume (ECS-140)", () => {
+  function targetHarness() {
+    let project: Project = createInitialProject();
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    let target: FxTarget = "master";
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getTarget: () => target,
+    });
+    return { registry, getProject: () => project, setTarget: (next: FxTarget) => (target = next) };
+  }
+
+  it("reads and writes whichever track getTarget() currently names", () => {
+    const { registry, getProject, setTarget } = targetHarness();
+    setTarget("track-2");
+    expect(registry.getControl("track.selected.volume")!.getValue()).toBe(getProject().tracks[1]!.volume);
+
+    registry.getControl("track.selected.volume")!.setValue(0.5);
+    expect(getProject().tracks[1]!.volume).toBe(0.5);
+  });
+
+  it("follows a later selection change without needing the control re-fetched", () => {
+    const { registry, setTarget } = targetHarness();
+    const control = registry.getControl("track.selected.volume")!;
+    setTarget("track-1");
+    control.setValue(0.2);
+    setTarget("track-2");
+    control.setValue(0.8);
+    expect(control.getValue()).toBe(0.8);
+
+    setTarget("track-1");
+    expect(control.getValue()).toBe(0.2); // track-1 unaffected by the write while track-2 was selected
+  });
+
+  it("reads 0 and ignores writes while the target is master (no track) or nothing is selected", () => {
+    const { registry, getProject, setTarget } = targetHarness();
+    const control = registry.getControl("track.selected.volume")!;
+    const before = getProject();
+
+    setTarget("master");
+    expect(control.getValue()).toBe(0);
+    control.setValue(0.9);
+    expect(getProject()).toBe(before); // no dispatch happened
+  });
+});
+
 describe("sequencer contract: mutes", () => {
   it("mute.N is track N's mute", () => {
     const { registry, getProject } = harness();
@@ -1038,6 +1089,105 @@ describe("sequencer contract: the Push mk1's contextual selection buttons drive 
     // 22 (a steady green) for the selected button, 10 (a steady white-ish tier) for every other available one.
     expect(lastValue(38)).toBe(22); // button-select-6 (item 5): now selected
     expect(lastValue(43)).toBe(10); // button-select-1 (item 0): still just its resting tier
+    await surface.detach();
+  });
+});
+
+describe("sequencer contract: the Push mk1's parameter encoders drive volume/effects (ECS-140)", () => {
+  function encoderHarness() {
+    let project: Project = createInitialProject("Test", 16);
+    const dispatch = (action: Action) => {
+      project = projectReducer(project, action);
+    };
+    let target: FxTarget = "track-1";
+    let selectedFxId: string | null = null;
+    const registry = createSequencerRegistry({
+      getProject: () => project,
+      getPatternId: () => project.patterns[0]!.id,
+      dispatch,
+      faderPageSize: 8,
+      getTarget: () => target,
+      getSelectedFxId: () => selectedFxId,
+    });
+
+    const rawInput = new MockMidiInput({ id: "user-port-in", type: "input", name: "in", manufacturer: null });
+    const rawOutput = new MockMidiOutput({ id: "user-port-out", type: "output", name: "out", manufacturer: null });
+    const input = createMidiInput(rawInput);
+    const output = createMidiOutput(rawOutput);
+    const noop = createAction({ id: "noop", label: "noop" }, () => {});
+    const push = findDevice({ name: "Ableton Push User Port" })!;
+    // ECS-140: the same "fx-selection" scope useMidiControls.ts's own context.setSelection() now drives —
+    // setFx below is this test's stand-in for that effect.
+    const context = createSurfaceContext([{ scope: "fx-selection", id: `${target}:${selectedFxId}` }]);
+    const surface = createControlSurface({
+      profile: { ...push.profile, setup: undefined },
+      ports: { inputs: { "user-port-in": input }, outputs: { "user-port-out": output } },
+      bindingTable: createSequencerBindings(input, push.profile, {
+        stepTemplate: "step.{row}.{column}",
+        lengthControl: "steps.length",
+        muteTemplate: "mute.{track}",
+        trackCountControl: "tracks.count",
+        actions: { play: noop, stop: noop },
+        encoderParameters: {
+          volume: { kind: "static", controlId: "track.selected.volume" },
+          effects: { kind: "from-selection", scope: "fx-selection", template: "fx.selected.param.0" },
+        },
+      }).bindings,
+      context,
+      registry,
+      generate: generateControlMappings,
+      initialNavigation: { mode: "steps", gridOffset: { row: 0, column: 0 } },
+    });
+
+    const turn = (controller: number, delta: 1 | -1) => rawInput.emitRawMessage(Uint8Array.of(0xb0, controller, delta === 1 ? 1 : 127));
+
+    return {
+      surface,
+      registry,
+      getProject: () => project,
+      dispatch,
+      turn,
+      setFx(fxId: string | null) {
+        selectedFxId = fxId;
+        context.setSelection({ scope: "fx-selection", id: `${target}:${selectedFxId}` });
+      },
+    };
+  }
+
+  it("Encoder 1 (CC 71) drives the selected track's volume, in both directions", async () => {
+    const { surface, getProject, turn } = encoderHarness();
+    await surface.attach();
+    const before = getProject().tracks[0]!.volume;
+
+    turn(71, 1);
+    expect(getProject().tracks[0]!.volume).toBeGreaterThan(before);
+    turn(71, -1);
+    turn(71, -1);
+    expect(getProject().tracks[0]!.volume).toBeLessThan(before);
+    await surface.detach();
+  });
+
+  it("Encoder 3 (CC 73) drives the selected FX's first parameter, and re-resolves to a newly selected FX's own def/value rather than reusing the previous one's", async () => {
+    const { surface, getProject, dispatch, turn, setFx } = encoderHarness();
+    dispatch({ type: "ADD_FX", target: "track-1", fxType: "filter" }); // param 0: mode, 0..1 step 1
+    dispatch({ type: "ADD_FX", target: "track-1", fxType: "delay" }); // param 0: time, 0.02..1.5s
+    const [filterFx, delayFx] = getProject().tracks[0]!.fx;
+    await surface.attach();
+
+    setFx(filterFx!.id);
+    turn(73, 1); // mode: 0 -> 1 (step 1)
+    expect(getProject().tracks[0]!.fx[0]!.params.mode).toBe(1);
+    expect(getProject().tracks[0]!.fx[1]!.params.time).toBe(FX_DEFS.delay.params[0]!.default); // untouched
+
+    setFx(delayFx!.id);
+    turn(73, 1);
+    // A relative encoder tick adds a raw delta of 1 directly onto the control's current value (mapping/value.ts's
+    // resolveIncomingValue, unchanged by this ticket) -- for delay.time's 0.02..1.5s range, one tick from its
+    // 0.25s default lands at 1.25s. The point of this assertion isn't that number itself, but that it's delay's
+    // own time value moving at all (re-resolved fresh against the newly selected FX), not filter's stale 0/1
+    // mode value from the previous turn still being written to.
+    expect(getProject().tracks[0]!.fx[1]!.params.time).toBeCloseTo(1.25, 5);
+    expect(getProject().tracks[0]!.fx[0]!.params.mode).toBe(1); // filter's own param untouched by the delay turn
     await surface.detach();
   });
 });

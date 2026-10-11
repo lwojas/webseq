@@ -135,6 +135,8 @@ const STEP_DURATION_ID = /^step\.(\d+)\.(\d+)\.duration$/;
 const STEP_COVERED_ID = /^step\.(\d+)\.(\d+)\.covered$/;
 const MUTE_ID = /^mute\.(\d+)$/;
 const FADER_VOLUME_ID = /^mixer\.volume\.(\d+)$/;
+/** ECS-140: the "selected target" counterpart to mixer.volume.<index> — see createTrackSelectedVolumeControl. */
+const TRACK_SELECTED_VOLUME_ID = "track.selected.volume";
 const LENGTH_ID = "steps.length";
 const TRACKS_ID = "tracks.count";
 const BANK_ID = "bank.active";
@@ -869,6 +871,55 @@ function createFaderVolumeControl(index: number, deps: SequencerRegistryDeps): F
 }
 
 /**
+ * track.selected.volume (ECS-140): the volume of whichever track `deps.getTarget()` currently names — the same
+ * "selected" indirection `fx.selected.*` already uses, so a device with a fixed encoder (not a fader bank with its
+ * own page of tracks) can drive "the selected track's volume" without resolving an index itself. Reads 0 and
+ * ignores writes while nothing is selected, the target is "master" (the master bus has no `volume` of its own —
+ * see MasterBus's own doc comment in model/types.ts) or it names a track that no longer exists — the same "no
+ * track here, off and inert" behaviour createFaderVolumeControl already has for a fader past the bank's last
+ * track. Unlike fx.selected.param.<p>, this control's def (min/max/default) never varies by which track is
+ * selected, so — unlike that one — a plain "static" ControlIdResolution is correct: there's no stale-def hazard
+ * to guard against by re-resolving on selection change.
+ */
+function createTrackSelectedVolumeControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
+  const def: NumericControlDef = {
+    id: TRACK_SELECTED_VOLUME_ID,
+    label: "Selected track volume",
+    kind: "number",
+    min: MIN_TRACK_VOLUME,
+    max: MAX_TRACK_VOLUME,
+    default: DEFAULT_TRACK_VOLUME,
+  };
+  const track = (project: Project): Track | undefined => {
+    const target = deps.getTarget?.();
+    return target && target !== "master" ? trackById(project, target) : undefined;
+  };
+  const read = (project: Project) => track(project)?.volume ?? 0;
+  const listeners = new Set<(value: number, previous: number) => void>();
+  let last = read(deps.getProject());
+
+  return {
+    def,
+    getValue: () => read(deps.getProject()),
+    setValue(value) {
+      const current = track(deps.getProject());
+      if (current) deps.dispatch({ type: "SET_TRACK_VOLUME", trackId: current.id, volume: value });
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    syncFromProject(project) {
+      const next = read(project);
+      if (next === last) return;
+      const previous = last;
+      last = next;
+      for (const listener of listeners) listener(next, previous);
+    },
+  };
+}
+
+/**
  * The bank actions a device's bank buttons invoke (ECS-114): previous and next step through A-D and stop at the ends, and
  * select[n] selects bank n (0 = A). A bank change only moves the view: it changes no track's level or mute (ECS-113).
  */
@@ -1254,14 +1305,27 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
   // whole set whenever `project` is a new reference, the same "an edit replaces the whole
   // object" assumption the reducer already guarantees) turns the second and later ask for the
   // same negative id back into a single Set lookup.
+  //
+  // ECS-140: a negative result can also go stale on a *selection* change alone, with no project edit at all --
+  // fx.selected.param.<p>/fx.selected.* resolve to nothing while getTarget()/getSelectedFxId() name no FX (e.g.
+  // asked for once, right on attach, before anything's been selected yet), and nothing about that failure
+  // depends on `project`. Without this, a device's "effects" encoder bound before the user ever selects an FX
+  // would stay permanently dead after they do select one -- the stale negative answer would keep winning until
+  // some unrelated edit happened to replace `project` and incidentally clear it. `negativeCacheSelection` tracks
+  // the same (target, selectedFxId) pair `selection.index`/`fx.selected.*` already resolve against, so a
+  // selection change alone (as cheap a check as the project-reference one above) invalidates the negative cache
+  // too, not only an edit.
   let negativeCache = new Set<string>();
   let negativeCacheProject: Project | undefined;
+  let negativeCacheSelection: string | undefined;
 
   function resolve(id: string): Control<ControlDef> | undefined {
     const project = deps.getProject();
-    if (project !== negativeCacheProject) {
+    const selection = `${deps.getTarget?.() ?? ""}:${deps.getSelectedFxId?.() ?? ""}`;
+    if (project !== negativeCacheProject || selection !== negativeCacheSelection) {
       negativeCache = new Set();
       negativeCacheProject = project;
+      negativeCacheSelection = selection;
     }
 
     const cached = cache.get(id);
@@ -1315,6 +1379,8 @@ export function createSequencerRegistry(deps: SequencerRegistryDeps): SequencerR
       created = createBankControl(deps) as ProjectControl<ControlDef>;
     } else if (id === SELECTION_INDEX_ID) {
       created = createSelectionIndexControl(deps) as ProjectControl<ControlDef>;
+    } else if (id === TRACK_SELECTED_VOLUME_ID) {
+      created = createTrackSelectedVolumeControl(deps) as ProjectControl<ControlDef>;
     } else if (id === PLAYHEAD_ID) {
       created = createPlayheadControl(deps) as ProjectControl<ControlDef>;
     } else if (id === IS_PLAYING_ID) {
