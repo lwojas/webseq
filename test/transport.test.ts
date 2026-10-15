@@ -44,6 +44,7 @@ function fakeRuntime(maxCaptureSeconds = 30) {
       maxVoices: 64,
       renderQuantumFrames: 128,
       maxCaptureSeconds,
+      instruments: [],
     })),
     armCapture: vi.fn((opts: { startTime: number; stopTime: number }): { handle: CaptureHandle; result: Promise<{ metadata: SampleMetadata; channelData: ArrayBuffer[] }> } => {
       armCaptureCalls.push({ startTime: opts.startTime, stopTime: opts.stopTime });
