@@ -1,6 +1,6 @@
 import { memo, useRef } from "react";
 import type { FxTarget, Note, NoteId, Track, TrackId } from "../model/types";
-import { effectivePlaybackMode } from "../model/types";
+import { effectivePlaybackMode, trackHasSource } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
 
 interface Props {
@@ -70,11 +70,11 @@ export const TrackRow = memo(function TrackRow({
     <div className={`track-row ${selected ? "selected" : ""}`}>
       <div className="track-header" onClick={() => onSelectTarget(track.id)}>
         <span className="track-num">{String(index + 1).padStart(2, "0")}</span>
-        <span className={`track-name ${track.assetId == null ? "unassigned" : ""}`}>
-          {track.assetId == null ? "— empty —" : track.name}
+        <span className={`track-name ${trackHasSource(track) ? "" : "unassigned"}`}>
+          {trackHasSource(track) ? track.name : "— empty —"}
         </span>
         {track.fx.length > 0 && <span className="track-fx-badge">{track.fx.length}FX</span>}
-        {selected && track.assetId != null && (
+        {selected && trackHasSource(track) && (
           // Only on the selected track, so the header stays uncluttered (ECS-83). Its click must
           // not reach the header's select handler.
           <button

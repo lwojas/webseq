@@ -4,9 +4,10 @@
 // and which bus a voice's output sums into. See webdsp's ARCHITECTURE.md, "How future
 // sequencers can integrate".
 
-import type { BusId, ScheduledEvent } from "webdsp";
+import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import { instrumentDefFor } from "../model/instruments";
 
 /** Seconds per grid beat (a sixteenth note in 4/4) at a given BPM. Deliberately independent
  * of Project.beatsPerBar/Pattern.bars — growing a pattern to more bars, or adding more
@@ -61,7 +62,53 @@ export function compileNote(
   };
   if (busId !== undefined) event.bus = busId;
   if (effectivePlaybackMode(track) === "loop") event.loop = true;
+  if (note.pitch) event.pitch = note.pitch;
   return event;
+}
+
+/** Converts one note on a synth track into the arguments of AudioRuntime.instrumentNoteOn.
+ * Returns null for a track with no (known) synth. `duration` is set only for sustained kinds
+ * (Bass): webdsp's guide says to always pass it for sequenced bass notes and never for drums,
+ * which would otherwise be choked by a short release. Timing/swing exactly as compileNote. */
+export function compileInstrumentNote(
+  track: Track,
+  note: Note,
+  bpm: number,
+  stepStartTime: number,
+  swing = 0.5,
+): InstrumentNoteParams | null {
+  const def = instrumentDefFor(track);
+  if (!def) return null;
+  const spb = secondsPerBeat(bpm);
+  const params: InstrumentNoteParams = {
+    time: stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb),
+    velocity: note.velocity,
+  };
+  if (note.pitch) params.pitch = note.pitch;
+  if (def.sustained) params.duration = note.duration * spb;
+  return params;
+}
+
+/** Same walk as compilePatternIterationTracked, for synth tracks. Kept separate because
+ * instrument notes go through a different engine path (instrumentNoteOn, not schedule()). */
+export function compileInstrumentNotes(
+  pattern: Pattern,
+  tracks: Track[],
+  bpm: number,
+  stepStartTime: number,
+  swing = 0.5,
+): { trackId: TrackId; params: InstrumentNoteParams }[] {
+  const results: { trackId: TrackId; params: InstrumentNoteParams }[] = [];
+  const synthTracks = tracks.filter((t) => t.instrument != null);
+  if (synthTracks.length === 0) return results;
+  const byTrack = groupNotesByTrack(pattern);
+  for (const track of synthTracks) {
+    for (const note of byTrack.get(track.id) ?? []) {
+      const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing);
+      if (params) results.push({ trackId: track.id, params });
+    }
+  }
+  return results;
 }
 
 /** Compiles every note in one pattern, for one playthrough starting at `stepStartTime`, into

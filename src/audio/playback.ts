@@ -11,6 +11,11 @@
 import type { AudioRuntime, BusId, VoiceHandle } from "webdsp";
 import type { AssetId, FxTarget, Project, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, effectiveVoiceMode, trackById } from "../model/types";
+import { instrumentDefFor } from "../model/instruments";
+import { instrumentHostFor } from "./instruments";
+
+/** Length of the manual preview note for a sustained synth (Bass); one-shot drums end themselves. */
+const SYNTH_PREVIEW_SECONDS = 0.5;
 
 /** Fixed audition level (about -2 dB). There is deliberately no preview-level control yet —
  * see docs/audio-auditioning-and-manual-triggering.md, "Deferrals". */
@@ -115,7 +120,18 @@ export class Playback {
   /** The track's button: a one-shot for one-shot tracks, a start/stop toggle for loop tracks.
    * Returns false if the track has nothing to play or the start was refused. */
   pressTrack(track: Track): boolean {
+    if (track.instrument) return this.previewSynth(track);
     return effectivePlaybackMode(track) === "loop" ? this.toggleTrackLoop(track) : this.triggerTrackOnce(track);
+  }
+
+  /** A synth track's button: one preview note at the instrument's own pitch. */
+  private previewSynth(track: Track): boolean {
+    const def = instrumentDefFor(track);
+    if (!def || this.isCaptureBusy()) return false;
+    return instrumentHostFor(this.runtime).noteOn(track.id, {
+      velocity: AUDITION_GAIN,
+      ...(def.sustained ? { duration: SYNTH_PREVIEW_SECONDS } : {}),
+    });
   }
 
   triggerTrackOnce(track: Track): boolean {

@@ -71,7 +71,26 @@ export interface Track {
    * (ECS-82/ECS-87). "mono" only ever constrains a track against itself, never other tracks.
    * Optional for the same missing-field-defaults-safely reason as playbackMode. */
   voiceMode?: VoiceMode;
+  /** Stereo position, -1 (left) .. 0 (centre) .. +1 (right), pushed to the engine as the track
+   * bus's NodeParam.BusPan (see audio/mixer.ts). Optional for the same missing-field-defaults-
+   * safely reason as playbackMode — read through effectivePan. */
+  pan?: number;
+  /** A synthesized webdsp instrument this track plays *instead of* a sample. Mutually
+   * exclusive with `assetId` (see project.ts's assignAsset / instruments.ts's
+   * setTrackInstrument, which each clear the other), so a track still has exactly one sound
+   * source. Null/absent = a sample track. See model/instruments.ts. */
+  instrument?: TrackInstrument | null;
 }
+
+/** A track's synth source: which engine instrument kind (by webdsp's stable string id —
+ * "kick", "snare", "clap", "tom", "hihat", "bass" — never its display name) and its current
+ * control values, keyed by the parameter ids in model/instruments.ts's INSTRUMENT_DEFS. */
+export interface TrackInstrument {
+  kind: InstrumentKindId;
+  params: Record<string, number>;
+}
+
+export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "bass";
 
 /** One-shot: plays through once, bounded by its triggering note's length (today's only
  * behavior). Loop: the same, but the asset tiles/repeats to fill that note's full length
@@ -95,7 +114,7 @@ export interface MasterBus {
   automation: AutomationLane[];
 }
 
-export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compressor" | "saturation";
+export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compressor" | "saturation" | "phaser" | "bitcrusher";
 
 /** One FX in a track's or master's ordered chain. `params` is a flat, generic key->value map
  * (see fx.ts's FX_DEFS for what keys each `type` defines and their defaults/ranges) rather
@@ -148,6 +167,9 @@ export interface Note {
   duration: number;
   /** 0..1, forwarded to the engine as gain. */
   velocity: number;
+  /** Semitones above the track's own pitch (a synth's Tune, or a sample's original pitch).
+   * Optional — absent means 0. Set from the Instrument panel's note inspector. */
+  pitch?: number;
 }
 
 /** One arrangement of musical events. Has its own length in bars but deliberately no BPM of
@@ -180,6 +202,19 @@ export interface ChainEntry {
  * separately in IndexedDB (see src/persistence/) — this is metadata only, mirroring (a
  * subset of) webdsp's SampleMetadata but kept as this project's own type so this file has
  * zero dependency on the audio-engine package. */
+export interface SampleEnvelope {
+  /** Seconds. */
+  attack: number;
+  /** Seconds. */
+  decay: number;
+  /** 0..1 held level. */
+  sustain: number;
+  /** Seconds. */
+  release: number;
+}
+
+export const DEFAULT_ENVELOPE: SampleEnvelope = { attack: 0, decay: 0, sustain: 1, release: 0.01 };
+
 export interface Asset {
   id: AssetId;
   name: string;
@@ -195,6 +230,10 @@ export interface Asset {
    * Asset Bin UI's origin badge); a resampled Asset behaves exactly like an imported one once
    * created, it is not permanently tied to the pattern that produced it. */
   origin: "import" | "resample";
+  /** The sample's amplitude ADSR (webdsp's per-sample EnvelopeParams). Lives on the Asset, not
+   * the track, because that is where the engine keeps it — two tracks sharing an asset share
+   * its envelope. Absent = the engine default (no audible envelope). */
+  envelope?: SampleEnvelope;
   /** Only set when origin === "resample": which pattern this was captured from. Historical
    * metadata only — the pattern may since have been edited, renamed, or deleted. */
   sourcePatternId?: PatternId;
@@ -295,6 +334,16 @@ export function effectiveTrackGain(project: Project, track: Track): number {
  * through this rather than reading `track.playbackMode` directly. */
 export function effectivePlaybackMode(track: Pick<Track, "playbackMode">): PlaybackMode {
   return track.playbackMode ?? DEFAULT_PLAYBACK_MODE;
+}
+
+/** `track.pan`, defaulted to centre for a track that predates the field. */
+export function effectivePan(track: Pick<Track, "pan">): number {
+  return track.pan ?? 0;
+}
+
+/** True when the track has something to play: a sample or a synth instrument. */
+export function trackHasSource(track: Pick<Track, "assetId" | "instrument">): boolean {
+  return track.assetId != null || track.instrument != null;
 }
 
 /** `track.voiceMode`, defaulted the same way as effectivePlaybackMode. */

@@ -20,6 +20,7 @@ interface Props {
   onSelectFx: (id: FxId) => void;
   onAddFx: (type: FxType) => void;
   onRemoveFx: (id: FxId) => void;
+  onMoveFx: (id: FxId, index: number) => void;
   onSetFxParam: (fxId: FxId, paramId: string, value: number) => void;
   onSetFxEnabled: (fxId: FxId, enabled: boolean) => void;
   onSelectAutomationParam: (paramId: string) => void;
@@ -67,6 +68,7 @@ export function FxPanel({
   onSelectFx,
   onAddFx,
   onRemoveFx,
+  onMoveFx,
   onSetFxParam,
   onSetFxEnabled,
   onSelectAutomationParam,
@@ -101,6 +103,10 @@ export function FxPanel({
           persistent UI clutter ECS-81 asks to avoid. */}
       {track && (
         <div className="track-mode-row">
+          {/* Mode/Voice describe sample playback; a synth track is always one monophonic
+              instance (see audio/instruments.ts), so they don't apply there. */}
+          {!track.instrument && (
+            <>
           <div className="track-mode-group">
             <span className="track-mode-label">Mode</span>
             <div className="track-mode-toggle">
@@ -131,6 +137,8 @@ export function FxPanel({
               ))}
             </div>
           </div>
+            </>
+          )}
           {/* Whole-track copy/paste (ECS-112) and clear (ECS-107) share this row for the same
               reason: Cmd/Ctrl+C/V and Delete/Backspace (App.tsx's keydown handler) are the
               desktop equivalents, but touch has no reliable keyboard. Each button is its own
@@ -191,7 +199,7 @@ export function FxPanel({
           {clipboardStatus && <div className="clipboard-status">{clipboardStatus}</div>}
         </div>
       )}
-      <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} />
+      <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} onMoveFx={onMoveFx} />
 
       {selectedFx && (
         <div className="fx-panel-detail">
@@ -216,7 +224,7 @@ export function FxPanel({
         </div>
       )}
       {fx.length === 0 && (
-        <div className="fx-panel-empty">No FX yet — add a Filter, Chorus/Flanger, Delay, Reverb, Compressor, or Saturation above.</div>
+        <div className="fx-panel-empty">No FX yet — use + Add FX above. Effects run left to right; add the same one twice to stack it.</div>
       )}
     </div>
   );

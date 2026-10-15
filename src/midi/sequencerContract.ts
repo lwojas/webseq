@@ -1225,15 +1225,18 @@ function createFxSelectedIndexControl(deps: SequencerRegistryDeps): ProjectContr
 }
 
 /** fx.<n>.name / fx.selected.name: the FX type's display label (ECS-149) -- e.g. "Filter",
- * "Delay". Doubles as the stable, human-distinguishing identifier the ticket also asks for:
- * model/fx.ts's own engine constraint (at most one FX of each type per chain, see its module doc
- * comment) means a chain's FX are already distinguishable by type/label alone, so no separate id
- * control is needed. Read-only, the first real StringControlDef consumer outside pattern.<n>.name. */
+ * "Delay". A chain may stack the same type (see model/fx.ts), so a repeated type is numbered by
+ * its position among its siblings ("Filter 1", "Filter 2") -- the same labelling FxChainStrip
+ * shows -- which keeps names distinguishing without a separate id control. Read-only, the first
+ * real StringControlDef consumer outside pattern.<n>.name. */
 function createFxNameControl(id: string, label: string, locate: FxLocator, deps: SequencerRegistryDeps): ProjectControl<StringControlDef> {
   const def: StringControlDef = { id, label, kind: "string", default: "" };
   const name = (project: Project) => {
     const instance = locate(project);
-    return instance ? FX_DEFS[instance.type].label : "";
+    if (!instance) return "";
+    const label = FX_DEFS[instance.type].label;
+    const siblings = currentFxChain(deps, project).filter((f) => f.type === instance.type);
+    return siblings.length > 1 ? `${label} ${siblings.findIndex((f) => f.id === instance.id) + 1}` : label;
   };
   const listeners = new Set<(value: string, previous: string) => void>();
   let last = name(deps.getProject());

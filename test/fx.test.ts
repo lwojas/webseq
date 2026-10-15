@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addFx, removeFx, setFxEnabled, setFxParam } from "../src/model/fx";
+import { MAX_FX_PER_CHAIN, addFx, moveFx, removeFx, setFxEnabled, setFxParam } from "../src/model/fx";
 import { createInitialProject } from "../src/model/project";
 
 describe("FX chains (track and master)", () => {
@@ -22,11 +22,28 @@ describe("FX chains (track and master)", () => {
     expect(track.fx.map((f) => f.type)).toEqual(["filter", "chorusFlanger", "delay", "reverb", "compressor", "saturation"]);
   });
 
-  it("does not add a second FX of the same type to one track (engine has one filter/delay slot per bus)", () => {
+  it("stacks the same FX type more than once on one track", () => {
     let project = addFx(createInitialProject(), "track-1", "filter");
     project = addFx(project, "track-1", "filter");
     const track = project.tracks.find((t) => t.id === "track-1")!;
-    expect(track.fx).toHaveLength(1);
+    expect(track.fx.map((f) => f.type)).toEqual(["filter", "filter"]);
+    expect(track.fx[0].id).not.toBe(track.fx[1].id);
+  });
+
+  it("caps a chain at the engine's per-bus limit", () => {
+    let project = createInitialProject();
+    for (let i = 0; i < MAX_FX_PER_CHAIN + 3; i++) project = addFx(project, "track-1", "delay");
+    expect(project.tracks[0].fx).toHaveLength(MAX_FX_PER_CHAIN);
+  });
+
+  it("moves an FX within its chain, clamping the index", () => {
+    let project = createInitialProject();
+    for (const t of ["filter", "delay", "reverb"] as const) project = addFx(project, "track-1", t);
+    const [filter, delay, reverb] = project.tracks[0].fx;
+    project = moveFx(project, "track-1", reverb.id, 0);
+    expect(project.tracks[0].fx.map((f) => f.id)).toEqual([reverb.id, filter.id, delay.id]);
+    project = moveFx(project, "track-1", reverb.id, 99);
+    expect(project.tracks[0].fx.map((f) => f.id)).toEqual([filter.id, delay.id, reverb.id]);
   });
 
   it("keeps track FX independent of another track's FX", () => {

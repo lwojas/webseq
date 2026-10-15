@@ -1,9 +1,10 @@
-import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, Project, TrackId, VoiceMode } from "./types";
+import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, TrackId, VoiceMode } from "./types";
 import type { CopiedNote } from "./notes";
 import type { CopiedTrackConfig } from "./trackConfig";
 import type { Asset } from "./types";
 import * as project from "./project";
 import * as fx from "./fx";
+import * as instruments from "./instruments";
 import * as automation from "./automation";
 import * as trackConfig from "./trackConfig";
 
@@ -20,6 +21,12 @@ export type Action =
   | { type: "SET_TRACK_SOLOED"; trackId: TrackId; soloed: boolean }
   | { type: "SET_TRACK_PLAYBACK_MODE"; trackId: TrackId; playbackMode: PlaybackMode }
   | { type: "SET_TRACK_VOICE_MODE"; trackId: TrackId; voiceMode: VoiceMode }
+  | { type: "SET_TRACK_PAN"; trackId: TrackId; pan: number }
+  | { type: "SET_TRACK_INSTRUMENT"; trackId: TrackId; kind: InstrumentKindId | null }
+  | { type: "SET_INSTRUMENT_PARAM"; trackId: TrackId; paramId: string; value: number }
+  | { type: "SET_ASSET_ENVELOPE"; assetId: AssetId; envelope: Partial<SampleEnvelope> }
+  | { type: "SET_NOTE_PITCH"; patternId: PatternId; noteId: NoteId; pitch: number }
+  | { type: "SET_NOTE_VELOCITY"; patternId: PatternId; noteId: NoteId; velocity: number }
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
   | { type: "CLEAR_TRACK_NOTES"; patternId: PatternId; trackId: TrackId }
@@ -37,6 +44,7 @@ export type Action =
   | { type: "REMOVE_CHAIN_ENTRY"; entryId: ChainEntryId }
   | { type: "ADD_FX"; target: FxTarget; fxType: FxType }
   | { type: "REMOVE_FX"; target: FxTarget; fxId: FxId }
+  | { type: "MOVE_FX"; target: FxTarget; fxId: FxId; index: number }
   | { type: "SET_FX_PARAM"; target: FxTarget; fxId: FxId; paramId: string; value: number }
   | { type: "SET_FX_ENABLED"; target: FxTarget; fxId: FxId; enabled: boolean }
   | { type: "SET_AUTOMATION_POINT"; target: FxTarget; fxId: FxId; parameter: string; position: number; value: number }
@@ -70,6 +78,18 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setTrackPlaybackMode(state, action.trackId, action.playbackMode);
     case "SET_TRACK_VOICE_MODE":
       return project.setTrackVoiceMode(state, action.trackId, action.voiceMode);
+    case "SET_TRACK_PAN":
+      return project.setTrackPan(state, action.trackId, action.pan);
+    case "SET_TRACK_INSTRUMENT":
+      return instruments.setTrackInstrument(state, action.trackId, action.kind);
+    case "SET_INSTRUMENT_PARAM":
+      return instruments.setInstrumentParam(state, action.trackId, action.paramId, action.value);
+    case "SET_ASSET_ENVELOPE":
+      return project.setAssetEnvelope(state, action.assetId, action.envelope);
+    case "SET_NOTE_PITCH":
+      return project.setNotePitch(state, action.patternId, action.noteId, action.pitch);
+    case "SET_NOTE_VELOCITY":
+      return project.setNoteVelocity(state, action.patternId, action.noteId, action.velocity);
     case "ADD_NOTE":
       return project.addNote(state, action.patternId, action.trackId, action.start);
     case "REMOVE_NOTE":
@@ -108,6 +128,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return fx.addFx(state, action.target, action.fxType);
     case "REMOVE_FX":
       return fx.removeFx(state, action.target, action.fxId);
+    case "MOVE_FX":
+      return fx.moveFx(state, action.target, action.fxId, action.index);
     case "SET_FX_PARAM":
       return fx.setFxParam(state, action.target, action.fxId, action.paramId, action.value);
     case "SET_FX_ENABLED":

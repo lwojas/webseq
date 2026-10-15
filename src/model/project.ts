@@ -3,8 +3,8 @@
 // anything else without modification. Note-editing operations (notes.ts) are wrapped here so
 // callers never need to manually locate-and-replace a pattern in project.patterns.
 
-import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, Track, TrackId, VoiceMode } from "./types";
-import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE } from "./types";
+import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, SampleEnvelope, Track, TrackId, VoiceMode } from "./types";
+import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE } from "./types";
 import * as notes from "./notes";
 
 export const MIN_BPM = 40;
@@ -174,7 +174,29 @@ export function assignAsset(project: Project, trackId: TrackId, assetId: AssetId
   if (!asset) return project;
   return {
     ...project,
-    tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, assetId, name: asset.name } : t)),
+    tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, assetId, instrument: null, name: asset.name } : t)),
+  };
+}
+
+/** Sets a sample's amplitude ADSR (clamped: times 0..30 s, sustain 0..1). Stored on the Asset
+ * because webdsp keeps the envelope per sample — see Asset.envelope. */
+export function setAssetEnvelope(project: Project, assetId: AssetId, envelope: Partial<SampleEnvelope>): Project {
+  return {
+    ...project,
+    assets: project.assets.map((a) => {
+      if (a.id !== assetId) return a;
+      const merged = { ...DEFAULT_ENVELOPE, ...a.envelope, ...envelope };
+      const time = (v: number) => Math.min(30, Math.max(0, v));
+      return {
+        ...a,
+        envelope: {
+          attack: time(merged.attack),
+          decay: time(merged.decay),
+          sustain: Math.min(1, Math.max(0, merged.sustain)),
+          release: time(merged.release),
+        },
+      };
+    }),
   };
 }
 
@@ -205,6 +227,14 @@ export function setTrackVolume(project: Project, trackId: TrackId, volume: numbe
     ...project,
     tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, volume: clampTrackVolume(volume) } : t)),
   };
+}
+
+export function clampPan(pan: number): number {
+  return Math.min(1, Math.max(-1, pan));
+}
+
+export function setTrackPan(project: Project, trackId: TrackId, pan: number): Project {
+  return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, pan: clampPan(pan) } : t)) };
 }
 
 export function setTrackMuted(project: Project, trackId: TrackId, muted: boolean): Project {
@@ -308,6 +338,14 @@ export function pasteNotes(
     pasted: result.pasted,
     skipped: result.skipped,
   };
+}
+
+export function setNotePitch(project: Project, patternId: PatternId, noteId: NoteId, pitch: number): Project {
+  return updatePattern(project, patternId, (p) => notes.setPitch(p, noteId, pitch));
+}
+
+export function setNoteVelocity(project: Project, patternId: PatternId, noteId: NoteId, velocity: number): Project {
+  return updatePattern(project, patternId, (p) => notes.setVelocity(p, noteId, velocity));
 }
 
 export function resizeNote(

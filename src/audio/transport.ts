@@ -26,9 +26,10 @@
 import type { AudioRuntime, BusId, SampleMetadata, VoiceHandle } from "webdsp";
 import type { AutomationLane, ChainEntryId, FxInstance, FxTarget, PatternId, Project } from "../model/types";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
-import { compilePatternIterationTracked, secondsPerBeat } from "./compile";
+import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat } from "./compile";
 import { valueAtBeat } from "../model/automation";
-import { applyAutomatedParam } from "./applyFx";
+import { fxChainsFor } from "./fxChain";
+import { instrumentHostFor } from "./instruments";
 import type { Playback } from "./playback";
 
 const LOOKAHEAD_SECONDS = 0.15;
@@ -98,9 +99,6 @@ export class Transport {
   // scheduled-time parameter, so there's no way to make this sample-accurate from here. Not
   // worth a JS-timer workaround: that would undermine the lookahead scheduler's
   // sample-accuracy guarantee for a rare edge case.
-  // Last automated value actually pushed per (bus, fx, parameter), so polling only calls
-  // into webdsp when a value has actually changed rather than every tick.
-  private lastAutomationValues = new Map<string, number>();
   // Non-null from armResample() until the target pattern's next iteration has been captured
   // (or the resample is abandoned by pause()/stop()) — see armResample()'s doc comment.
   private resampleState: ResampleState | null = null;
@@ -137,7 +135,6 @@ export class Transport {
     this.startPosition = resume;
     this.audibleFrom = now + LEAD_IN_SECONDS;
     this.stepWindows = [];
-    this.lastAutomationValues.clear();
     this.playback.dropSequencerVoices();
     this.status = "playing";
 
@@ -198,6 +195,8 @@ export class Transport {
       this.timerId = null;
     }
     this.runtime.cancelScheduled();
+    instrumentHostFor(this.runtime).stopAll();
+    fxChainsFor(this.runtime).restoreBase();
     for (const voice of this.activeVoices) this.runtime.release(voice);
     this.activeVoices.clear();
     this.playback.dropSequencerVoices();
@@ -403,6 +402,12 @@ export class Transport {
           if (track && effectiveVoiceMode(track) === "mono") this.playback.registerMonoVoice(trackId, handle, "sequencer");
         });
       }
+      // Synth tracks: one instrumentNoteOn per note, each carrying its absolute start time so the
+      // engine fires it sample-accurately (runtime.cancelScheduled() drops any still pending).
+      const instrumentHost = instrumentHostFor(this.runtime);
+      for (const { trackId, params } of compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing)) {
+        instrumentHost.noteOn(trackId, params);
+      }
       const stepEndTime = stepStartTime + beats * spb;
       this.stepWindows.push({
         stepIndex: this.nextStepIndex,
@@ -440,15 +445,15 @@ export class Transport {
 
   private applyAutomationFor(owner: { fx: FxInstance[]; automation: AutomationLane[] }, busId: BusId | undefined, beat: number): void {
     if (busId === undefined) return;
+    const chains = fxChainsFor(this.runtime);
     for (const lane of owner.automation) {
       const instance = owner.fx.find((f) => f.id === lane.fxId);
       if (!instance || !instance.enabled) continue;
       const value = valueAtBeat(lane, beat);
       if (value === null) continue;
-      const key = `${busId}:${lane.fxId}:${lane.parameter}`;
-      if (this.lastAutomationValues.get(key) === value) continue;
-      this.lastAutomationValues.set(key, value);
-      applyAutomatedParam(this.runtime, busId, instance.type, lane.parameter, value);
+      // FxChainSync dedupes against the value already in the engine, so an unchanged lane
+      // costs nothing per tick.
+      chains.setParam(busId, lane.fxId, lane.parameter, value);
     }
   }
 }

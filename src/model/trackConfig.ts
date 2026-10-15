@@ -3,8 +3,9 @@
 // same copy-now/paste-later split notes.ts's CopiedNote/pasteNotes already uses. No React, no
 // webdsp — usable from the reducer, App.tsx's handlers, or a test without modification.
 
-import type { Asset, AssetId, AutomationLane, FxId, FxInstance, PlaybackMode, Project, Track, TrackId, VoiceMode } from "./types";
-import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, effectivePlaybackMode, effectiveVoiceMode } from "./types";
+import type { Asset, AssetId, AutomationLane, FxId, FxInstance, PlaybackMode, Project, Track, TrackId, TrackInstrument, VoiceMode } from "./types";
+import { INSTRUMENT_DEFS } from "./instruments";
+import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, effectivePan, effectivePlaybackMode, effectiveVoiceMode } from "./types";
 
 /** The reusable-configuration boundary (ECS-124's field-by-field decision): asset reference,
  * FX chain, automation, and playback/voice mode. Never id/name (destination identity) or
@@ -16,6 +17,9 @@ export interface CopiedTrackConfig {
   automation: AutomationLane[];
   playbackMode?: PlaybackMode;
   voiceMode?: VoiceMode;
+  /** The synth source, if the track plays one (mutually exclusive with `assetId`). */
+  instrument?: TrackInstrument | null;
+  pan?: number;
 }
 
 let idCounter = 0;
@@ -37,6 +41,8 @@ function nextId(prefix: string): string {
 export function hasTrackConfig(track: Track): boolean {
   return (
     track.assetId != null ||
+    track.instrument != null ||
+    effectivePan(track) !== 0 ||
     track.fx.length > 0 ||
     track.automation.length > 0 ||
     effectivePlaybackMode(track) !== DEFAULT_PLAYBACK_MODE ||
@@ -55,6 +61,8 @@ export function copyTrackConfig(track: Track): CopiedTrackConfig {
     automation: track.automation.map((a) => ({ ...a, events: a.events.map((e) => ({ ...e })) })),
     playbackMode: track.playbackMode,
     voiceMode: track.voiceMode,
+    instrument: track.instrument ? { ...track.instrument, params: { ...track.instrument.params } } : null,
+    pan: track.pan,
   };
 }
 
@@ -78,6 +86,9 @@ export function copyTrackConfig(track: Track): CopiedTrackConfig {
 export function pasteTrackConfig(project: Project, trackId: TrackId, config: CopiedTrackConfig): Project {
   const asset: Asset | undefined = config.assetId != null ? project.assets.find((a) => a.id === config.assetId) : undefined;
   const assetId: AssetId | null = asset ? asset.id : null;
+  const instrument: TrackInstrument | null = config.instrument
+    ? { ...config.instrument, params: { ...config.instrument.params } }
+    : null;
 
   const idMap = new Map<FxId, FxId>();
   const fx: FxInstance[] = config.fx.map((f) => {
@@ -96,7 +107,9 @@ export function pasteTrackConfig(project: Project, trackId: TrackId, config: Cop
         ? {
             ...t,
             assetId,
-            name: asset ? asset.name : t.name,
+            instrument,
+            pan: config.pan,
+            name: asset ? asset.name : instrument ? (INSTRUMENT_DEFS[instrument.kind]?.label ?? t.name) : t.name,
             fx,
             automation,
             playbackMode: config.playbackMode,

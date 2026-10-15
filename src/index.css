@@ -1314,6 +1314,44 @@ select {
   color: var(--accent);
 }
 
+/* Move-earlier/later arrows, shown on the selected chip only. */
+.fx-chip-move {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 5px 8px;
+}
+
+.fx-chip-move:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.fx-chip-move:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.fx-chip-move:last-of-type {
+  border-right: none;
+}
+
+.fx-add-select {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fx-add-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .fx-chip-remove {
   background: transparent;
   border: none;
@@ -1385,6 +1423,11 @@ select {
 
 .module-param .param-label:hover {
   color: var(--text);
+}
+
+/* A label with no automation (Instrument panel sliders) — same look, not a button. */
+.module-param .param-label.static {
+  cursor: default;
 }
 
 .module-param .param-label.automated {
@@ -1577,6 +1620,20 @@ select {
   accent-color: var(--accent);
 }
 
+.mixer-pan {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.mixer-pan input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
 .mixer-strip-buttons {
   flex-shrink: 0;
   display: flex;
@@ -1593,6 +1650,13 @@ select {
   background: #6b5323;
   border-color: var(--amber);
   color: #ffe9c4;
+}
+
+/* Instrument tab (reuses .fx-panel / .module-* above). */
+.instrument-hint {
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-size: 10px;
 }
 
 /* --- empty state --- */
@@ -1716,12 +1780,14 @@ select {
   }
 
   .app[data-mobile-tab="fx"] .main,
+  .app[data-mobile-tab="instrument"] .main,
   .app[data-mobile-tab="mixer"] .main {
     display: flex;
     flex: 1;
   }
 
   .app[data-mobile-tab="fx"] .bottom-panel,
+  .app[data-mobile-tab="instrument"] .bottom-panel,
   .app[data-mobile-tab="mixer"] .bottom-panel {
     display: flex;
     flex: 1;
@@ -1817,8 +1883,13 @@ select {
     padding: 9px 12px;
   }
 
-  .fx-chip-remove {
+  .fx-chip-remove,
+  .fx-chip-move {
     padding: 9px 10px;
+  }
+
+  .fx-add-select {
+    padding: 8px 10px;
   }
 
   .track-mode-toggle button,
@@ -1842,6 +1913,10 @@ select {
   .mixer-mute,
   .mixer-solo {
     padding: 9px 12px;
+  }
+
+  .mixer-pan input[type="range"] {
+    padding: 8px 0;
   }
 
   .asset-chip-actions .btn {

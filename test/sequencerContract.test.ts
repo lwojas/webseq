@@ -735,9 +735,9 @@ describe("sequencer contract: fx (ECS-149)", () => {
 
   it("no fx.<n>.param control resolves past that FX type's own parameter count", () => {
     const { registry, dispatch } = fxHarness();
-    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" }); // 3 params: indices 0-2
-    expect(registry.getControl("fx.0.param.2")).toBeDefined();
-    expect(registry.getControl("fx.0.param.3")).toBeUndefined();
+    dispatch({ type: "ADD_FX", target: "master", fxType: "filter" }); // 4 params: indices 0-3
+    expect(registry.getControl("fx.0.param.3")).toBeDefined();
+    expect(registry.getControl("fx.0.param.4")).toBeUndefined();
   });
 
   it("no fx control resolves past fx.count, or without a target", () => {

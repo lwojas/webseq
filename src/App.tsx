@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, NoteId, PatternId, PlaybackMode, TrackId, VoiceMode } from "./model/types";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackId, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -12,7 +12,7 @@ import { usePlayingPosition } from "./hooks/usePlayingPosition";
 import { Transport, type PlaybackStatus } from "./audio/transport";
 import { Playback, type ManualPlaybackSnapshot } from "./audio/playback";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
-import { syncBuses, type ConfiguredBuses } from "./audio/busSync";
+import { syncBuses } from "./audio/busSync";
 import { encodeWav } from "./audio/wav";
 import { saveProject, loadProject, listProjects, deleteProject } from "./persistence/projectStore";
 import { remapAssetIds } from "./model/project";
@@ -25,6 +25,7 @@ import { MidiPanel } from "./components/MidiPanel";
 import { SequencerGrid } from "./components/SequencerGrid";
 import { FxPanel } from "./components/FxPanel";
 import { MixerPanel } from "./components/MixerPanel";
+import { InstrumentPanel } from "./components/InstrumentPanel";
 import { useMidiControls } from "./midi/useMidiControls";
 
 /** The side panel (left of the timeline — see screenshots/concept.png) is tabbed so further
@@ -36,12 +37,15 @@ const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [
   { id: "midi", label: "MIDI" },
 ];
 
-/** The panel below the timeline (see screenshots/concept.png) switches between the FX rack
- * (contextual to whatever's selected in the timeline) and the Mixer (all tracks at once) —
- * same tabbed pattern as the side panel above. */
-type BottomPanelView = "fx" | "mixer";
+/** The panel below the timeline (see screenshots/concept.png) switches between the FX rack and
+ * the Instrument editor (both contextual to whatever's selected in the timeline) and the Mixer
+ * (all tracks at once) — same tabbed pattern as the side panel above. Instrument lives here,
+ * not on the track row, because a track plays exactly one sound source: editing it in place
+ * keeps the track context the sequencer is built around. */
+type BottomPanelView = "fx" | "instrument" | "mixer";
 const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
   { id: "fx", label: "FX" },
+  { id: "instrument", label: "Instrument" },
   { id: "mixer", label: "Mixer" },
 ];
 
@@ -51,10 +55,11 @@ const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
  * its own bottom tab bar covering all of them instead of the desktop's two separate tab
  * strips. This is pure navigation state — desktop's existing `sidePanelView`/`bottomPanelView`
  * still own which content actually renders inside each section (see handleSelectMobileTab). */
-type MobileTab = "timeline" | "fx" | "mixer" | "assets" | "patterns";
+type MobileTab = "timeline" | "fx" | "instrument" | "mixer" | "assets" | "patterns";
 const MOBILE_TABS: { id: MobileTab; label: string }[] = [
   { id: "timeline", label: "Timeline" },
   { id: "fx", label: "FX" },
+  { id: "instrument", label: "Inst" },
   { id: "mixer", label: "Mixer" },
   { id: "assets", label: "Assets" },
   { id: "patterns", label: "Patterns" },
@@ -102,7 +107,6 @@ export function App() {
   projectRef.current = project;
 
   const trackBusesRef = useRef<TrackBusMap>({});
-  const configuredBusesRef = useRef<ConfiguredBuses>(new Set());
   const assetDataRef = useRef<Map<AssetId, ArrayBuffer>>(new Map());
   const transportRef = useRef<Transport | null>(null);
   const playbackRef = useRef<Playback | null>(null);
@@ -192,7 +196,7 @@ export function App() {
   // path for volume/mute/solo as for FX params — no separate mixer update mechanism.
   useEffect(() => {
     if (!runtime) return;
-    syncBuses(runtime, project, trackBusesRef.current, configuredBusesRef.current);
+    syncBuses(runtime, project, trackBusesRef.current);
   }, [runtime, project]);
 
   // Keep the pattern selection valid: jump to a newly-added pattern, or off a removed one.
@@ -220,7 +224,7 @@ export function App() {
     const rt = await init();
     if (!rt) return null;
     trackBusesRef.current = ensureTrackBuses(rt, projectRef.current.tracks.map((t) => t.id), trackBusesRef.current);
-    syncBuses(rt, projectRef.current, trackBusesRef.current, configuredBusesRef.current);
+    syncBuses(rt, projectRef.current, trackBusesRef.current);
     const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt));
     transportRef.current = t;
     return t;
@@ -345,6 +349,7 @@ export function App() {
         start: n.start,
         duration: n.duration,
         velocity: n.velocity,
+        pitch: n.pitch,
       }));
       if (copied.length === 0) return;
       setNoteClipboard({ sourceTrackId: trackId, notes: copied });
@@ -631,6 +636,10 @@ export function App() {
     (fxId: FxId, paramId: string, value: number) => dispatch({ type: "SET_FX_PARAM", target: selectedTarget, fxId, paramId, value }),
     [selectedTarget],
   );
+  const handleMoveFx = useCallback(
+    (fxId: FxId, index: number) => dispatch({ type: "MOVE_FX", target: selectedTarget, fxId, index }),
+    [selectedTarget],
+  );
   const handleSetFxEnabled = useCallback(
     (fxId: FxId, enabled: boolean) => dispatch({ type: "SET_FX_ENABLED", target: selectedTarget, fxId, enabled }),
     [selectedTarget],
@@ -664,6 +673,33 @@ export function App() {
     [],
   );
 
+  const handleSetTrackPan = useCallback(
+    (trackId: TrackId, pan: number) => dispatch({ type: "SET_TRACK_PAN", trackId, pan }),
+    [],
+  );
+
+  // --- instrument (synth source, sample envelope, selected-note pitch/velocity) ---
+  const handleSetInstrument = useCallback(
+    (trackId: TrackId, kind: InstrumentKindId | null) => dispatch({ type: "SET_TRACK_INSTRUMENT", trackId, kind }),
+    [],
+  );
+  const handleSetInstrumentParam = useCallback(
+    (trackId: TrackId, paramId: string, value: number) => dispatch({ type: "SET_INSTRUMENT_PARAM", trackId, paramId, value }),
+    [],
+  );
+  const handleSetEnvelope = useCallback(
+    (assetId: AssetId, envelope: Partial<SampleEnvelope>) => dispatch({ type: "SET_ASSET_ENVELOPE", assetId, envelope }),
+    [],
+  );
+  const handleSetNotePitch = useCallback(
+    (noteId: NoteId, pitch: number) => dispatch({ type: "SET_NOTE_PITCH", patternId: selectedPatternId, noteId, pitch }),
+    [selectedPatternId],
+  );
+  const handleSetNoteVelocity = useCallback(
+    (noteId: NoteId, velocity: number) => dispatch({ type: "SET_NOTE_VELOCITY", patternId: selectedPatternId, noteId, velocity }),
+    [selectedPatternId],
+  );
+
   // --- playback mode / voice mode (ECS-82/ECS-87/ECS-88) ---
   const handleSetTrackPlaybackMode = useCallback(
     (trackId: TrackId, playbackMode: PlaybackMode) => dispatch({ type: "SET_TRACK_PLAYBACK_MODE", trackId, playbackMode }),
@@ -680,7 +716,7 @@ export function App() {
   // driving it.
   const handleSelectMobileTab = useCallback((tab: MobileTab) => {
     setMobileTab(tab);
-    if (tab === "fx" || tab === "mixer") setBottomPanelView(tab);
+    if (tab === "fx" || tab === "instrument" || tab === "mixer") setBottomPanelView(tab);
   }, []);
 
   // --- persistence ---
@@ -780,6 +816,12 @@ export function App() {
   // ECS-124: same rationale as selectedTrackHasNotes above, for the "Copy config" control.
   const selectedTrack = selectedTarget !== "master" ? trackById(project, selectedTarget) : undefined;
   const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
+  const selectedTrackAsset =
+    selectedTrack?.assetId != null ? (project.assets.find((a) => a.id === selectedTrack.assetId) ?? null) : null;
+  const selectedTrackAssetUseCount =
+    selectedTrackAsset == null ? 0 : project.tracks.filter((t) => t.assetId === selectedTrackAsset.id).length;
+  const selectedNote =
+    selectedNoteId && selectedTrack ? (selectedPattern.notes[selectedNoteId] ?? null) : null;
   const playheadInfo = transportRef.current?.getPlayheadInfo();
   // Polled, unlike playheadInfo above -- the queue now advances on its own (see
   // Project.patternChain's doc comment), so PatternBar/PatternList/PatternQueue's highlighting
@@ -976,6 +1018,7 @@ export function App() {
                 }}
                 onAddFx={handleAddFx}
                 onRemoveFx={handleRemoveFx}
+                onMoveFx={handleMoveFx}
                 onSetFxParam={handleSetFxParam}
                 onSetFxEnabled={handleSetFxEnabled}
                 onSelectAutomationParam={setSelectedAutomationParamId}
@@ -996,6 +1039,19 @@ export function App() {
                 onPasteTrackConfig={handlePasteTrackConfig}
               />
             )}
+            {bottomPanelView === "instrument" && (
+              <InstrumentPanel
+                track={selectedTrack ?? null}
+                asset={selectedTrackAsset}
+                assetUseCount={selectedTrackAssetUseCount}
+                note={selectedNote && selectedNote.trackId === selectedTrack?.id ? selectedNote : null}
+                onSetInstrument={handleSetInstrument}
+                onSetInstrumentParam={handleSetInstrumentParam}
+                onSetEnvelope={handleSetEnvelope}
+                onSetNotePitch={handleSetNotePitch}
+                onSetNoteVelocity={handleSetNoteVelocity}
+              />
+            )}
             {bottomPanelView === "mixer" && (
               <MixerPanel
                 tracks={tracksInBank(project, activeBank)}
@@ -1003,6 +1059,7 @@ export function App() {
                 onSetVolume={handleSetTrackVolume}
                 onSetMuted={handleSetTrackMuted}
                 onSetSoloed={handleSetTrackSoloed}
+                onSetPan={handleSetTrackPan}
               />
             )}
           </div>

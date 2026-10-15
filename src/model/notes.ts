@@ -118,7 +118,7 @@ export function clearTrackNotes(pattern: Pattern, trackId: TrackId): Pattern {
  * (beats from this pattern's start), not relative to some anchor — there is no "paste cursor"
  * concept in this app (no selected empty cell, only a selected track), so pasting reproduces
  * the exact beat positions that were copied, just under the destination trackId. */
-export type CopiedNote = Pick<Note, "start" | "duration" | "velocity">;
+export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch">;
 
 /** Pastes `copied` onto `trackId` in this Pattern, preserving each note's original start/
  * duration/velocity exactly (no re-quantization — unlike addNote, these values already came
@@ -143,6 +143,7 @@ export function pasteNotes(
     }
     const id = nextId("note");
     const note: Note = { id, trackId, start: c.start, duration: c.duration, velocity: c.velocity };
+    if (c.pitch) note.pitch = c.pitch;
     next = { ...next, notes: { ...next.notes, [id]: note } };
     pasted += 1;
   }
@@ -204,6 +205,20 @@ export function setVelocity(pattern: Pattern, noteId: NoteId, velocity: number):
   if (!note) return pattern;
   const clamped = Math.min(1, Math.max(0, velocity));
   return { ...pattern, notes: { ...pattern.notes, [noteId]: { ...note, velocity: clamped } } };
+}
+
+export const MIN_NOTE_PITCH = -24;
+export const MAX_NOTE_PITCH = 24;
+
+/** Sets a note's pitch in whole semitones (clamped to +-2 octaves). 0 is stored as "absent" so
+ * unpitched notes stay byte-identical to notes saved before pitch existed. */
+export function setPitch(pattern: Pattern, noteId: NoteId, pitch: number): Pattern {
+  const note = pattern.notes[noteId];
+  if (!note) return pattern;
+  const clamped = Math.min(MAX_NOTE_PITCH, Math.max(MIN_NOTE_PITCH, Math.round(pitch)));
+  const { pitch: _old, ...rest } = note;
+  const next: Note = clamped === 0 ? rest : { ...rest, pitch: clamped };
+  return { ...pattern, notes: { ...pattern.notes, [noteId]: next } };
 }
 
 /** Changes the loop length in bars. Notes that would fall outside the new, shorter pattern

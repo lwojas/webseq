@@ -6,18 +6,14 @@
 // FxInstance generically from FX_DEFS, the same way the old AudioModule abstraction rendered a
 // single hand-written module.
 //
-// One real engine constraint shapes this: webdsp's Bus has exactly one filter slot, one
-// chorus/flanger slot, one delay slot, one reverb slot, one compressor slot, and (as of webdsp
-// commit 8e04e46) one saturation slot — a fixed six-node DSPChain (see webdsp's
-// ARCHITECTURE.md, "How DSP is composed"), not an arbitrary stack of any of them. So a chain
-// may contain at most one FX of each type; addFx() is a no-op if that type is already present
-// rather than adding a duplicate that could never be distinctly processed.
+// Chains are real, ordered stacks: webdsp (since its generic FX chain, docs/fx-chain.md) lets a
+// bus hold up to MAX_EFFECTS_PER_BUS independent instances of any kind, in any order, so the
+// same type may appear more than once and array order is the signal-flow order. src/audio/
+// fxChain.ts mirrors this array onto the engine's chain by instance id.
 //
-// Chorus and flanger are one engine node ("chorusFlanger" here), not two — a longer center
+// Chorus and flanger are one engine kind ("chorusFlanger" here), not two — a longer center
 // delay with little feedback reads as chorus, a short delay with feedback dialed up reads as
-// flanger. There's deliberately no separate "flanger" FxType: both are the same NodeParam ids
-// at different settings (see webdsp's docs/chorus-flanger-node.md), and this module only has
-// one chorus/flanger slot to give them.
+// flanger (see webdsp's docs/chorus-flanger-node.md).
 
 import type { FxId, FxInstance, FxTarget, FxType, Project, Track } from "./types";
 import { fxOwner } from "./types";
@@ -41,7 +37,7 @@ export interface FxDef {
   params: FxParamDef[];
 }
 
-// Values mirror webdsp's FilterMode (0 = LowPass, 1 = HighPass) — see audio/applyFx.ts.
+// Values mirror webdsp's FilterMode (0 = LowPass, 1 = HighPass) — see audio/fxChain.ts.
 export const FX_DEFS: Record<FxType, FxDef> = {
   filter: {
     type: "filter",
@@ -61,6 +57,18 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       },
       { id: "cutoff", label: "Cutoff", min: 40, max: 18000, step: 1, unit: "Hz", default: 18000 },
       { id: "resonance", label: "Resonance", min: 0.1, max: 20, step: 0.01, unit: "Q", default: 0.707 },
+      {
+        id: "slope",
+        label: "Slope",
+        min: 12,
+        max: 24,
+        step: 12,
+        default: 12,
+        options: [
+          { label: "12 dB", value: 12 },
+          { label: "24 dB", value: 24 },
+        ],
+      },
     ],
   },
   chorusFlanger: {
@@ -115,7 +123,31 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
+  phaser: {
+    type: "phaser",
+    label: "Phaser",
+    params: [
+      { id: "rate", label: "Rate", min: 0.01, max: 10, step: 0.01, unit: "Hz", default: 0.5 },
+      { id: "depth", label: "Depth", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "center", label: "Center", min: 100, max: 5000, step: 1, unit: "Hz", default: 1000 },
+      { id: "feedback", label: "Feedback", min: -0.95, max: 0.95, step: 0.01, default: 0 },
+      { id: "stages", label: "Stages", min: 2, max: 12, step: 2, default: 4 },
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
+    ],
+  },
+  bitcrusher: {
+    type: "bitcrusher",
+    label: "Bitcrusher",
+    params: [
+      { id: "bits", label: "Bits", min: 1, max: 16, step: 1, default: 16 },
+      { id: "downsample", label: "Downsample", min: 1, max: 64, step: 1, unit: "x", default: 1 },
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
+    ],
+  },
 };
+
+/** webdsp's MAX_EFFECTS_PER_BUS — a chain can't hold more than this many instances. */
+export const MAX_FX_PER_CHAIN = 16;
 
 let idCounter = 0;
 function nextId(prefix: string): string {
@@ -147,11 +179,11 @@ function updateOwner(
   };
 }
 
-/** Appends a new FX of `type` with default params, unless the chain already has one of that
- * type (see module doc comment on the one-filter/one-delay engine constraint). */
+/** Appends a new FX of `type` with default params. Any number of the same type may be stacked,
+ * up to MAX_FX_PER_CHAIN; past that this is a no-op. */
 export function addFx(project: Project, target: FxTarget, type: FxType): Project {
   return updateOwner(project, target, (owner) => {
-    if (owner.fx.some((f) => f.type === type)) return owner;
+    if (owner.fx.length >= MAX_FX_PER_CHAIN) return owner;
     const instance: FxInstance = { id: nextId("fx"), type, enabled: true, params: defaultParams(type) };
     return { ...owner, fx: [...owner.fx, instance] };
   });
@@ -178,4 +210,20 @@ export function setFxEnabled(project: Project, target: FxTarget, fxId: FxId, ena
     ...owner,
     fx: owner.fx.map((f) => (f.id === fxId ? { ...f, enabled } : f)),
   }));
+}
+
+/** Moves an FX to `index` in its chain (clamped). Order is signal flow, so this changes the
+ * sound for nonlinear/dynamics effects — e.g. Saturation -> Filter differs from Filter ->
+ * Saturation. */
+export function moveFx(project: Project, target: FxTarget, fxId: FxId, index: number): Project {
+  return updateOwner(project, target, (owner) => {
+    const from = owner.fx.findIndex((f) => f.id === fxId);
+    if (from === -1) return owner;
+    const to = Math.min(owner.fx.length - 1, Math.max(0, index));
+    if (to === from) return owner;
+    const next = owner.fx.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return { ...owner, fx: next };
+  });
 }
