@@ -6,12 +6,14 @@ import { InstrumentKind, type AudioRuntime } from "webdsp";
 export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   kick: ["tune", "pitchDrop", "pitchDecay", "decay", "punch", "drive"],
   snare: ["tune", "decay", "snap", "noise"],
+  pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release"],
 };
 const KIND_IDS: [string, InstrumentKind][] = [
   ["kick", InstrumentKind.Kick],
   ["snare", InstrumentKind.Snare],
   ["bass", InstrumentKind.Bass],
+  ["pulse", InstrumentKind.Pulse],
 ];
 
 export function mockRuntime() {
@@ -33,6 +35,7 @@ export function mockRuntime() {
   };
   const runtime = {
     setNodeParameter: vi.fn(),
+    setTempo: vi.fn(),
     cancelScheduled: vi.fn(),
     addEffect: vi.fn((bus: number, kind: number, opts: { index?: number; enabled?: boolean } = {}) => {
       const id = nextEffect++;

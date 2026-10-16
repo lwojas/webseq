@@ -20,6 +20,9 @@ export interface InstrumentParamDef {
   step: number;
   unit?: string;
   default: number;
+  /** A stepped control (webdsp's Pulse Rate): rendered as a toggle of these labelled values
+   * instead of a slider, like FX enum params. */
+  options?: { value: number; label: string }[];
 }
 
 export interface InstrumentDef {
@@ -27,7 +30,7 @@ export interface InstrumentDef {
   label: string;
   /** "drum" one-shots end themselves; "bass" is sustained and needs a note duration (webdsp's
    * bass-client-guide.md: always pass `duration` for sequenced bass notes). */
-  category: "drum" | "bass";
+  category: "drum" | "bass" | "synth";
   sustained: boolean;
   params: InstrumentParamDef[];
 }
@@ -111,6 +114,31 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "decay", label: "Decay", min: 0.03, max: 2, step: 0.01, unit: "s", default: 0.35 },
       { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0.6 },
       { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.1 },
+    ],
+  },
+  pulse: {
+    kind: "pulse",
+    label: "Pulse",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 440, step: 0.5, unit: "Hz", default: 110 },
+      { id: "cutoff", label: "Cutoff", min: 60, max: 6000, step: 1, unit: "Hz", default: 500 },
+      { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.25 },
+      { id: "pump", label: "Pump", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "repeat", label: "Repeat", min: 0, max: 1, step: 0.01, default: 0.4 },
+      {
+        id: "rate",
+        label: "Rate",
+        min: 0,
+        max: 5,
+        step: 1,
+        default: 2,
+        options: ["1/1", "1/2", "1/4", "1/8", "1/16", "1/32"].map((label, value) => ({ value, label })),
+      },
+      { id: "diffuse", label: "Diffuse", min: 0, max: 1, step: 0.01, default: 0.3 },
+      { id: "attack", label: "Attack", min: 0.001, max: 0.25, step: 0.001, unit: "s", default: 0.003 },
+      { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.08 },
     ],
   },
 };

@@ -132,6 +132,10 @@ export class Transport {
     this.anchorTempo = project.bpm;
     this.nextStepIndex = resume.stepIndex;
     this.nextStepStartTime = now + LEAD_IN_SECONDS - resume.beat * spb;
+    // Tempo-aware synths (Pulse) lock their pump/repeat to the engine's beat grid, not to note
+    // starts. Anchor it to the pattern start before anything is scheduled (message order is
+    // preserved); retime() and resume both come through here, so they re-anchor too.
+    this.runtime.setTempo(project.bpm, { anchorTime: this.nextStepStartTime });
     this.startPosition = resume;
     this.audibleFrom = now + LEAD_IN_SECONDS;
     this.stepWindows = [];

@@ -83,14 +83,14 @@ export interface Track {
 }
 
 /** A track's synth source: which engine instrument kind (by webdsp's stable string id —
- * "kick", "snare", "clap", "tom", "hihat", "bass" — never its display name) and its current
+ * "kick", "snare", "clap", "tom", "hihat", "bass", "pulse" — never its display name) and its current
  * control values, keyed by the parameter ids in model/instruments.ts's INSTRUMENT_DEFS. */
 export interface TrackInstrument {
   kind: InstrumentKindId;
   params: Record<string, number>;
 }
 
-export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "bass";
+export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "bass" | "pulse";
 
 /** One-shot: plays through once, bounded by its triggering note's length (today's only
  * behavior). Loop: the same, but the asset tiles/repeats to fill that note's full length

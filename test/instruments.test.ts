@@ -117,7 +117,7 @@ describe("InstrumentHost", () => {
 });
 
 describe("compileInstrumentNotes", () => {
-  function projectWithNotes(kind: "kick" | "bass") {
+  function projectWithNotes(kind: "kick" | "bass" | "pulse") {
     let project = setTrackInstrument(createInitialProject(), "track-1", kind);
     const patternId = project.patterns[0].id;
     project = addNote(project, patternId, "track-1", 4);
@@ -137,6 +137,15 @@ describe("compileInstrumentNotes", () => {
     const kick = projectWithNotes("kick");
     const [k] = compileInstrumentNotes(kick.patterns[0], kick.tracks, 120, 10);
     expect(k.params.duration).toBeUndefined();
+  });
+
+  it("treats pulse as sustained, with the stepped rate defaulting to 1/4", () => {
+    const spb = 60 / (120 * 4);
+    const pulse = projectWithNotes("pulse");
+    const [p] = compileInstrumentNotes(pulse.patterns[0], pulse.tracks, 120, 10);
+    expect(p.params.duration).toBeCloseTo(1 * spb);
+    expect(pulse.tracks[0].instrument?.params.rate).toBe(2);
+    expect(pulse.tracks[0].instrument?.params.tune).toBe(110);
   });
 
   it("yields nothing for sample-only projects", () => {

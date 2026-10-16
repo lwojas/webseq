@@ -126,7 +126,23 @@ export function InstrumentPanel({
               <span className="name">{def.label}</span>
             </div>
             <div className="module-params">
-              {def.params.map((p) => (
+              {def.params.map((p) =>
+                p.options ? (
+                  <div key={p.id} className="module-param">
+                    <span className="param-label static">{p.label}</span>
+                    <div className="enum-toggle">
+                      {p.options.map((opt) => (
+                        <button
+                          key={opt.value}
+                          className={opt.value === (synth.params[p.id] ?? p.default) ? "active" : ""}
+                          onClick={() => onSetInstrumentParam(track.id, p.id, opt.value)}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
                 <Slider
                   key={p.id}
                   label={p.label}
@@ -137,7 +153,8 @@ export function InstrumentPanel({
                   value={synth.params[p.id] ?? p.default}
                   onChange={(v) => onSetInstrumentParam(track.id, p.id, v)}
                 />
-              ))}
+                ),
+              )}
             </div>
             {def.sustained && <div className="instrument-hint">Sustained: each note's length is its held time.</div>}
           </div>

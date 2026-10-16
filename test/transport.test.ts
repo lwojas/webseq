@@ -37,6 +37,7 @@ function fakeRuntime(maxCaptureSeconds = 30) {
       return events.map(() => nextHandle++);
     }),
     cancelScheduled: vi.fn(),
+    setTempo: vi.fn(),
     release: vi.fn((h: VoiceHandle) => released.push(h)),
     getCapabilities: vi.fn((): RuntimeCapabilities => ({
       sampleRate: 48000,
@@ -638,5 +639,20 @@ describe("Transport voice mode", () => {
 
     transport.stop();
     vi.useRealTimers();
+  });
+});
+
+describe("Transport beat grid", () => {
+  it("anchors the engine's tempo to the pattern start on play, before scheduling", () => {
+    const { runtime, scheduled } = fakeRuntime();
+    const project = createInitialProject();
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+    transport.play();
+    const setTempo = runtime.setTempo as unknown as ReturnType<typeof vi.fn>;
+    expect(setTempo).toHaveBeenCalledTimes(1);
+    expect(setTempo.mock.calls[0][0]).toBe(project.bpm);
+    expect(typeof setTempo.mock.calls[0][1].anchorTime).toBe("number");
+    expect(scheduled).toBeDefined();
+    transport.stop();
   });
 });

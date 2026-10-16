@@ -26,6 +26,7 @@ function fakeRuntime() {
     getCurrentTime: () => 0,
     schedule: vi.fn((events: { time: number }[]) => events.map(() => nextHandle++)),
     cancelScheduled: vi.fn(),
+    setTempo: vi.fn(),
     getCapabilities: vi.fn(() => ({ sampleRate: 48000, outputChannels: 2, maxVoices: 64, renderQuantumFrames: 128, maxCaptureSeconds: 30 })),
   };
   return {
