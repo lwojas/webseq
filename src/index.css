@@ -1607,15 +1607,17 @@ select {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  container-type: size;
 }
 
 /* A vertical fader built from a horizontal <input type=range> rotated -90deg — native vertical
    range styling (orient=vertical / writing-mode) is inconsistent across browsers, this rotation
    trick isn't. Rotating -90deg puts the input's max (its right end) at the top and min (left
    end) at the bottom, matching a normal fader with no min/max/direction juggling needed. The
-   fixed 130px "width" becomes the fader's visible vertical length once rotated. */
+   width becomes the fader's visible vertical length once rotated, so it tracks the wrap's height
+   (100cqh) — a fixed length got cropped whenever other strip rows (e.g. pan) squeezed the wrap. */
 .mixer-fader {
-  width: 130px;
+  width: min(130px, calc(100cqh - 4px));
   transform: rotate(-90deg);
   accent-color: var(--accent);
 }
@@ -1630,8 +1632,43 @@ select {
 }
 
 .mixer-pan input[type="range"] {
-  width: 100%;
-  accent-color: var(--accent);
+  width: 80%;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Pan is bipolar-around-centre, so no left-of-thumb fill: a plain track plus thumb only. */
+.mixer-pan input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.mixer-pan input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.mixer-pan input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+
+.mixer-pan input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
 }
 
 .mixer-strip-buttons {
