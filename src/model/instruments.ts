@@ -114,6 +114,18 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "decay", label: "Decay", min: 0.03, max: 2, step: 0.01, unit: "s", default: 0.35 },
       { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0.6 },
       { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.1 },
+      // Legato: a note landing while the previous is still held (duration reaching the next note)
+      // continues the voice with no re-attack and glides over Slide; a gap re-attacks.
+      {
+        id: "legato",
+        label: "Legato",
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 0,
+        options: ["Off", "On"].map((label, value) => ({ value, label })),
+      },
+      { id: "slide", label: "Slide", min: 0, max: 0.5, step: 0.01, unit: "s", default: 0 },
     ],
   },
   pulse: {
