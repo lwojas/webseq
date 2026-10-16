@@ -162,6 +162,18 @@ export function instrumentDefFor(track: Pick<Track, "instrument">): InstrumentDe
   return kind ? (INSTRUMENT_DEFS[kind] ?? null) : null;
 }
 
+/** MIDI note number (fractional) of a synth track's root, from its `tune` control when that is
+ * in Hz — webdsp's note `pitch` is semitones on top of it, so root + pitch is the sounding
+ * note. Null for samples (original pitch unknown) and synths whose tune is not a frequency. */
+export function rootMidiNote(track: Pick<Track, "instrument">): number | null {
+  const inst = track.instrument;
+  const def = inst ? INSTRUMENT_DEFS[inst.kind] : undefined;
+  const tune = def?.params.find((p) => p.id === "tune");
+  if (!inst || !tune || tune.unit !== "Hz") return null;
+  const hz = inst.params.tune ?? tune.default;
+  return hz > 0 ? 69 + 12 * Math.log2(hz / 440) : null;
+}
+
 function updateTrack(project: Project, trackId: TrackId, update: (t: Track) => Track): Project {
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? update(t) : t)) };
 }

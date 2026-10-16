@@ -5,7 +5,7 @@ import { instrumentHostFor } from "../src/audio/instruments";
 import { compileInstrumentNotes, compileNote } from "../src/audio/compile";
 import { Playback } from "../src/audio/playback";
 import { createInitialProject, assignAsset, addAsset, addNote, setNotePitch } from "../src/model/project";
-import { setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
+import { rootMidiNote, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
 import { pasteTrackConfig, copyTrackConfig } from "../src/model/trackConfig";
 import { mockRuntime } from "./mockRuntime";
 
@@ -61,7 +61,7 @@ describe("note pitch", () => {
     project = setNotePitch(project, patternId, noteId, 7.4);
     expect(project.patterns[0].notes[noteId].pitch).toBe(7);
     project = setNotePitch(project, patternId, noteId, 100);
-    expect(project.patterns[0].notes[noteId].pitch).toBe(24);
+    expect(project.patterns[0].notes[noteId].pitch).toBe(48);
     project = setNotePitch(project, patternId, noteId, 0);
     expect("pitch" in project.patterns[0].notes[noteId]).toBe(false);
   });
@@ -167,5 +167,16 @@ describe("Playback.pressTrack on a synth track", () => {
     expect(playback.pressTrack(project.tracks[1])).toBe(true);
     expect(calls.instrumentNoteOn[0][1].duration).toBe(0.5);
     expect(calls.instrumentNoteOn[1][1].duration).toBeUndefined();
+  });
+});
+
+describe("rootMidiNote", () => {
+  it("maps a synth's Hz root to a MIDI note, and is null for samples", () => {
+    const bass = setTrackInstrument(createInitialProject(), "track-1", "bass").tracks[0];
+    expect(rootMidiNote(bass)).toBeCloseTo(33); // 55 Hz = A1
+    const pulse = setTrackInstrument(createInitialProject(), "track-1", "pulse").tracks[0];
+    expect(rootMidiNote(pulse)).toBeCloseTo(45); // 110 Hz = A2
+    expect(rootMidiNote(createInitialProject().tracks[0])).toBeNull();
+    expect(rootMidiNote(setTrackInstrument(createInitialProject(), "track-1", "hihat").tracks[0])).toBeNull();
   });
 });

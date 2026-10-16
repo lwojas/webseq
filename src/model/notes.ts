@@ -207,10 +207,11 @@ export function setVelocity(pattern: Pattern, noteId: NoteId, velocity: number):
   return { ...pattern, notes: { ...pattern.notes, [noteId]: { ...note, velocity: clamped } } };
 }
 
-export const MIN_NOTE_PITCH = -24;
-export const MAX_NOTE_PITCH = 24;
+/** Matches the engine's own clamp on a note's pitch offset (webdsp clamps to +-48 semitones). */
+export const MIN_NOTE_PITCH = -48;
+export const MAX_NOTE_PITCH = 48;
 
-/** Sets a note's pitch in whole semitones (clamped to +-2 octaves). 0 is stored as "absent" so
+/** Sets a note's pitch in whole semitones (clamped to +-4 octaves). 0 is stored as "absent" so
  * unpitched notes stay byte-identical to notes saved before pitch existed. */
 export function setPitch(pattern: Pattern, noteId: NoteId, pitch: number): Pattern {
   const note = pattern.notes[noteId];

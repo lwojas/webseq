@@ -2,6 +2,7 @@ import { memo, useMemo } from "react";
 import type { Note, NoteId, Pattern, Track, TrackId } from "../model/types";
 import { notesForTrack, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
+import { rootMidiNote } from "../model/instruments";
 import { NoteBlock } from "./NoteBlock";
 import { TRACK_EDITOR_COLUMN_PX } from "./timelineConstants";
 
@@ -24,14 +25,30 @@ interface Props {
 /** Selectable note lengths, in beats (= steps; a step is a 16th note, so 2 beats reads "2/16").
  * The note's actual duration is added when it isn't one of these (free-placed lengths). */
 const LENGTH_OPTIONS = [0.125, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16];
-const PITCH_OPTIONS = Array.from({ length: MAX_NOTE_PITCH - MIN_NOTE_PITCH + 1 }, (_, i) => MAX_NOTE_PITCH - i);
 
 const NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"];
-/** Tracker-style name for a pitch offset (semitones from the track's own pitch). The offset
- * is what's stored; 0 is labelled C-4 so the +-2 octave range reads C-2..C-6. */
-function formatPitch(pitch: number): string {
-  const midi = 60 + pitch;
+const PITCH_OFFSETS = Array.from({ length: MAX_NOTE_PITCH - MIN_NOTE_PITCH + 1 }, (_, i) => MAX_NOTE_PITCH - i);
+/** Audible band offered in the dropdown (the engine would happily play outside it). */
+const MIN_AUDIBLE_HZ = 20;
+const MAX_AUDIBLE_HZ = 16000;
+
+/** The note a pitch offset sounds as. For a synth with a Hz root, that is its real note
+ * (root + offset, e.g. Bass 55 Hz = A-1); otherwise (samples, unpitched roots) only the
+ * offset in semitones is meaningful. */
+function formatPitch(pitch: number, root: number | null): string {
+  if (root === null) return pitch === 0 ? "0 st" : `${pitch > 0 ? "+" : ""}${pitch} st`;
+  const midi = Math.round(root + pitch);
   return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
+/** Offsets to offer: all of them for a sample, only the audible span for a synth root, always
+ * including the note's current value. */
+function pitchOptions(root: number | null, current: number): number[] {
+  if (root === null) return PITCH_OFFSETS;
+  return PITCH_OFFSETS.filter((p) => {
+    const hz = 440 * Math.pow(2, (root + p - 69) / 12);
+    return p === current || (hz >= MIN_AUDIBLE_HZ && hz <= MAX_AUDIBLE_HZ);
+  });
 }
 
 function formatLength(beats: number): string {
@@ -42,6 +59,8 @@ function formatLength(beats: number): string {
 
 interface CardProps {
   note: Note;
+  /** The track's root as a MIDI note (see rootMidiNote), a primitive so the memo holds. */
+  root: number | null;
   selected: boolean;
   onSelectNote: (id: NoteId | null) => void;
   onRemoveNote: (noteId: NoteId) => void;
@@ -54,6 +73,7 @@ interface CardProps {
  * replaces the note that was touched), so editing one note re-renders one card. */
 const NoteCard = memo(function NoteCard({
   note,
+  root,
   selected,
   onSelectNote,
   onRemoveNote,
@@ -77,11 +97,11 @@ const NoteCard = memo(function NoteCard({
           value={pitch}
           onChange={(e) => onSetNotePitch(note.id, Number(e.target.value))}
           aria-label="Pitch"
-          title="Note, relative to the track's own pitch (C-4 = unchanged)"
+          title={root === null ? "Semitones relative to the sample's original pitch" : "Note, from the instrument's Root plus the offset"}
         >
-          {PITCH_OPTIONS.map((p) => (
+          {pitchOptions(root, pitch).map((p) => (
             <option key={p} value={p}>
-              {formatPitch(p)}
+              {formatPitch(p, root)}
             </option>
           ))}
         </select>
@@ -139,6 +159,7 @@ export const TrackEditor = memo(function TrackEditor({
   onSetNoteDuration,
 }: Props) {
   const trackId = track?.id ?? null;
+  const root = track ? rootMidiNote(track) : null;
   const notes = useMemo(() => (trackId ? notesForTrack(pattern, trackId) : []), [pattern, trackId]);
 
   if (!track) {
@@ -185,7 +206,7 @@ export const TrackEditor = memo(function TrackEditor({
               onMove={(start, freePlacement) => onMoveNote(note.id, start, freePlacement)}
               onRemove={() => onRemoveNote(note.id)}
             >
-              <span className="te-note-label">{formatPitch(note.pitch ?? 0)}</span>
+              <span className="te-note-label">{formatPitch(note.pitch ?? 0, root)}</span>
             </NoteBlock>
           ))}
         </div>
@@ -194,6 +215,7 @@ export const TrackEditor = memo(function TrackEditor({
             <NoteCard
               key={note.id}
               note={note}
+              root={root}
               selected={note.id === selectedNoteId}
               onSelectNote={onSelectNote}
               onRemoveNote={onRemoveNote}
