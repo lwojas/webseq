@@ -17,6 +17,8 @@ interface Props {
   /** A completed touch tap (movement under TAP_MOVE_THRESHOLD_PX) on the note body removes it
    * instead of moving it — see beginMove and ECS-129. Never triggered for mouse/pen. */
   onRemove: () => void;
+  /** Optional label content (the Track Editor shows the note's pitch); the timeline passes none. */
+  children?: React.ReactNode;
 }
 
 /** A single note. Position/size are expressed as CSS percentages of the track lane's
@@ -34,7 +36,7 @@ interface Props {
  * those two elements so scrolling elsewhere in the timeline is untouched. A pointercancel
  * (the browser reclaiming the gesture for its own purposes) drops the in-progress edit
  * instead of committing it, since the user didn't deliberately finish the gesture. */
-export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMove, onRemove }: Props) {
+export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMove, onRemove, children }: Props) {
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   const left = (note.start / totalBeats) * 100;
@@ -139,6 +141,7 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
       onPointerDown={beginMove}
       title={`start ${note.start}, duration ${note.duration}, velocity ${note.velocity.toFixed(2)}`}
     >
+      {children}
       <div className="resize-handle" style={{ width: RESIZE_HANDLE_WIDTH_PX }} onPointerDown={beginResize} />
     </div>
   );

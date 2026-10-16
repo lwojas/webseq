@@ -51,3 +51,8 @@ export const MAX_ZOOM_INDEX_COARSE = ZOOM_LEVELS_PX_PER_BEAT.length - 2;
  * Covers the gap between one rAF-driven window recompute and the next during a fast scroll
  * fling, without mounting anywhere near a full pattern's worth of cells. */
 export const COLUMN_OVERSCAN_BEATS = 8;
+
+/** Width of one step column in the Track Editor tab — wide enough for the per-step pitch,
+ * velocity and length controls, unlike the timeline's compact zoom levels above. Fixed (no
+ * zoom): the editor scrolls horizontally instead of shrinking its controls. */
+export const TRACK_EDITOR_COLUMN_PX = 104;

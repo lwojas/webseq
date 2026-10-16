@@ -26,6 +26,7 @@ import { SequencerGrid } from "./components/SequencerGrid";
 import { FxPanel } from "./components/FxPanel";
 import { MixerPanel } from "./components/MixerPanel";
 import { InstrumentPanel } from "./components/InstrumentPanel";
+import { TrackEditor } from "./components/TrackEditor";
 import { useMidiControls } from "./midi/useMidiControls";
 
 /** The side panel (left of the timeline — see screenshots/concept.png) is tabbed so further
@@ -42,10 +43,11 @@ const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [
  * (all tracks at once) — same tabbed pattern as the side panel above. Instrument lives here,
  * not on the track row, because a track plays exactly one sound source: editing it in place
  * keeps the track context the sequencer is built around. */
-type BottomPanelView = "fx" | "instrument" | "mixer";
+type BottomPanelView = "fx" | "instrument" | "editor" | "mixer";
 const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
   { id: "fx", label: "FX" },
   { id: "instrument", label: "Instrument" },
+  { id: "editor", label: "Track Editor" },
   { id: "mixer", label: "Mixer" },
 ];
 
@@ -55,11 +57,12 @@ const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
  * its own bottom tab bar covering all of them instead of the desktop's two separate tab
  * strips. This is pure navigation state — desktop's existing `sidePanelView`/`bottomPanelView`
  * still own which content actually renders inside each section (see handleSelectMobileTab). */
-type MobileTab = "timeline" | "fx" | "instrument" | "mixer" | "assets" | "patterns";
+type MobileTab = "timeline" | "fx" | "instrument" | "editor" | "mixer" | "assets" | "patterns";
 const MOBILE_TABS: { id: MobileTab; label: string }[] = [
   { id: "timeline", label: "Timeline" },
   { id: "fx", label: "FX" },
   { id: "instrument", label: "Inst" },
+  { id: "editor", label: "Edit" },
   { id: "mixer", label: "Mixer" },
   { id: "assets", label: "Assets" },
   { id: "patterns", label: "Patterns" },
@@ -695,6 +698,13 @@ export function App() {
     (noteId: NoteId, pitch: number) => dispatch({ type: "SET_NOTE_PITCH", patternId: selectedPatternId, noteId, pitch }),
     [selectedPatternId],
   );
+  // Length from the Track Editor's select: exact values, so snapped to the free-placement
+  // resolution rather than the toolbar grid (which would round 1/4 to 1 on a 1-step grid).
+  const handleSetNoteDuration = useCallback(
+    (noteId: NoteId, duration: number) =>
+      dispatch({ type: "RESIZE_NOTE", patternId: selectedPatternId, noteId, duration, resolution: FREE_PLACEMENT_RESOLUTION }),
+    [selectedPatternId],
+  );
   const handleSetNoteVelocity = useCallback(
     (noteId: NoteId, velocity: number) => dispatch({ type: "SET_NOTE_VELOCITY", patternId: selectedPatternId, noteId, velocity }),
     [selectedPatternId],
@@ -716,7 +726,7 @@ export function App() {
   // driving it.
   const handleSelectMobileTab = useCallback((tab: MobileTab) => {
     setMobileTab(tab);
-    if (tab === "fx" || tab === "instrument" || tab === "mixer") setBottomPanelView(tab);
+    if (tab === "fx" || tab === "instrument" || tab === "editor" || tab === "mixer") setBottomPanelView(tab);
   }, []);
 
   // --- persistence ---
@@ -1050,6 +1060,22 @@ export function App() {
                 onSetEnvelope={handleSetEnvelope}
                 onSetNotePitch={handleSetNotePitch}
                 onSetNoteVelocity={handleSetNoteVelocity}
+              />
+            )}
+            {bottomPanelView === "editor" && (
+              <TrackEditor
+                track={selectedTrack ?? null}
+                pattern={selectedPattern}
+                beatsPerBar={project.beatsPerBar}
+                selectedNoteId={selectedNoteId}
+                onSelectNote={setSelectedNoteId}
+                onAddNote={handleAddNote}
+                onResizeNote={handleResizeNote}
+                onMoveNote={handleMoveNote}
+                onRemoveNote={handleRemoveNote}
+                onSetNotePitch={handleSetNotePitch}
+                onSetNoteVelocity={handleSetNoteVelocity}
+                onSetNoteDuration={handleSetNoteDuration}
               />
             )}
             {bottomPanelView === "mixer" && (

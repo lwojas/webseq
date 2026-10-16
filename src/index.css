@@ -192,7 +192,8 @@ select {
   padding: 3px 6px;
 }
 
-.field select {
+.field select,
+.te-card select {
   background: var(--panel-alt);
   border: 1px solid var(--border-strong);
   border-radius: 3px;
@@ -1696,6 +1697,105 @@ select {
   font-size: 10px;
 }
 
+/* --- Track Editor tab (reuses .track-lane/.cells/.cell/.note-block from the timeline and
+   .module-param labels from the FX panel). One column per step, TRACK_EDITOR_COLUMN_PX wide
+   (timelineConstants.ts); the tab scrolls as normal browser overflow, nothing virtualised. --- */
+.track-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--panel);
+}
+
+.track-editor-content {
+  position: relative;
+}
+
+.te-lane {
+  height: 40px;
+}
+
+.te-lane .cell {
+  color: var(--text-dim);
+  font-size: 9px;
+  display: flex;
+  align-items: flex-start;
+  padding: 2px 4px;
+}
+
+.te-note-label {
+  padding: 0 6px;
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+  color: #eafffa;
+}
+
+.note-block.selected .te-note-label {
+  color: var(--bg);
+}
+
+.te-cards {
+  display: grid;
+  grid-auto-flow: row dense;
+  align-items: start;
+  margin-top: 6px;
+}
+
+.te-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 2px;
+  padding: 6px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  min-width: 0;
+}
+
+.te-card.selected {
+  border-color: var(--amber);
+}
+
+.te-card select,
+.te-card input[type="range"] {
+  width: 100%;
+  min-width: 0;
+}
+
+.te-card input[type="range"] {
+  accent-color: var(--accent);
+}
+
+.te-card-head {
+  display: flex;
+  gap: 4px;
+}
+
+.te-card-head select {
+  flex: 1;
+}
+
+.te-remove {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 6px;
+}
+
+.te-remove:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.te-value {
+  color: var(--amber);
+}
+
 /* --- empty state --- */
 
 .gesture-veil {
@@ -1818,6 +1918,7 @@ select {
 
   .app[data-mobile-tab="fx"] .main,
   .app[data-mobile-tab="instrument"] .main,
+  .app[data-mobile-tab="editor"] .main,
   .app[data-mobile-tab="mixer"] .main {
     display: flex;
     flex: 1;
@@ -1825,6 +1926,7 @@ select {
 
   .app[data-mobile-tab="fx"] .bottom-panel,
   .app[data-mobile-tab="instrument"] .bottom-panel,
+  .app[data-mobile-tab="editor"] .bottom-panel,
   .app[data-mobile-tab="mixer"] .bottom-panel {
     display: flex;
     flex: 1;
@@ -1904,6 +2006,11 @@ select {
 
   .pattern-chip {
     padding: 8px 10px;
+  }
+
+  .te-card select,
+  .te-remove {
+    padding: 8px 6px;
   }
 
   .pattern-list-row,
