@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -354,6 +354,7 @@ export function App() {
         duration: n.duration,
         velocity: n.velocity,
         pitch: n.pitch,
+        lfo: n.lfo,
       }));
       if (copied.length === 0) return;
       setNoteClipboard({ sourceTrackId: trackId, notes: copied });
@@ -716,6 +717,18 @@ export function App() {
   const handleSetNoteDuration = useCallback(
     (noteId: NoteId, duration: number) =>
       dispatch({ type: "RESIZE_NOTE", patternId: selectedPatternId, noteId, duration, resolution: FREE_PLACEMENT_RESOLUTION }),
+    [selectedPatternId],
+  );
+  const handleSetTrackEventLfo = useCallback(
+    (trackId: TrackId, patch: Partial<TrackEventLfo>) => dispatch({ type: "SET_TRACK_EVENT_LFO", trackId, patch }),
+    [],
+  );
+  const handleSetNoteLfo = useCallback(
+    (noteId: NoteId, amount: number) => dispatch({ type: "SET_NOTE_LFO", patternId: selectedPatternId, noteId, amount }),
+    [selectedPatternId],
+  );
+  const handleSetTrackNotesLfo = useCallback(
+    (trackId: TrackId, amount: number) => dispatch({ type: "SET_TRACK_NOTES_LFO", patternId: selectedPatternId, trackId, amount }),
     [selectedPatternId],
   );
   const handleSetNoteVelocity = useCallback(
@@ -1108,6 +1121,9 @@ export function App() {
                 onSetNotePitch={handleSetNotePitch}
                 onSetNoteVelocity={handleSetNoteVelocity}
                 onSetNoteDuration={handleSetNoteDuration}
+                onSetTrackEventLfo={handleSetTrackEventLfo}
+                onSetNoteLfo={handleSetNoteLfo}
+                onSetTrackNotesLfo={handleSetTrackNotesLfo}
               />
             )}
             {bottomPanelView === "mixer" && (

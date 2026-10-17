@@ -1,5 +1,7 @@
 import { memo, useMemo } from "react";
-import type { Note, NoteId, Pattern, Track, TrackId } from "../model/types";
+import type { Note, NoteId, Pattern, Track, TrackEventLfo, TrackId } from "../model/types";
+import { eventLfoOf } from "../model/eventLfo";
+import { TrackLfoPanel } from "./TrackLfoPanel";
 import { notesForTrack, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
 import { rootMidiNote } from "../model/instruments";
@@ -20,6 +22,9 @@ interface Props {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
+  onSetTrackEventLfo: (trackId: TrackId, patch: Partial<TrackEventLfo>) => void;
+  onSetNoteLfo: (noteId: NoteId, amount: number) => void;
+  onSetTrackNotesLfo: (trackId: TrackId, amount: number) => void;
 }
 
 /** Selectable note lengths, in beats (= steps; a step is a 16th note, so 2 beats reads "2/16").
@@ -67,6 +72,9 @@ interface CardProps {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
+  /** Shown only while the track's LFO is on. */
+  lfoOn: boolean;
+  onSetNoteLfo: (noteId: NoteId, amount: number) => void;
 }
 
 /** The contextual editor under one step. Memoised on the note object itself (the model only
@@ -80,6 +88,8 @@ const NoteCard = memo(function NoteCard({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteDuration,
+  lfoOn,
+  onSetNoteLfo,
 }: CardProps) {
   const pitch = note.pitch ?? 0;
   const lengths = LENGTH_OPTIONS.includes(note.duration)
@@ -123,6 +133,22 @@ const NoteCard = memo(function NoteCard({
           aria-label="Velocity"
         />
       </div>
+      {lfoOn && (
+        <div className="module-param">
+          <span className="param-label static">
+            LFO <span className="te-value">{Math.round((note.lfo ?? 0) * 100)}%</span>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={note.lfo ?? 0}
+            onChange={(e) => onSetNoteLfo(note.id, Number(e.target.value))}
+            aria-label="Track LFO amount for this step"
+          />
+        </div>
+      )}
       <select
         value={note.duration}
         onChange={(e) => onSetNoteDuration(note.id, Number(e.target.value))}
@@ -157,6 +183,9 @@ export const TrackEditor = memo(function TrackEditor({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteDuration,
+  onSetTrackEventLfo,
+  onSetNoteLfo,
+  onSetTrackNotesLfo,
 }: Props) {
   const trackId = track?.id ?? null;
   const root = track ? rootMidiNote(track) : null;
@@ -171,6 +200,8 @@ export const TrackEditor = memo(function TrackEditor({
     );
   }
 
+  const lfo = eventLfoOf(track);
+  const participating = notes.filter((n) => (n.lfo ?? 0) > 0).length;
   const beats = totalBeats(pattern, beatsPerBar);
   const width = beats * TRACK_EDITOR_COLUMN_PX;
   const columns = `repeat(${beats}, ${TRACK_EDITOR_COLUMN_PX}px)`;
@@ -180,6 +211,13 @@ export const TrackEditor = memo(function TrackEditor({
       <div className="fx-panel-title">
         {trackHasSource(track) ? track.name : "— empty —"} — TRACK EDITOR
       </div>
+      <TrackLfoPanel
+        lfo={lfo}
+        participating={participating}
+        stepCount={notes.length}
+        onChange={(patch) => onSetTrackEventLfo(track.id, patch)}
+        onSetAllSteps={(amount) => onSetTrackNotesLfo(track.id, amount)}
+      />
       <div className="track-editor-content" style={{ width }}>
         <div className="track-lane te-lane" style={{ width }}>
           <div className="cells" style={{ gridTemplateColumns: columns }}>
@@ -205,6 +243,7 @@ export const TrackEditor = memo(function TrackEditor({
               onResize={(duration, freePlacement) => onResizeNote(note.id, duration, freePlacement)}
               onMove={(start, freePlacement) => onMoveNote(note.id, start, freePlacement)}
               onRemove={() => onRemoveNote(note.id)}
+              lfo={lfo.enabled ? note.lfo : undefined}
             >
               <span className="te-note-label">{formatPitch(note.pitch ?? 0, root)}</span>
             </NoteBlock>
@@ -222,6 +261,8 @@ export const TrackEditor = memo(function TrackEditor({
               onSetNotePitch={onSetNotePitch}
               onSetNoteVelocity={onSetNoteVelocity}
               onSetNoteDuration={onSetNoteDuration}
+              lfoOn={lfo.enabled}
+              onSetNoteLfo={onSetNoteLfo}
             />
           ))}
         </div>

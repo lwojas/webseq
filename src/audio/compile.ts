@@ -8,6 +8,7 @@ import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
 import { instrumentDefFor } from "../model/instruments";
+import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
 
 /** Seconds per grid beat (a sixteenth note in 4/4) at a given BPM. Deliberately independent
  * of Project.beatsPerBar/Pattern.bars — growing a pattern to more bars, or adding more
@@ -15,6 +16,10 @@ import { instrumentDefFor } from "../model/instruments";
  * in a given pattern. */
 export function secondsPerBeat(bpm: number): number {
   return 60 / (bpm * 4);
+}
+
+function lfoClock(bpm: number, anchorTime: number | undefined): EventLfoClock | undefined {
+  return anchorTime === undefined ? undefined : { anchorTime, bpm };
 }
 
 /** Delay (seconds) applied to a 16th-note grid position for global swing. Swing only moves
@@ -43,7 +48,11 @@ export function swingOffsetSeconds(sixteenthIndex: number, swing: number, sixtee
  * this is unchanged from before — the note's own length, auto-releasing the voice at its end.
  * For a loop-mode track, `loop: true` is added on top of the same bounded `duration`, so the
  * asset tiles/repeats to fill the note's length instead of just playing once — a loop voice is
- * still never unbounded, it's always cut by this same duration. */
+ * still never unbounded, it's always cut by this same duration.
+ *
+ * `lfoAnchorTime` (the transport anchor) enables the track's event LFO: the note's velocity is
+ * modulated by the LFO value at this event's own scheduled time (swing included). Omitted = no
+ * modulation. The stored Note is never changed; only the event's gain differs. */
 export function compileNote(
   track: Track,
   note: Note,
@@ -51,14 +60,16 @@ export function compileNote(
   stepStartTime: number,
   busId?: BusId,
   swing = 0.5,
+  lfoAnchorTime?: number,
 ): ScheduledEvent | null {
   if (track.assetId == null) return null;
   const spb = secondsPerBeat(bpm);
+  const time = stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb);
   const event: ScheduledEvent = {
     sampleId: track.assetId,
-    time: stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb),
+    time,
     duration: note.duration * spb,
-    gain: note.velocity,
+    gain: effectiveVelocity(track, note, time, lfoClock(bpm, lfoAnchorTime)),
   };
   if (busId !== undefined) event.bus = busId;
   if (effectivePlaybackMode(track) === "loop") event.loop = true;
@@ -76,13 +87,15 @@ export function compileInstrumentNote(
   bpm: number,
   stepStartTime: number,
   swing = 0.5,
+  lfoAnchorTime?: number,
 ): InstrumentNoteParams | null {
   const def = instrumentDefFor(track);
   if (!def) return null;
   const spb = secondsPerBeat(bpm);
+  const time = stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb);
   const params: InstrumentNoteParams = {
-    time: stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb),
-    velocity: note.velocity,
+    time,
+    velocity: effectiveVelocity(track, note, time, lfoClock(bpm, lfoAnchorTime)),
   };
   if (note.pitch) params.pitch = note.pitch;
   if (def.sustained) params.duration = note.duration * spb;
@@ -97,6 +110,7 @@ export function compileInstrumentNotes(
   bpm: number,
   stepStartTime: number,
   swing = 0.5,
+  lfoAnchorTime?: number,
 ): { trackId: TrackId; params: InstrumentNoteParams }[] {
   const results: { trackId: TrackId; params: InstrumentNoteParams }[] = [];
   const synthTracks = tracks.filter((t) => t.instrument != null);
@@ -104,7 +118,7 @@ export function compileInstrumentNotes(
   const byTrack = groupNotesByTrack(pattern);
   for (const track of synthTracks) {
     for (const note of byTrack.get(track.id) ?? []) {
-      const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing);
+      const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime);
       if (params) results.push({ trackId: track.id, params });
     }
   }
@@ -123,8 +137,9 @@ export function compilePatternIteration(
   stepStartTime: number,
   busIdFor: (trackId: string) => BusId | undefined = () => undefined,
   swing = 0.5,
+  lfoAnchorTime?: number,
 ): ScheduledEvent[] {
-  return compilePatternIterationTracked(pattern, tracks, bpm, stepStartTime, busIdFor, swing).map((r) => r.event);
+  return compilePatternIterationTracked(pattern, tracks, bpm, stepStartTime, busIdFor, swing, lfoAnchorTime).map((r) => r.event);
 }
 
 /** Same as compilePatternIteration, but keeps each ScheduledEvent paired with the TrackId that
@@ -149,6 +164,7 @@ export function compilePatternIterationTracked(
   stepStartTime: number,
   busIdFor: (trackId: string) => BusId | undefined = () => undefined,
   swing = 0.5,
+  lfoAnchorTime?: number,
 ): { event: ScheduledEvent; trackId: TrackId }[] {
   const results: { event: ScheduledEvent; trackId: TrackId }[] = [];
   const notesByTrack = groupNotesByTrack(pattern);
@@ -156,7 +172,7 @@ export function compilePatternIterationTracked(
     const busId = busIdFor(track.id);
     const trackEvents: ScheduledEvent[] = [];
     for (const note of notesByTrack.get(track.id) ?? []) {
-      const event = compileNote(track, note, bpm, stepStartTime, busId, swing);
+      const event = compileNote(track, note, bpm, stepStartTime, busId, swing, lfoAnchorTime);
       if (event) trackEvents.push(event);
     }
     if (effectiveVoiceMode(track) === "mono") {

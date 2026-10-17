@@ -80,6 +80,28 @@ export interface Track {
    * setTrackInstrument, which each clear the other), so a track still has exactly one sound
    * source. Null/absent = a sample track. See model/instruments.ts. */
   instrument?: TrackInstrument | null;
+  /** Track-level event LFO (see model/eventLfo.ts): modulates the velocity of the notes that
+   * opt in (Note.lfo) at the moment each note is scheduled. Absent = none, so older projects play
+   * exactly as before. Belongs to the track, not a pattern, so its phase runs on across pattern
+   * changes. */
+  eventLfo?: TrackEventLfo;
+}
+
+/** What a Track LFO modulates. Only the note's velocity for now; the type is the seam for other
+ * event properties later (audio/trackLfo.ts applies by target). */
+export type EventLfoTarget = "velocity";
+
+/** Track LFO configuration. Waveform and division are webdsp's own names (as TrackLfo). `depth`
+ * is 0..1 of the full velocity range (1 = a full-scale LFO swings velocity by +-1.0, i.e. +-127
+ * in MIDI terms); effective = clamp(velocity + lfo * depth * Note.lfo, 0, 1). */
+export interface TrackEventLfo {
+  enabled: boolean;
+  target: EventLfoTarget;
+  waveform: LfoWaveformId;
+  sync: boolean;
+  rateHz: number;
+  division: string;
+  depth: number;
 }
 
 /** A track's synth source: which engine instrument kind (by webdsp's stable string id —
@@ -191,6 +213,10 @@ export interface Note {
   /** Semitones above the track's own pitch (a synth's Tune, or a sample's original pitch).
    * Optional — absent means 0. Set from the Instrument panel's note inspector. */
   pitch?: number;
+  /** How much this step takes part in the track's event LFO, 0..1 (0 / absent = it plays at its
+   * own velocity). Authored, like velocity; the effective velocity is computed at playback and
+   * never stored. */
+  lfo?: number;
 }
 
 /** One arrangement of musical events. Has its own length in bars but deliberately no BPM of

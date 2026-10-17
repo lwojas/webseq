@@ -19,6 +19,8 @@ interface Props {
   onRemove: () => void;
   /** Optional label content (the Track Editor shows the note's pitch); the timeline passes none. */
   children?: React.ReactNode;
+  /** The step's Track LFO participation (0..1), shown as a marker only when the track's LFO is on. */
+  lfo?: number;
 }
 
 /** A single note. Position/size are expressed as CSS percentages of the track lane's
@@ -36,7 +38,7 @@ interface Props {
  * those two elements so scrolling elsewhere in the timeline is untouched. A pointercancel
  * (the browser reclaiming the gesture for its own purposes) drops the in-progress edit
  * instead of committing it, since the user didn't deliberately finish the gesture. */
-export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMove, onRemove, children }: Props) {
+export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMove, onRemove, children, lfo }: Props) {
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   const left = (note.start / totalBeats) * 100;
@@ -136,12 +138,13 @@ export function NoteBlock({ note, totalBeats, selected, onSelect, onResize, onMo
   return (
     <div
       ref={elementRef}
-      className={`note-block ${selected ? "selected" : ""}`}
+      className={`note-block ${selected ? "selected" : ""}${lfo ? " lfo" : ""}`}
       style={{ left: `${left}%`, width: `${width}%` }}
       onPointerDown={beginMove}
       title={`start ${note.start}, duration ${note.duration}, velocity ${note.velocity.toFixed(2)}`}
     >
       {children}
+      {lfo ? <span className="note-lfo" style={{ width: `${Math.round(lfo * 100)}%` }} aria-hidden="true" /> : null}
       <div className="resize-handle" style={{ width: RESIZE_HANDLE_WIDTH_PX }} onPointerDown={beginResize} />
     </div>
   );

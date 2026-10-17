@@ -1,10 +1,11 @@
-import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, TrackId, TrackLfo, VoiceMode } from "./types";
+import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
 import type { CopiedNote } from "./notes";
 import type { CopiedTrackConfig } from "./trackConfig";
 import type { Asset } from "./types";
 import * as project from "./project";
 import * as fx from "./fx";
 import * as instruments from "./instruments";
+import * as eventLfo from "./eventLfo";
 import * as automation from "./automation";
 import * as trackConfig from "./trackConfig";
 
@@ -24,6 +25,9 @@ export type Action =
   | { type: "SET_TRACK_PAN"; trackId: TrackId; pan: number }
   | { type: "SET_TRACK_INSTRUMENT"; trackId: TrackId; kind: InstrumentKindId | null }
   | { type: "SET_INSTRUMENT_PARAM"; trackId: TrackId; paramId: string; value: number }
+  | { type: "SET_TRACK_EVENT_LFO"; trackId: TrackId; patch: Partial<TrackEventLfo> }
+  | { type: "SET_NOTE_LFO"; patternId: PatternId; noteId: NoteId; amount: number }
+  | { type: "SET_TRACK_NOTES_LFO"; patternId: PatternId; trackId: TrackId; amount: number }
   | { type: "ADD_INSTRUMENT_LFO"; trackId: TrackId; target: string }
   | { type: "SET_INSTRUMENT_LFO"; trackId: TrackId; index: number; patch: Partial<TrackLfo> }
   | { type: "REMOVE_INSTRUMENT_LFO"; trackId: TrackId; index: number }
@@ -87,6 +91,12 @@ export function projectReducer(state: Project, action: Action): Project {
       return instruments.setTrackInstrument(state, action.trackId, action.kind);
     case "SET_INSTRUMENT_PARAM":
       return instruments.setInstrumentParam(state, action.trackId, action.paramId, action.value);
+    case "SET_TRACK_EVENT_LFO":
+      return eventLfo.setTrackEventLfo(state, action.trackId, action.patch);
+    case "SET_NOTE_LFO":
+      return eventLfo.setNoteLfo(state, action.patternId, action.noteId, action.amount);
+    case "SET_TRACK_NOTES_LFO":
+      return eventLfo.setTrackNotesLfo(state, action.patternId, action.trackId, action.amount);
     case "ADD_INSTRUMENT_LFO":
       return instruments.addInstrumentLfo(state, action.trackId, action.target);
     case "SET_INSTRUMENT_LFO":

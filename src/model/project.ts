@@ -302,7 +302,7 @@ export function setPatternBars(project: Project, patternId: PatternId, bars: num
   };
 }
 
-function updatePattern(project: Project, patternId: PatternId, update: (pattern: Pattern) => Pattern): Project {
+export function updatePattern(project: Project, patternId: PatternId, update: (pattern: Pattern) => Pattern): Project {
   return {
     ...project,
     patterns: project.patterns.map((p) => (p.id === patternId ? update(p) : p)),

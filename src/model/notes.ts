@@ -118,7 +118,7 @@ export function clearTrackNotes(pattern: Pattern, trackId: TrackId): Pattern {
  * (beats from this pattern's start), not relative to some anchor — there is no "paste cursor"
  * concept in this app (no selected empty cell, only a selected track), so pasting reproduces
  * the exact beat positions that were copied, just under the destination trackId. */
-export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch">;
+export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch" | "lfo">;
 
 /** Pastes `copied` onto `trackId` in this Pattern, preserving each note's original start/
  * duration/velocity exactly (no re-quantization — unlike addNote, these values already came
@@ -144,6 +144,7 @@ export function pasteNotes(
     const id = nextId("note");
     const note: Note = { id, trackId, start: c.start, duration: c.duration, velocity: c.velocity };
     if (c.pitch) note.pitch = c.pitch;
+    if (c.lfo) note.lfo = c.lfo;
     next = { ...next, notes: { ...next.notes, [id]: note } };
     pasted += 1;
   }

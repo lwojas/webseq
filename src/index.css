@@ -2115,3 +2115,72 @@ select {
 .mod-slot .module-param select {
   min-width: 96px;
 }
+
+/* --- Track LFO (Track Editor) --- */
+
+.track-lfo {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.track-lfo-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.track-lfo-head .enum-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.track-lfo-head .enum-toggle button {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.track-lfo-head .enum-toggle button.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+.track-lfo-target,
+.track-lfo-steps {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.track-lfo-target b {
+  color: var(--text);
+}
+
+.track-lfo-steps {
+  margin-left: auto;
+}
+
+.track-lfo-off {
+  opacity: 0.45;
+}
+
+/* A step that follows the Track LFO: a thin bar along the bottom of its block, as wide as its
+   participation. Only drawn while the track's LFO is on. */
+.note-lfo {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--amber);
+  pointer-events: none;
+}

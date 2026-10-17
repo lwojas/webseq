@@ -24,10 +24,10 @@ interface Props {
 const WAVE_LABEL: Record<string, string> = { sine: "Sine", triangle: "Tri", square: "Sq", saw: "Saw" };
 
 // Rate is a log-scaled slider (0.01-40 Hz spans four decades).
-const RATE_STEPS = 1000;
-const rateToSlider = (hz: number) => Math.round((Math.log(hz / LFO_MIN_RATE_HZ) / Math.log(LFO_MAX_RATE_HZ / LFO_MIN_RATE_HZ)) * RATE_STEPS);
-const sliderToRate = (v: number) => LFO_MIN_RATE_HZ * Math.pow(LFO_MAX_RATE_HZ / LFO_MIN_RATE_HZ, v / RATE_STEPS);
-const formatRate = (hz: number) => (hz < 1 ? hz.toFixed(2) : hz < 10 ? hz.toFixed(1) : String(Math.round(hz)));
+export const RATE_STEPS = 1000;
+export const rateToSlider = (hz: number) => Math.round((Math.log(hz / LFO_MIN_RATE_HZ) / Math.log(LFO_MAX_RATE_HZ / LFO_MIN_RATE_HZ)) * RATE_STEPS);
+export const sliderToRate = (v: number) => LFO_MIN_RATE_HZ * Math.pow(LFO_MAX_RATE_HZ / LFO_MIN_RATE_HZ, v / RATE_STEPS);
+export const formatRate = (hz: number) => (hz < 1 ? hz.toFixed(2) : hz < 10 ? hz.toFixed(1) : String(Math.round(hz)));
 
 /** The synth editor's modulation slot: a compact list of LFOs, each routed to one control of the
  * synth. Free mode shows Rate (Hz); BPM-sync mode swaps it for a Division. Deliberately not a

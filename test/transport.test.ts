@@ -4,8 +4,9 @@ import { Transport } from "../src/audio/transport";
 import { Playback } from "../src/audio/playback";
 import { secondsPerBeat } from "../src/audio/compile";
 import { addAsset, addNote } from "../src/model/project";
-import { addPattern, assignAsset, createInitialProject, setBpm, setChain, setSwing, setTrackVoiceMode } from "../src/model/project";
+import { setNoteVelocity, addPattern, assignAsset, createInitialProject, setBpm, setChain, setSwing, setTrackVoiceMode } from "../src/model/project";
 import type { Asset, Project } from "../src/model/types";
+import { setTrackEventLfo, setTrackNotesLfo } from "../src/model/eventLfo";
 
 // AudioRuntime needs a real browser (AudioContext/AudioWorklet) — not available under
 // Node/vitest — so, like webdsp's own LookaheadPlayer test, Transport's scheduling logic is
@@ -105,6 +106,29 @@ function singlePatternProject(): Project {
 }
 
 describe("Transport", () => {
+  it("applies the Track LFO to scheduled sample notes, anchored to the transport start", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    let project = singlePatternProject();
+    project = addNote(project, project.patterns[0].id, "track-1", 6);
+    for (const id of Object.keys(project.patterns[0].notes)) project = setNoteVelocity(project, project.patterns[0].id, id, 0.5);
+    project = setTrackEventLfo(project, "track-1", { enabled: true, waveform: "square", sync: true, division: "1/4", depth: 0.2 });
+    project = setTrackNotesLfo(project, project.patterns[0].id, "track-1", 1);
+    const base = Object.values(project.patterns[0].notes).map((n) => n.velocity);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play();
+    // 120 BPM: a 1/4 cycle is 0.5 s. Step 0 sits at the anchor (cycle start, +); step 6 is 0.75 s in (second half, -).
+    expect(scheduled).toHaveLength(2);
+    const [first, second] = [...scheduled].sort((x, y) => x.time - y.time);
+    expect(first.gain).toBeCloseTo(base[0] + 0.2);
+    expect(second.gain).toBeCloseTo(base[1] - 0.2);
+    expect(Object.values(project.patterns[0].notes).map((n) => n.velocity)).toEqual(base); // authored velocity untouched
+
+    transport.stop();
+    vi.useRealTimers();
+  });
+
   it("schedules the first chain step on play()", () => {
     vi.useFakeTimers();
     const { runtime, scheduled } = fakeRuntime();

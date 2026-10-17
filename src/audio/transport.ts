@@ -101,6 +101,8 @@ export class Transport {
   // sample-accuracy guarantee for a rare edge case.
   // Non-null from armResample() until the target pattern's next iteration has been captured
   // (or the resample is abandoned by pause()/stop()) — see armResample()'s doc comment.
+  // Engine time of the transport anchor, for Track LFO evaluation (see play()).
+  private lfoAnchorTime = 0;
   private resampleState: ResampleState | null = null;
 
   constructor(
@@ -136,6 +138,9 @@ export class Transport {
     // starts. Anchor it to the pattern start before anything is scheduled (message order is
     // preserved); retime() and resume both come through here, so they re-anchor too.
     this.runtime.setTempo(project.bpm, { anchorTime: this.nextStepStartTime });
+    // Track LFOs (model/eventLfo.ts) use the same anchor: their cycle 0 is the start of the pattern
+    // instance playback (re)started on, and they run on unbroken across later pattern changes.
+    this.lfoAnchorTime = this.nextStepStartTime;
     this.startPosition = resume;
     this.audibleFrom = now + LEAD_IN_SECONDS;
     this.stepWindows = [];
@@ -391,6 +396,7 @@ export class Transport {
         stepStartTime,
         (trackId) => this.getBusId(trackId),
         project.swing,
+        this.lfoAnchorTime,
       );
       if (compiled.length > 0) {
         // Sort by time before handing events to the engine. Compiling per track leaves them out
@@ -409,7 +415,7 @@ export class Transport {
       // Synth tracks: one instrumentNoteOn per note, each carrying its absolute start time so the
       // engine fires it sample-accurately (runtime.cancelScheduled() drops any still pending).
       const instrumentHost = instrumentHostFor(this.runtime);
-      for (const { trackId, params } of compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing)) {
+      for (const { trackId, params } of compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime)) {
         instrumentHost.noteOn(trackId, params);
       }
       const stepEndTime = stepStartTime + beats * spb;
