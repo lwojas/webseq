@@ -234,3 +234,26 @@ export function setBars(pattern: Pattern, beatsPerBar: number, bars: number): Pa
   }
   return { ...pattern, bars: clampedBars, notes };
 }
+
+/** Longest pattern the UI offers (PatternBar's bars input) — the cap Bar Tools respect. */
+export const MAX_PATTERN_BARS = 64;
+
+/** Appends a copy of bars [fromBar, fromBar + barCount) to the end of the pattern, growing it by
+ * `barCount` bars. Every note starting inside the source range is copied (fresh ids, all fields,
+ * every track) with its start shifted to the new tail; a duration running past the source range is
+ * clamped to it, so a copy never bleeds into the bar after it. The source is never touched.
+ * Returns the pattern unchanged when the range is invalid or would exceed MAX_PATTERN_BARS. */
+export function appendBarsCopy(pattern: Pattern, beatsPerBar: number, fromBar: number, barCount: number): Pattern {
+  if (!Number.isInteger(fromBar) || !Number.isInteger(barCount) || barCount < 1) return pattern;
+  if (fromBar < 0 || fromBar + barCount > pattern.bars || pattern.bars + barCount > MAX_PATTERN_BARS) return pattern;
+  const rangeStart = fromBar * beatsPerBar;
+  const rangeEnd = (fromBar + barCount) * beatsPerBar;
+  const shift = pattern.bars * beatsPerBar - rangeStart;
+  const added: Pattern["notes"] = {};
+  for (const note of Object.values(pattern.notes)) {
+    if (note.start < rangeStart || note.start >= rangeEnd) continue;
+    const id = nextId("note");
+    added[id] = { ...note, id, start: note.start + shift, duration: Math.min(note.duration, rangeEnd - note.start) };
+  }
+  return { ...pattern, bars: pattern.bars + barCount, notes: { ...pattern.notes, ...added } };
+}

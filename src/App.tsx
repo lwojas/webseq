@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
 import { copyTrackConfig, hasTrackConfig, type CopiedTrackConfig } from "./model/trackConfig";
+import {
+  canPasteSynthLfos,
+  copyBank,
+  copyFx,
+  copyInstrument,
+  copyModulation,
+  copyTrack,
+  hasInstrument,
+  hasModulation,
+  type BankClip,
+  type FxClip,
+  type InstrumentClip,
+  type ModulationClip,
+  type TrackClip,
+} from "./model/edit";
+import { MAX_PATTERN_BARS } from "./model/notes";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
@@ -27,6 +43,7 @@ import { FxPanel } from "./components/FxPanel";
 import { MixerPanel } from "./components/MixerPanel";
 import { InstrumentPanel } from "./components/InstrumentPanel";
 import type { ModulationUi } from "./components/ModulationSlot";
+import { EditPanel, type BarTool, type ClipboardRow } from "./components/EditPanel";
 import { TrackEditor } from "./components/TrackEditor";
 import { useMidiControls } from "./midi/useMidiControls";
 
@@ -44,11 +61,12 @@ const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [
  * (all tracks at once) — same tabbed pattern as the side panel above. Instrument lives here,
  * not on the track row, because a track plays exactly one sound source: editing it in place
  * keeps the track context the sequencer is built around. */
-type BottomPanelView = "fx" | "instrument" | "editor" | "mixer";
+type BottomPanelView = "fx" | "instrument" | "editor" | "edit" | "mixer";
 const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
   { id: "fx", label: "FX" },
   { id: "instrument", label: "Instrument" },
   { id: "editor", label: "Track Editor" },
+  { id: "edit", label: "Edit" },
   { id: "mixer", label: "Mixer" },
 ];
 
@@ -58,12 +76,13 @@ const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
  * its own bottom tab bar covering all of them instead of the desktop's two separate tab
  * strips. This is pure navigation state — desktop's existing `sidePanelView`/`bottomPanelView`
  * still own which content actually renders inside each section (see handleSelectMobileTab). */
-type MobileTab = "timeline" | "fx" | "instrument" | "editor" | "mixer" | "assets" | "patterns";
+type MobileTab = "timeline" | "fx" | "instrument" | "editor" | "edit" | "mixer" | "assets" | "patterns";
 const MOBILE_TABS: { id: MobileTab; label: string }[] = [
   { id: "timeline", label: "Timeline" },
   { id: "fx", label: "FX" },
   { id: "instrument", label: "Inst" },
-  { id: "editor", label: "Edit" },
+  { id: "editor", label: "Track" },
+  { id: "edit", label: "Edit" },
   { id: "mixer", label: "Mixer" },
   { id: "assets", label: "Assets" },
   { id: "patterns", label: "Patterns" },
@@ -159,6 +178,17 @@ export function App() {
   // different payload would make what gets copied ambiguous.
   const [trackConfigClipboard, setTrackConfigClipboard] = useState<CopiedTrackConfig | null>(null);
   const [clipboardStatus, setClipboardStatus] = useState<string | null>(null);
+  // The Edit panel's object clipboard: one slot per object kind (so copying FX never discards a
+  // copied Track), each remembering where it came from for the panel's status text. Sequence has
+  // no slot here: it is the note clipboard above, so the Edit panel and Cmd+C/V share it. Cleared
+  // on New/Load with the others.
+  const [editClipboard, setEditClipboard] = useState<{
+    track?: { clip: TrackClip; from: string };
+    instrument?: { clip: InstrumentClip; from: string };
+    fx?: { clip: FxClip; from: string };
+    modulation?: { clip: ModulationClip; from: string };
+    bank?: { clip: BankClip; from: string };
+  }>({});
 
   const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
 
@@ -752,7 +782,7 @@ export function App() {
   // driving it.
   const handleSelectMobileTab = useCallback((tab: MobileTab) => {
     setMobileTab(tab);
-    if (tab === "fx" || tab === "instrument" || tab === "editor" || tab === "mixer") setBottomPanelView(tab);
+    if (tab === "fx" || tab === "instrument" || tab === "editor" || tab === "edit" || tab === "mixer") setBottomPanelView(tab);
   }, []);
 
   // --- persistence ---
@@ -817,6 +847,7 @@ export function App() {
     // project session confusingly outliving it (ECS-112/ECS-124).
     setNoteClipboard(null);
     setTrackConfigClipboard(null);
+    setEditClipboard({});
   }, [loadTargetId, runtime, init]);
 
   const handleNewProject = useCallback(() => {
@@ -830,6 +861,7 @@ export function App() {
     setStatus("stopped");
     setNoteClipboard(null);
     setTrackConfigClipboard(null);
+    setEditClipboard({});
   }, [runtime]);
 
   const handleDeleteProject = useCallback(async () => {
@@ -873,6 +905,138 @@ export function App() {
     selectedTrackAsset == null ? 0 : project.tracks.filter((t) => t.assetId === selectedTrackAsset.id).length;
   const selectedNote =
     selectedNoteId && selectedTrack ? (selectedPattern.notes[selectedNoteId] ?? null) : null;
+  // --- Edit panel (clipboard + Bar Tools); model logic lives in model/edit.ts ---
+  const bankName = (bank: number) => `Bank ${String.fromCharCode(65 + bank)}`;
+  const trackWhere = (trackId: TrackId) =>
+    `${bankName(Math.floor(project.tracks.findIndex((t) => t.id === trackId) / BANK_SIZE))} / ${trackLabel(project.tracks, trackId)}`;
+  const noTrack = "Select a track";
+  const trackBlock = (track: Track | undefined, has: boolean, empty: string) => (!track ? noTrack : has ? null : empty);
+  const clipboardRows: ClipboardRow[] = (() => {
+    const t = selectedTrack;
+    const paste = (has: boolean, what: string) => (!t ? noTrack : has ? null : `No ${what} copied`);
+    const ec = editClipboard;
+    const noteFrom = noteClipboard
+      ? `${trackWhere(noteClipboard.sourceTrackId)} · ${noteClipboard.notes.length} note${noteClipboard.notes.length === 1 ? "" : "s"}`
+      : null;
+    const done = (msg: string) => setClipboardStatus(msg);
+    return [
+      {
+        id: "track", label: "Track", copied: ec.track?.from ?? null,
+        copyBlocked: trackBlock(t, true, ""),
+        pasteBlocked: paste(!!ec.track, "Track"),
+        onCopy: () => {
+          const clip = t && copyTrack(project, t.id, selectedPattern.id);
+          if (!t || !clip) return;
+          setEditClipboard((c) => ({ ...c, track: { clip, from: trackWhere(t.id) } }));
+          done(`Track copied · ${trackWhere(t.id)}`);
+        },
+        onPaste: () => {
+          if (!t || !ec.track) return;
+          dispatch({ type: "PASTE_TRACK", trackId: t.id, patternId: selectedPattern.id, clip: ec.track.clip });
+          done(`Track pasted → ${trackWhere(t.id)}`);
+        },
+      },
+      {
+        id: "sequence", label: "Sequence", copied: noteFrom,
+        copyBlocked: trackBlock(t, selectedTrackHasNotes, "No steps on this track"),
+        pasteBlocked: paste(!!noteClipboard, "Sequence"),
+        onCopy: () => t && handleCopyTrack(t.id),
+        onPaste: handlePasteNotes,
+      },
+      {
+        id: "instrument", label: "Instrument", copied: ec.instrument?.from ?? null,
+        copyBlocked: trackBlock(t, !!t && hasInstrument(t), "Track has no sample or synth"),
+        pasteBlocked: paste(!!ec.instrument, "Instrument"),
+        onCopy: () => {
+          if (!t) return;
+          setEditClipboard((c) => ({ ...c, instrument: { clip: copyInstrument(t), from: trackWhere(t.id) } }));
+          done(`Instrument copied · ${trackWhere(t.id)}`);
+        },
+        onPaste: () => {
+          if (!t || !ec.instrument) return;
+          const stale = ec.instrument.clip.assetId != null && !project.assets.some((a) => a.id === ec.instrument!.clip.assetId);
+          dispatch({ type: "PASTE_INSTRUMENT", trackId: t.id, clip: ec.instrument.clip });
+          done(`Instrument pasted → ${trackWhere(t.id)}${stale ? " — copied asset no longer exists" : ""}`);
+        },
+      },
+      {
+        id: "fx", label: "FX", copied: ec.fx?.from ?? null,
+        copyBlocked: trackBlock(t, !!t && t.fx.length > 0, "Track has no FX"),
+        pasteBlocked: paste(!!ec.fx, "FX"),
+        onCopy: () => {
+          if (!t) return;
+          setEditClipboard((c) => ({ ...c, fx: { clip: copyFx(t), from: trackWhere(t.id) } }));
+          done(`FX copied · ${trackWhere(t.id)}`);
+        },
+        onPaste: () => {
+          if (!t || !ec.fx) return;
+          dispatch({ type: "PASTE_FX", trackId: t.id, clip: ec.fx.clip });
+          done(`FX pasted → ${trackWhere(t.id)}`);
+        },
+      },
+      {
+        id: "modulation", label: "Modulation", copied: ec.modulation?.from ?? null,
+        copyBlocked: trackBlock(t, !!t && hasModulation(t), "Track has no modulation"),
+        pasteBlocked: paste(!!ec.modulation, "Modulation"),
+        onCopy: () => {
+          if (!t) return;
+          setEditClipboard((c) => ({ ...c, modulation: { clip: copyModulation(t), from: trackWhere(t.id) } }));
+          done(`Modulation copied · ${trackWhere(t.id)}`);
+        },
+        onPaste: () => {
+          if (!t || !ec.modulation) return;
+          const clip = ec.modulation.clip;
+          dispatch({ type: "PASTE_MODULATION", trackId: t.id, clip });
+          const skipped = clip.lfos.length > 0 && !canPasteSynthLfos(t, clip);
+          done(`Modulation pasted → ${trackWhere(t.id)}${skipped ? " — synth LFOs skipped (different synth)" : ""}`);
+        },
+      },
+      {
+        id: "bank", label: "Bank", copied: ec.bank?.from ?? null,
+        copyBlocked: null,
+        pasteBlocked: ec.bank ? null : "No Bank copied",
+        onCopy: () => {
+          setEditClipboard((c) => ({ ...c, bank: { clip: copyBank(project, activeBank), from: bankName(activeBank) } }));
+          done(`Bank copied · ${bankName(activeBank)}`);
+        },
+        onPaste: () => {
+          if (!ec.bank) return;
+          dispatch({ type: "PASTE_BANK", bank: activeBank, clip: ec.bank.clip });
+          done(`Bank pasted → ${bankName(activeBank)}`);
+        },
+      },
+    ];
+  })();
+  // "Current bar" is derived from existing selection, not a new one: the bar holding the selected
+  // step in the selected pattern.
+  const selectedStepBar =
+    selectedNote && selectedNote.trackId === selectedTrack?.id ? Math.floor(selectedNote.start / project.beatsPerBar) : null;
+  const barTools: BarTool[] = [
+    {
+      id: "duplicate-sequence", label: "Duplicate Sequence",
+      blocked: selectedPattern.bars * 2 > MAX_PATTERN_BARS ? `Would exceed ${MAX_PATTERN_BARS} bars` : null,
+      hint: `${selectedPattern.bars} → ${selectedPattern.bars * 2} bars`,
+      onRun: () => {
+        dispatch({ type: "DUPLICATE_SEQUENCE", patternId: selectedPattern.id });
+        setClipboardStatus(`Sequence duplicated · ${selectedPattern.bars * 2} bars`);
+      },
+    },
+    {
+      id: "duplicate-bar", label: "Duplicate Bar",
+      blocked:
+        selectedStepBar === null
+          ? "Select a step to choose its bar"
+          : selectedPattern.bars + 1 > MAX_PATTERN_BARS
+            ? `Would exceed ${MAX_PATTERN_BARS} bars`
+            : null,
+      hint: selectedStepBar === null ? null : `Bar ${selectedStepBar + 1} → end (bar ${selectedPattern.bars + 1})`,
+      onRun: () => {
+        if (selectedStepBar === null) return;
+        dispatch({ type: "DUPLICATE_BAR", patternId: selectedPattern.id, bar: selectedStepBar });
+        setClipboardStatus(`Bar ${selectedStepBar + 1} appended as bar ${selectedPattern.bars + 1}`);
+      },
+    },
+  ];
   const playheadInfo = transportRef.current?.getPlayheadInfo();
   // Polled, unlike playheadInfo above -- the queue now advances on its own (see
   // Project.patternChain's doc comment), so PatternBar/PatternList/PatternQueue's highlighting
@@ -1126,6 +1290,7 @@ export function App() {
                 onSetTrackNotesLfo={handleSetTrackNotesLfo}
               />
             )}
+            {bottomPanelView === "edit" && <EditPanel clipboard={clipboardRows} barTools={barTools} feedback={clipboardStatus} />}
             {bottomPanelView === "mixer" && (
               <MixerPanel
                 tracks={tracksInBank(project, activeBank)}

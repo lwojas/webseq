@@ -8,6 +8,7 @@ import * as instruments from "./instruments";
 import * as eventLfo from "./eventLfo";
 import * as automation from "./automation";
 import * as trackConfig from "./trackConfig";
+import * as edit from "./edit";
 
 export type Action =
   | { type: "SET_BPM"; bpm: number }
@@ -39,6 +40,13 @@ export type Action =
   | { type: "CLEAR_TRACK_NOTES"; patternId: PatternId; trackId: TrackId }
   | { type: "PASTE_NOTES"; patternId: PatternId; trackId: TrackId; notes: CopiedNote[] }
   | { type: "PASTE_TRACK_CONFIG"; trackId: TrackId; config: CopiedTrackConfig }
+  | { type: "PASTE_TRACK"; trackId: TrackId; patternId: PatternId; clip: edit.TrackClip }
+  | { type: "PASTE_INSTRUMENT"; trackId: TrackId; clip: edit.InstrumentClip }
+  | { type: "PASTE_FX"; trackId: TrackId; clip: edit.FxClip }
+  | { type: "PASTE_MODULATION"; trackId: TrackId; clip: edit.ModulationClip }
+  | { type: "PASTE_BANK"; bank: number; clip: edit.BankClip }
+  | { type: "DUPLICATE_SEQUENCE"; patternId: PatternId }
+  | { type: "DUPLICATE_BAR"; patternId: PatternId; bar: number }
   | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
   | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
   | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
@@ -123,6 +131,20 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.pasteNotes(state, action.patternId, action.trackId, action.notes).project;
     case "PASTE_TRACK_CONFIG":
       return trackConfig.pasteTrackConfig(state, action.trackId, action.config);
+    case "PASTE_TRACK":
+      return edit.pasteTrack(state, action.trackId, action.patternId, action.clip);
+    case "PASTE_INSTRUMENT":
+      return edit.pasteInstrument(state, action.trackId, action.clip);
+    case "PASTE_FX":
+      return edit.pasteFx(state, action.trackId, action.clip);
+    case "PASTE_MODULATION":
+      return edit.pasteModulation(state, action.trackId, action.clip);
+    case "PASTE_BANK":
+      return edit.pasteBank(state, action.bank, action.clip);
+    case "DUPLICATE_SEQUENCE":
+      return edit.duplicateSequence(state, action.patternId);
+    case "DUPLICATE_BAR":
+      return edit.duplicateBar(state, action.patternId, action.bar);
     case "RESIZE_NOTE":
       return project.resizeNote(state, action.patternId, action.noteId, action.duration, action.resolution);
     case "MOVE_NOTE":

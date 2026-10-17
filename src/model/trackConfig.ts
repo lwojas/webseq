@@ -8,7 +8,7 @@ import { INSTRUMENT_DEFS } from "./instruments";
 import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, effectivePan, effectivePlaybackMode, effectiveVoiceMode } from "./types";
 
 /** By-value copy of a synth source, including its LFO slots. */
-function cloneInstrument(i: TrackInstrument): TrackInstrument {
+export function cloneInstrument(i: TrackInstrument): TrackInstrument {
   const copy: TrackInstrument = { ...i, params: { ...i.params } };
   if (i.lfos) copy.lfos = i.lfos.map((l) => ({ ...l }));
   return copy;
@@ -35,6 +35,24 @@ let idCounter = 0;
 function nextId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Deep-clones an FX chain with fresh FX ids, remapping the automation lanes to them (lanes whose
+ * FX isn't in the chain are dropped). Two tracks must never reference the same FxInstance. */
+export function cloneFxChain(
+  fx: FxInstance[],
+  automation: AutomationLane[],
+): { fx: FxInstance[]; automation: AutomationLane[] } {
+  const idMap = new Map<FxId, FxId>();
+  const newFx = fx.map((f) => {
+    const id = nextId("fx");
+    idMap.set(f.id, id);
+    return { ...f, id, params: { ...f.params } };
+  });
+  const newAutomation = automation
+    .filter((lane) => idMap.has(lane.fxId))
+    .map((lane) => ({ ...lane, fxId: idMap.get(lane.fxId)!, events: lane.events.map((e) => ({ ...e })) }));
+  return { fx: newFx, automation: newAutomation };
 }
 
 /** Whether `track` has any reusable configuration worth copying — same "nothing to do, hide
@@ -99,15 +117,7 @@ export function pasteTrackConfig(project: Project, trackId: TrackId, config: Cop
   const assetId: AssetId | null = asset ? asset.id : null;
   const instrument: TrackInstrument | null = config.instrument ? cloneInstrument(config.instrument) : null;
 
-  const idMap = new Map<FxId, FxId>();
-  const fx: FxInstance[] = config.fx.map((f) => {
-    const id = nextId("fx");
-    idMap.set(f.id, id);
-    return { ...f, id, params: { ...f.params } };
-  });
-  const automation: AutomationLane[] = config.automation
-    .filter((lane) => idMap.has(lane.fxId))
-    .map((lane) => ({ ...lane, fxId: idMap.get(lane.fxId)!, events: lane.events.map((e) => ({ ...e })) }));
+  const { fx, automation } = cloneFxChain(config.fx, config.automation);
 
   return {
     ...project,

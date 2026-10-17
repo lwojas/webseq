@@ -1,0 +1,68 @@
+/** One clipboard object kind (Track, Sequence, ...) as a Copy/Paste row. The panel renders
+ * whatever rows it's given, so a new object kind is one more entry in App.tsx's list. */
+export interface ClipboardRow {
+  id: string;
+  label: string;
+  /** Why Copy is unavailable right now, or null when it is available. */
+  copyBlocked: string | null;
+  /** Why Paste is unavailable right now (e.g. nothing of this kind copied), or null. */
+  pasteBlocked: string | null;
+  /** What is on the clipboard for this kind, e.g. "Bank A / Track 03", or null when empty. */
+  copied: string | null;
+  onCopy: () => void;
+  onPaste: () => void;
+}
+
+/** A one-shot action over the sequence's steps. */
+export interface BarTool {
+  id: string;
+  label: string;
+  /** Why it's unavailable right now, or null. Doubles as the tooltip when disabled. */
+  blocked: string | null;
+  /** Shown beside the button when available, e.g. which bar it will act on. */
+  hint: string | null;
+  onRun: () => void;
+}
+
+interface Props {
+  clipboard: ClipboardRow[];
+  barTools: BarTool[];
+  /** Transient result of the last action, cleared by App.tsx after a couple of seconds. */
+  feedback: string | null;
+}
+
+/** The Edit tab: project-level editing operations grouped by what they act on. Presentational —
+ * all state and model calls live in App.tsx. */
+export function EditPanel({ clipboard, barTools, feedback }: Props) {
+  return (
+    <div className="edit-panel">
+      <section className="edit-group">
+        <div className="edit-group-title">Clipboard</div>
+        {clipboard.map((row) => (
+          <div key={row.id} className="edit-row">
+            <span className="edit-row-label">{row.label}</span>
+            <button className="track-copy-btn" disabled={row.copyBlocked !== null} title={row.copyBlocked ?? `Copy ${row.label}`} onClick={row.onCopy}>
+              Copy
+            </button>
+            <button className="track-paste-btn" disabled={row.pasteBlocked !== null} title={row.pasteBlocked ?? `Paste ${row.label}`} onClick={row.onPaste}>
+              Paste
+            </button>
+            <span className="edit-row-status">{row.copied ?? ""}</span>
+          </div>
+        ))}
+      </section>
+      <section className="edit-group">
+        <div className="edit-group-title">Bar Tools</div>
+        {barTools.map((tool) => (
+          <div key={tool.id} className="edit-row">
+            <button className="track-copy-btn edit-tool-btn" disabled={tool.blocked !== null} title={tool.blocked ?? tool.label} onClick={tool.onRun}>
+              {tool.label}
+            </button>
+            <span className="edit-row-status">{tool.blocked ?? tool.hint ?? ""}</span>
+          </div>
+        ))}
+      </section>
+      {feedback && <div className="clipboard-status edit-feedback">{feedback}</div>}
+    </div>
+  );
+}

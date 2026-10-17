@@ -1919,6 +1919,7 @@ select {
   .app[data-mobile-tab="fx"] .main,
   .app[data-mobile-tab="instrument"] .main,
   .app[data-mobile-tab="editor"] .main,
+  .app[data-mobile-tab="edit"] .main,
   .app[data-mobile-tab="mixer"] .main {
     display: flex;
     flex: 1;
@@ -1927,6 +1928,7 @@ select {
   .app[data-mobile-tab="fx"] .bottom-panel,
   .app[data-mobile-tab="instrument"] .bottom-panel,
   .app[data-mobile-tab="editor"] .bottom-panel,
+  .app[data-mobile-tab="edit"] .bottom-panel,
   .app[data-mobile-tab="mixer"] .bottom-panel {
     display: flex;
     flex: 1;
@@ -1967,6 +1969,7 @@ select {
 
   .mobile-tab {
     flex: 1;
+    min-width: 0;
     background: transparent;
     border: none;
     border-right: 1px solid var(--border);
@@ -2047,7 +2050,7 @@ select {
   .bottom-panel-tab,
   .bank-tab,
   .mobile-tab {
-    padding: 12px 8px;
+    padding: 12px 2px;
   }
 
   .mode-toggle-option {
@@ -2183,4 +2186,75 @@ select {
   height: 3px;
   background: var(--amber);
   pointer-events: none;
+}
+
+/* --- Edit panel (clipboard + bar tools) ---
+   Reuses .track-copy-btn/.track-paste-btn/.clipboard-status for the buttons and feedback; this
+   only lays them out as compact label | Copy | Paste | status rows inside two groups. */
+
+.edit-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 12px 32px;
+  padding: 10px 12px;
+}
+
+.edit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 260px;
+}
+
+.edit-group-title {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+  margin-bottom: 2px;
+}
+
+.edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-row-label {
+  width: 78px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.edit-row-status {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-tool-btn {
+  min-width: 140px;
+}
+
+.track-copy-btn:disabled,
+.track-paste-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: var(--panel);
+  color: var(--accent);
+}
+
+.edit-feedback {
+  flex-basis: 100%;
+  margin-top: 0;
 }
