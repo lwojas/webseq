@@ -126,6 +126,8 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
         options: ["Off", "On"].map((label, value) => ({ value, label })),
       },
       { id: "slide", label: "Slide", min: 0, max: 0.5, step: 0.01, unit: "s", default: 0 },
+      // Filter Mod: how far the note's timbre envelope moves the cutoff (0 = static filter).
+      { id: "filterMod", label: "Filter Mod", min: 0, max: 1, step: 0.01, default: 0.4 },
     ],
   },
   pulse: {
@@ -138,6 +140,7 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "cutoff", label: "Cutoff", min: 60, max: 6000, step: 1, unit: "Hz", default: 500 },
       { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.25 },
       { id: "pump", label: "Pump", min: 0, max: 1, step: 0.01, default: 0.5 },
+      // Repeat is the rhythmic drive (grit) per cycle; Filter Mod is how far each cycle opens the filter.
       { id: "repeat", label: "Repeat", min: 0, max: 1, step: 0.01, default: 0.4 },
       {
         id: "rate",
@@ -151,6 +154,7 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "diffuse", label: "Diffuse", min: 0, max: 1, step: 0.01, default: 0.3 },
       { id: "attack", label: "Attack", min: 0.001, max: 0.25, step: 0.001, unit: "s", default: 0.003 },
       { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.08 },
+      { id: "filterMod", label: "Filter Mod", min: 0, max: 1, step: 0.01, default: 0.3 },
     ],
   },
   // Sustained stereo pad (webdsp docs/pad-instrument.md). Free-running (not tempo-synced). A new

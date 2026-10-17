@@ -5,7 +5,7 @@ import { instrumentHostFor } from "../src/audio/instruments";
 import { compileInstrumentNotes, compileNote } from "../src/audio/compile";
 import { Playback } from "../src/audio/playback";
 import { createInitialProject, assignAsset, addAsset, addNote, setNotePitch } from "../src/model/project";
-import { rootMidiNote, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
+import { INSTRUMENT_DEFS, rootMidiNote, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
 import { pasteTrackConfig, copyTrackConfig } from "../src/model/trackConfig";
 import { mockRuntime } from "./mockRuntime";
 
@@ -157,6 +157,15 @@ describe("compileInstrumentNotes", () => {
       tune: 110, tone: 0.5, movement: 0.5, detune: 0.4, space: 0.6, attack: 0.8, release: 3,
     });
     expect(rootMidiNote(pad.tracks[0])).toBeCloseTo(45);
+  });
+
+  it("exposes Filter Mod on bass and pulse, separate from bite/repeat, under webdsp's filterMod name", () => {
+    for (const [kind, def] of [["bass", 0.4], ["pulse", 0.3]] as const) {
+      const project = projectWithNotes(kind);
+      expect(project.tracks[0].instrument?.params.filterMod).toBe(def);
+      expect(INSTRUMENT_DEFS[kind].params.find((p) => p.id === "filterMod")?.label).toBe("Filter Mod");
+    }
+    expect(INSTRUMENT_DEFS.pad.params.some((p) => p.id === "filterMod")).toBe(false);
   });
 
   it("yields nothing for sample-only projects", () => {
