@@ -2075,8 +2075,22 @@ select {
 
 /* --- modulation slot (Instrument panel) --- */
 
+/* Lives inside the synth's module-panel, below its controls: a divided section of the same card. */
 .mod-slot {
-  margin-top: 12px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-strong);
+}
+
+.mod-slot .module-panel-header {
+  margin-bottom: 6px;
+}
+
+.mod-slot-title {
+  color: var(--accent);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .mod-lfo {

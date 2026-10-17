@@ -168,18 +168,17 @@ export function InstrumentPanel({
               )}
             </div>
             {def.sustained && <div className="instrument-hint">Sustained: each note's length is its held time.</div>}
+            {modulation && (
+              <ModulationSlot
+                lfos={synth.lfos ?? []}
+                ui={modulation}
+                labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
+                onAdd={(target) => onAddLfo(track.id, target)}
+                onChange={(index, patch) => onSetLfo(track.id, index, patch)}
+                onRemove={(index) => onRemoveLfo(track.id, index)}
+              />
+            )}
           </div>
-        )}
-
-        {synth && def && modulation && (
-          <ModulationSlot
-            lfos={synth.lfos ?? []}
-            ui={modulation}
-            labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
-            onAdd={(target) => onAddLfo(track.id, target)}
-            onChange={(index, patch) => onSetLfo(track.id, index, patch)}
-            onRemove={(index) => onRemoveLfo(track.id, index)}
-          />
         )}
 
         {!synth && asset && (

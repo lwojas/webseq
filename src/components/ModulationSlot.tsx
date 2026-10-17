@@ -36,9 +36,9 @@ export function ModulationSlot({ lfos, ui, labelFor, onAdd, onChange, onRemove }
   if (ui.targets.length === 0) return null;
   const max = Math.min(ui.maxLfos, MAX_TRACK_LFOS);
   return (
-    <div className="module-panel mod-slot">
+    <div className="mod-slot">
       <div className="module-panel-header">
-        <span className="name">Modulation</span>
+        <span className="mod-slot-title">Modulation</span>
         <button className="btn small" disabled={lfos.length >= max} onClick={() => onAdd(ui.targets.includes("cutoff") ? "cutoff" : ui.targets[0])} title="Add an LFO">
           + Add LFO
         </button>
