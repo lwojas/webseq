@@ -117,7 +117,7 @@ describe("InstrumentHost", () => {
 });
 
 describe("compileInstrumentNotes", () => {
-  function projectWithNotes(kind: "kick" | "bass" | "pulse") {
+  function projectWithNotes(kind: "kick" | "bass" | "pulse" | "pad") {
     let project = setTrackInstrument(createInitialProject(), "track-1", kind);
     const patternId = project.patterns[0].id;
     project = addNote(project, patternId, "track-1", 4);
@@ -146,6 +146,17 @@ describe("compileInstrumentNotes", () => {
     expect(p.params.duration).toBeCloseTo(1 * spb);
     expect(pulse.tracks[0].instrument?.params.rate).toBe(2);
     expect(pulse.tracks[0].instrument?.params.tune).toBe(110);
+  });
+
+  it("treats pad as sustained, with Pad's catalog defaults and an A2 root", () => {
+    const spb = 60 / (120 * 4);
+    const pad = projectWithNotes("pad");
+    const [p] = compileInstrumentNotes(pad.patterns[0], pad.tracks, 120, 10);
+    expect(p.params.duration).toBeCloseTo(1 * spb);
+    expect(pad.tracks[0].instrument?.params).toEqual({
+      tune: 110, tone: 0.5, movement: 0.5, detune: 0.4, space: 0.6, attack: 0.8, release: 3,
+    });
+    expect(rootMidiNote(pad.tracks[0])).toBeCloseTo(45);
   });
 
   it("yields nothing for sample-only projects", () => {

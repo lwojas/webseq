@@ -153,6 +153,24 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.08 },
     ],
   },
+  // Sustained stereo pad (webdsp docs/pad-instrument.md). Free-running (not tempo-synced). A new
+  // note on a sounding track moves the previous one into its release, so give pad notes a
+  // `duration` and let consecutive notes overlap.
+  pad: {
+    kind: "pad",
+    label: "Pad",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 440, step: 0.5, unit: "Hz", default: 110 },
+      { id: "tone", label: "Tone", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "movement", label: "Movement", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "detune", label: "Detune", min: 0, max: 1, step: 0.01, default: 0.4 },
+      { id: "space", label: "Space", min: 0, max: 1, step: 0.01, default: 0.6 },
+      { id: "attack", label: "Attack", min: 0.02, max: 8, step: 0.01, unit: "s", default: 0.8 },
+      { id: "release", label: "Release", min: 0.1, max: 12, step: 0.1, unit: "s", default: 3 },
+    ],
+  },
 };
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];
