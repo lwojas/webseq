@@ -6,7 +6,7 @@ import { InstrumentKind, type AudioRuntime } from "webdsp";
 export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   kick: ["tune", "pitchDrop", "pitchDecay", "decay", "punch", "drive"],
   snare: ["tune", "decay", "snap", "noise"],
-  pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release", "filterMod"],
+  pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release"],
   pad: ["tune", "tone", "movement", "detune", "space", "attack", "release"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide", "filterMod"],
 };

@@ -159,12 +159,11 @@ describe("compileInstrumentNotes", () => {
     expect(rootMidiNote(pad.tracks[0])).toBeCloseTo(45);
   });
 
-  it("exposes Filter Mod on bass and pulse, separate from bite/repeat, under webdsp's filterMod name", () => {
-    for (const [kind, def] of [["bass", 0.4], ["pulse", 0.3]] as const) {
-      const project = projectWithNotes(kind);
-      expect(project.tracks[0].instrument?.params.filterMod).toBe(def);
-      expect(INSTRUMENT_DEFS[kind].params.find((p) => p.id === "filterMod")?.label).toBe("Filter Mod");
-    }
+  it("exposes Filter Mod on bass (separate from bite) but not on pulse, whose repeat sets filter and drive", () => {
+    const bass = projectWithNotes("bass");
+    expect(bass.tracks[0].instrument?.params.filterMod).toBe(0.4);
+    expect(INSTRUMENT_DEFS.bass.params.find((p) => p.id === "filterMod")?.label).toBe("Filter Mod");
+    expect(INSTRUMENT_DEFS.pulse.params.some((p) => p.id === "filterMod")).toBe(false);
     expect(INSTRUMENT_DEFS.pad.params.some((p) => p.id === "filterMod")).toBe(false);
   });
 
