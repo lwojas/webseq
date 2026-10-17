@@ -21,7 +21,8 @@ interface Props {
   onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onRemoveNote: (noteId: NoteId) => void;
-  onLoadSample: (trackId: TrackId, file: File) => void;
+  onSetMuted: (trackId: TrackId, muted: boolean) => void;
+  onSetSoloed: (trackId: TrackId, soloed: boolean) => void;
   /** Which bank of 16 tracks is shown (see model/project.ts's BANK_SIZE). */
   bank: number;
   bankSummaries: BankSummary[];
@@ -55,7 +56,8 @@ export function SequencerGrid({
   onResizeNote,
   onMoveNote,
   onRemoveNote,
-  onLoadSample,
+  onSetMuted,
+  onSetSoloed,
   bank,
   bankSummaries,
   onSelectBank,
@@ -127,7 +129,8 @@ export function SequencerGrid({
                   onResizeNote={onResizeNote}
                   onMoveNote={onMoveNote}
                   onRemoveNote={onRemoveNote}
-                  onLoadSample={onLoadSample}
+                  onSetMuted={onSetMuted}
+                  onSetSoloed={onSetSoloed}
                   looping={loopingTrackIds.includes(track.id)}
                   triggerDisabled={triggerDisabled}
                   onTrigger={onTriggerTrack}

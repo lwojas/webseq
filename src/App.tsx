@@ -487,14 +487,6 @@ export function App() {
     [importAsset],
   );
 
-  const handleImportAndAssignToTrack = useCallback(
-    async (trackId: TrackId, file: File) => {
-      const asset = await importAsset(file);
-      if (asset) dispatch({ type: "ASSIGN_ASSET", trackId, assetId: asset.id });
-    },
-    [importAsset],
-  );
-
   const handleAssignAsset = useCallback(
     (trackId: TrackId, assetId: AssetId) => dispatch({ type: "ASSIGN_ASSET", trackId, assetId }),
     [],
@@ -1195,7 +1187,8 @@ export function App() {
             onResizeNote={handleResizeNote}
             onMoveNote={handleMoveNote}
             onRemoveNote={handleRemoveNote}
-            onLoadSample={handleImportAndAssignToTrack}
+            onSetMuted={handleSetTrackMuted}
+            onSetSoloed={handleSetTrackSoloed}
             bank={activeBank}
             bankSummaries={bankSummaries}
             onSelectBank={setActiveBank}

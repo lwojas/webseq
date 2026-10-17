@@ -1,4 +1,4 @@
-import { memo, useRef } from "react";
+import { memo } from "react";
 import type { FxTarget, Note, NoteId, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, trackHasSource } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
@@ -27,7 +27,10 @@ interface Props {
   onResizeNote: (noteId: NoteId, duration: number, freePlacement: boolean) => void;
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onRemoveNote: (noteId: NoteId) => void;
-  onLoadSample: (trackId: TrackId, file: File) => void;
+  /** Same actions the Mixer strip uses; the state itself is the track's own muted/soloed, so the
+   * two surfaces can't drift apart. */
+  onSetMuted: (trackId: TrackId, muted: boolean) => void;
+  onSetSoloed: (trackId: TrackId, soloed: boolean) => void;
   /** This track's manual loop is sounding (see audio/playback.ts). A primitive, so the memo still holds. */
   looping: boolean;
   /** Disables the trigger while a resample is armed or capturing. */
@@ -52,12 +55,12 @@ export const TrackRow = memo(function TrackRow({
   onResizeNote,
   onMoveNote,
   onRemoveNote,
-  onLoadSample,
+  onSetMuted,
+  onSetSoloed,
   looping,
   triggerDisabled,
   onTrigger,
 }: Props) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const loopTrack = effectivePlaybackMode(track) === "loop";
   const width = beats * pxPerBeat;
   // Defensive clamp: the visible window is recomputed on its own rAF cadence (see
@@ -91,25 +94,29 @@ export const TrackRow = memo(function TrackRow({
           </button>
         )}
         <button
-          className="load-btn"
+          className={`track-mute ${track.muted ? "active" : ""}`}
+          title="Mute"
+          aria-label={`Mute ${track.name}`}
+          aria-pressed={track.muted}
           onClick={(e) => {
             e.stopPropagation();
-            fileInputRef.current?.click();
+            onSetMuted(track.id, !track.muted);
           }}
         >
-          Load
+          M
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          className="hidden-input"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) onLoadSample(track.id, file);
-            e.target.value = "";
+        <button
+          className={`track-solo ${track.soloed ? "active" : ""}`}
+          title="Solo"
+          aria-label={`Solo ${track.name}`}
+          aria-pressed={track.soloed}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetSoloed(track.id, !track.soloed);
           }}
-        />
+        >
+          S
+        </button>
       </div>
       <div className="track-lane" style={{ width }}>
         <div className="cells" style={{ gridTemplateColumns: `repeat(${beats}, ${pxPerBeat}px)` }}>

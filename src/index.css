@@ -941,7 +941,10 @@ select {
   font-style: italic;
 }
 
-.track-header .load-btn {
+/* Per-row mute/solo (same state as the Mixer's M/S — both read Track.muted/soloed). Active
+   colors match .mixer-mute/.mixer-solo below. Hidden on phones (see the 768px block). */
+.track-header .track-mute,
+.track-header .track-solo {
   background: transparent;
   border: 1px solid var(--border-strong);
   color: var(--text-dim);
@@ -949,16 +952,16 @@ select {
   padding: 2px 6px;
   cursor: pointer;
   font-size: 9px;
-  text-transform: uppercase;
   flex-shrink: 0;
 }
 
-.track-header .load-btn:hover {
+.track-header .track-mute:hover,
+.track-header .track-solo:hover {
   color: var(--accent);
   border-color: var(--accent-dim);
 }
 
-/* Manual trigger (ECS-83) — same treatment as .load-btn, shown only on the selected track's
+/* Manual trigger (ECS-83) — same treatment as .track-mute, shown only on the selected track's
    header. "active" marks a sounding loop (the same accent the .btn.active family uses). */
 .track-header .track-trigger {
   background: transparent;
@@ -1678,13 +1681,15 @@ select {
   gap: 4px;
 }
 
-.mixer-mute.active {
+.mixer-mute.active,
+.track-header .track-mute.active {
   background: #6b2323;
   border-color: var(--danger);
   color: #ffe4e4;
 }
 
-.mixer-solo.active {
+.mixer-solo.active,
+.track-header .track-solo.active {
   background: #6b5323;
   border-color: var(--amber);
   color: #ffe9c4;
@@ -1844,6 +1849,19 @@ select {
 }
 
 @media (max-width: 768px) {
+  /* Phone track header: no mute/solo (the Mixer tab has them), and the name is cut to four
+     characters — enough to tell a loaded track from "— empty —". */
+  .track-header .track-mute,
+  .track-header .track-solo {
+    display: none;
+  }
+
+  .track-header .track-name:not(.master-name) {
+    flex: 0 1 auto;
+    max-width: 4ch;
+    text-overflow: clip;
+  }
+
   .topbar {
     flex-wrap: wrap;
     row-gap: 8px;
@@ -2021,7 +2039,8 @@ select {
     padding: 10px 8px;
   }
 
-  .track-header .load-btn,
+  .track-header .track-mute,
+  .track-header .track-solo,
   .track-header .track-trigger {
     padding: 7px 9px;
   }
