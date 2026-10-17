@@ -8,6 +8,7 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   snare: ["tune", "decay", "snap", "noise"],
   pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release"],
   pad: ["tune", "tone", "movement", "detune", "space", "attack", "release"],
+  fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide", "filterMod"],
 };
 const KIND_IDS: [string, InstrumentKind][] = [
@@ -16,6 +17,7 @@ const KIND_IDS: [string, InstrumentKind][] = [
   ["bass", InstrumentKind.Bass],
   ["pulse", InstrumentKind.Pulse],
   ["pad", InstrumentKind.Pad],
+  ["fm", InstrumentKind.Fm],
 ];
 
 export function mockRuntime() {

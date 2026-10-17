@@ -117,7 +117,7 @@ describe("InstrumentHost", () => {
 });
 
 describe("compileInstrumentNotes", () => {
-  function projectWithNotes(kind: "kick" | "bass" | "pulse" | "pad") {
+  function projectWithNotes(kind: "kick" | "bass" | "pulse" | "pad" | "fm") {
     let project = setTrackInstrument(createInitialProject(), "track-1", kind);
     const patternId = project.patterns[0].id;
     project = addNote(project, patternId, "track-1", 4);
@@ -165,6 +165,18 @@ describe("compileInstrumentNotes", () => {
     expect(INSTRUMENT_DEFS.bass.params.find((p) => p.id === "filterMod")?.label).toBe("Filter Mod");
     expect(INSTRUMENT_DEFS.pulse.params.some((p) => p.id === "filterMod")).toBe(false);
     expect(INSTRUMENT_DEFS.pad.params.some((p) => p.id === "filterMod")).toBe(false);
+  });
+
+  it("treats fm as sustained, with FM's catalog defaults and an A2 root", () => {
+    const spb = 60 / (120 * 4);
+    const fm = projectWithNotes("fm");
+    const [p] = compileInstrumentNotes(fm.patterns[0], fm.tracks, 120, 10);
+    expect(p.params.duration).toBeCloseTo(1 * spb);
+    expect(fm.tracks[0].instrument?.params).toEqual({
+      tune: 110, ratio: 1, timbre: 0.35, snap: 0.6, tone: 0.75, attack: 0.003, decay: 0.3,
+      sustain: 0.6, release: 0.1, legato: 0, slide: 0,
+    });
+    expect(rootMidiNote(fm.tracks[0])).toBeCloseTo(45);
   });
 
   it("yields nothing for sample-only projects", () => {

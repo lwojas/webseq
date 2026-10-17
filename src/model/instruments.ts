@@ -173,6 +173,44 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "release", label: "Release", min: 0.1, max: 12, step: 0.1, unit: "s", default: 3 },
     ],
   },
+  // Two-operator FM bass/lead (webdsp docs/fm-instrument.md). Sustained: each note's length is its
+  // held time. Ratio is a stepped colour switch (hollow/odd, inharmonic metal ...). Timbre is the
+  // resting FM depth and Snap a bright onset that decays; Legato/Slide behave as on the Bass.
+  fm: {
+    kind: "fm",
+    label: "FM",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 880, step: 0.5, unit: "Hz", default: 110 },
+      {
+        id: "ratio",
+        label: "Ratio",
+        min: 0,
+        max: 7,
+        step: 1,
+        default: 1,
+        options: ["1:2", "1:1", "2:1", "3:1", "4:1", "5:1", "1.41", "3.5"].map((label, value) => ({ value, label })),
+      },
+      { id: "timbre", label: "Timbre", min: 0, max: 1, step: 0.01, default: 0.35 },
+      { id: "snap", label: "Snap", min: 0, max: 1, step: 0.01, default: 0.6 },
+      { id: "tone", label: "Tone", min: 0, max: 1, step: 0.01, default: 0.75 },
+      { id: "attack", label: "Attack", min: 0.001, max: 0.25, step: 0.001, unit: "s", default: 0.003 },
+      { id: "decay", label: "Decay", min: 0.03, max: 2, step: 0.01, unit: "s", default: 0.3 },
+      { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0.6 },
+      { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.1 },
+      {
+        id: "legato",
+        label: "Legato",
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 0,
+        options: ["Off", "On"].map((label, value) => ({ value, label })),
+      },
+      { id: "slide", label: "Slide", min: 0, max: 0.5, step: 0.01, unit: "s", default: 0 },
+    ],
+  },
 };
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];
