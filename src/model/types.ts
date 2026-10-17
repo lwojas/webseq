@@ -88,6 +88,27 @@ export interface Track {
 export interface TrackInstrument {
   kind: InstrumentKindId;
   params: Record<string, number>;
+  /** LFO modulation slots (webdsp docs/lfo-modulation.md), in slot order; absent/empty = none.
+   * Each routes one LFO to one of the synth's control values — the base in `params` is never
+   * changed by it. */
+  lfos?: TrackLfo[];
+}
+
+export type LfoWaveformId = "sine" | "triangle" | "square" | "saw";
+
+/** One LFO slot. Waveform, division and target are stored by webdsp's own *names* (not engine
+ * indices/ids), so a saved project survives the engine reordering its tables. `target` is a
+ * control id from INSTRUMENT_DEFS (= the engine's param name) that the synth reports as a
+ * modulation target. `amount` is -1..1 (UI: -100..100 %); free mode uses `rateHz`, sync mode the
+ * `division` ("1/4", "1/8T", ...). */
+export interface TrackLfo {
+  waveform: LfoWaveformId;
+  sync: boolean;
+  rateHz: number;
+  division: string;
+  phase: number;
+  amount: number;
+  target: string;
 }
 
 export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "bass" | "pulse" | "pad" | "fm";

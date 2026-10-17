@@ -12,11 +12,14 @@
 // One instance is one monophonic machine, so a track playing a synth is inherently mono: a new
 // note retriggers it. That is the engine's rule, not the track's voiceMode.
 import type { AudioRuntime, BusId, InstrumentId, InstrumentKind, InstrumentNoteParams } from "webdsp";
-import type { Project, TrackId } from "../model/types";
+import type { Project, TrackId, TrackLfo } from "../model/types";
 import type { TrackBusMap } from "./buses";
 
 interface LiveInstrument {
   kindId: string;
+  kind: InstrumentKind;
+  /** Last LFO config pushed per slot ("" = slot empty), so unchanged slots are never resent. */
+  lfoSent: string[];
   bus: BusId;
   id: InstrumentId;
   /** model param id -> engine param id, resolved once per instance. */
@@ -62,7 +65,7 @@ export class InstrumentHost {
         }
         const paramIds = new Map<string, number>();
         for (const p of this.runtime.getInstrumentParams(kind)) paramIds.set(p.name, p.id);
-        live = { kindId: inst.kind, bus, id, paramIds, written: new Map() };
+        live = { kindId: inst.kind, kind, bus, id, paramIds, written: new Map(), lfoSent: [] };
         this.live.set(track.id, live);
       }
 
@@ -72,12 +75,45 @@ export class InstrumentHost {
         live.written.set(name, value);
         this.runtime.setInstrumentParameter(live.id, paramId, value);
       }
+      this.syncLfos(live, inst.lfos ?? []);
     }
 
     for (const [trackId, live] of this.live) {
       if (wanted.has(trackId)) continue;
       this.runtime.removeInstrument(live.id);
       this.live.delete(trackId);
+    }
+  }
+
+  /** Pushes the track's LFO slots (model TrackLfo -> webdsp setInstrumentLfo). Names are resolved
+   * against the engine's own tables here, at the boundary: a waveform/division/target the engine
+   * does not know (or no longer offers as a modulation target) leaves that slot off. */
+  private syncLfos(live: LiveInstrument, lfos: readonly TrackLfo[]): void {
+    const info = this.runtime.getModulationInfo?.();
+    if (!info) return;
+    const targets = new Set(this.runtime.getModulationTargets(live.kind).map((p) => p.name));
+    for (let slot = 0; slot < info.maxLfos; slot++) {
+      const lfo = lfos[slot];
+      const waveform = lfo ? info.waveforms.indexOf(lfo.waveform) : -1;
+      const division = lfo ? info.divisions.findIndex((d) => d.name === lfo.division) : -1;
+      const target = lfo ? live.paramIds.get(lfo.target) : undefined;
+      const valid = lfo && waveform >= 0 && target !== undefined && targets.has(lfo.target) && (!lfo.sync || division >= 0);
+      const sig = valid ? JSON.stringify(lfo) : "";
+      if (sig === (live.lfoSent[slot] ?? "")) continue;
+      live.lfoSent[slot] = sig;
+      if (valid) {
+        this.runtime.setInstrumentLfo(live.id, slot, {
+          target: target!,
+          amount: lfo.amount,
+          waveform,
+          sync: lfo.sync,
+          rateHz: lfo.rateHz,
+          division: Math.max(0, division),
+          phase: lfo.phase,
+        });
+      } else {
+        this.runtime.clearInstrumentLfo(live.id, slot);
+      }
     }
   }
 

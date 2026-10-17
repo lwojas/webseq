@@ -10,7 +10,7 @@
 // A track plays either a sample (Track.assetId) or one synth instrument (Track.instrument) —
 // never both; the setters here and project.ts's assignAsset keep that exclusive.
 
-import type { InstrumentKindId, Project, Track, TrackId, TrackInstrument } from "./types";
+import type { InstrumentKindId, LfoWaveformId, Project, Track, TrackId, TrackInstrument, TrackLfo } from "./types";
 
 export interface InstrumentParamDef {
   id: string;
@@ -126,8 +126,6 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
         options: ["Off", "On"].map((label, value) => ({ value, label })),
       },
       { id: "slide", label: "Slide", min: 0, max: 0.5, step: 0.01, unit: "s", default: 0 },
-      // Filter Mod: how far the note's timbre envelope moves the cutoff (0 = static filter).
-      { id: "filterMod", label: "Filter Mod", min: 0, max: 1, step: 0.01, default: 0.4 },
     ],
   },
   pulse: {
@@ -268,5 +266,55 @@ export function setInstrumentParam(project: Project, trackId: TrackId, paramId: 
     if (!def) return t;
     const clamped = Math.min(def.max, Math.max(def.min, value));
     return { ...t, instrument: { ...t.instrument, params: { ...t.instrument.params, [paramId]: clamped } } };
+  });
+}
+
+// --- LFO modulation slots (webdsp docs/lfo-modulation.md) ---
+// The model only stores what the user chose. Which controls are valid targets, and the waveform /
+// division option lists, come from the engine at runtime (AudioRuntime.getModulationTargets /
+// getModulationInfo) so nothing here lists targets per synth.
+
+/** Mirrors webdsp's per-instrument LFO slot count (the engine reports the real limit). */
+export const MAX_TRACK_LFOS = 4;
+export const LFO_WAVEFORMS: LfoWaveformId[] = ["sine", "triangle", "square", "saw"];
+export const LFO_MIN_RATE_HZ = 0.01;
+export const LFO_MAX_RATE_HZ = 40;
+export const DEFAULT_LFO_DIVISION = "1/4";
+
+export function createLfo(target: string): TrackLfo {
+  return { waveform: "sine", sync: false, rateHz: 1, division: DEFAULT_LFO_DIVISION, phase: 0, amount: 0.3, target };
+}
+
+function updateInstrument(project: Project, trackId: TrackId, update: (i: TrackInstrument) => TrackInstrument): Project {
+  return updateTrack(project, trackId, (t) => (t.instrument ? { ...t, instrument: update(t.instrument) } : t));
+}
+
+/** Adds an LFO (up to MAX_TRACK_LFOS) aimed at `target`. */
+export function addInstrumentLfo(project: Project, trackId: TrackId, target: string): Project {
+  return updateInstrument(project, trackId, (i) => {
+    const lfos = i.lfos ?? [];
+    return lfos.length >= MAX_TRACK_LFOS ? i : { ...i, lfos: [...lfos, createLfo(target)] };
+  });
+}
+
+/** Edits LFO `index`. Numeric fields are clamped to their ranges. */
+export function setInstrumentLfo(project: Project, trackId: TrackId, index: number, patch: Partial<TrackLfo>): Project {
+  return updateInstrument(project, trackId, (i) => {
+    const current = i.lfos?.[index];
+    if (!current) return i;
+    const next: TrackLfo = { ...current, ...patch };
+    next.rateHz = Math.min(LFO_MAX_RATE_HZ, Math.max(LFO_MIN_RATE_HZ, next.rateHz));
+    next.phase = Math.min(1, Math.max(0, next.phase));
+    next.amount = Math.min(1, Math.max(-1, next.amount));
+    return { ...i, lfos: i.lfos!.map((l, n) => (n === index ? next : l)) };
+  });
+}
+
+export function removeInstrumentLfo(project: Project, trackId: TrackId, index: number): Project {
+  return updateInstrument(project, trackId, (i) => {
+    if (!i.lfos?.[index]) return i;
+    const lfos = i.lfos.filter((_, n) => n !== index);
+    const { lfos: _drop, ...rest } = i;
+    return lfos.length ? { ...rest, lfos } : rest;
   });
 }

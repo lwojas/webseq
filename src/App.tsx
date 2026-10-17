@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackId, VoiceMode } from "./model/types";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -26,6 +26,7 @@ import { SequencerGrid } from "./components/SequencerGrid";
 import { FxPanel } from "./components/FxPanel";
 import { MixerPanel } from "./components/MixerPanel";
 import { InstrumentPanel } from "./components/InstrumentPanel";
+import type { ModulationUi } from "./components/ModulationSlot";
 import { TrackEditor } from "./components/TrackEditor";
 import { useMidiControls } from "./midi/useMidiControls";
 
@@ -690,6 +691,18 @@ export function App() {
     (trackId: TrackId, paramId: string, value: number) => dispatch({ type: "SET_INSTRUMENT_PARAM", trackId, paramId, value }),
     [],
   );
+  const handleAddLfo = useCallback(
+    (trackId: TrackId, target: string) => dispatch({ type: "ADD_INSTRUMENT_LFO", trackId, target }),
+    [],
+  );
+  const handleSetLfo = useCallback(
+    (trackId: TrackId, index: number, patch: Partial<TrackLfo>) => dispatch({ type: "SET_INSTRUMENT_LFO", trackId, index, patch }),
+    [],
+  );
+  const handleRemoveLfo = useCallback(
+    (trackId: TrackId, index: number) => dispatch({ type: "REMOVE_INSTRUMENT_LFO", trackId, index }),
+    [],
+  );
   const handleSetEnvelope = useCallback(
     (assetId: AssetId, envelope: Partial<SampleEnvelope>) => dispatch({ type: "SET_ASSET_ENVELOPE", assetId, envelope }),
     [],
@@ -825,6 +838,21 @@ export function App() {
   const selectedTrackHasNotes = selectedTarget !== "master" && notesForTrack(selectedPattern, selectedTarget).length > 0;
   // ECS-124: same rationale as selectedTrackHasNotes above, for the "Copy config" control.
   const selectedTrack = selectedTarget !== "master" ? trackById(project, selectedTarget) : undefined;
+  // The modulation slot's option lists come from the engine (never per-synth tables here): the
+  // selected synth's own modulation targets plus the shared waveform / division lists.
+  const selectedKindId = selectedTrack?.instrument?.kind;
+  const modulationUi = useMemo<ModulationUi | null>(() => {
+    if (!runtime || !selectedKindId || !runtime.getModulationInfo) return null;
+    const kind = runtime.getCapabilities().instruments.find((k) => k.id === selectedKindId)?.kind;
+    if (kind === undefined) return null;
+    const info = runtime.getModulationInfo();
+    return {
+      maxLfos: info.maxLfos,
+      waveforms: info.waveforms,
+      divisions: info.divisions.map((d) => d.name),
+      targets: runtime.getModulationTargets(kind).map((p) => p.name),
+    };
+  }, [runtime, selectedKindId]);
   const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
   const selectedTrackAsset =
     selectedTrack?.assetId != null ? (project.assets.find((a) => a.id === selectedTrack.assetId) ?? null) : null;
@@ -1057,6 +1085,10 @@ export function App() {
                 note={selectedNote && selectedNote.trackId === selectedTrack?.id ? selectedNote : null}
                 onSetInstrument={handleSetInstrument}
                 onSetInstrumentParam={handleSetInstrumentParam}
+                modulation={modulationUi}
+                onAddLfo={handleAddLfo}
+                onSetLfo={handleSetLfo}
+                onRemoveLfo={handleRemoveLfo}
                 onSetEnvelope={handleSetEnvelope}
                 onSetNotePitch={handleSetNotePitch}
                 onSetNoteVelocity={handleSetNoteVelocity}

@@ -7,6 +7,13 @@ import type { Asset, AssetId, AutomationLane, FxId, FxInstance, PlaybackMode, Pr
 import { INSTRUMENT_DEFS } from "./instruments";
 import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, effectivePan, effectivePlaybackMode, effectiveVoiceMode } from "./types";
 
+/** By-value copy of a synth source, including its LFO slots. */
+function cloneInstrument(i: TrackInstrument): TrackInstrument {
+  const copy: TrackInstrument = { ...i, params: { ...i.params } };
+  if (i.lfos) copy.lfos = i.lfos.map((l) => ({ ...l }));
+  return copy;
+}
+
 /** The reusable-configuration boundary (ECS-124's field-by-field decision): asset reference,
  * FX chain, automation, and playback/voice mode. Never id/name (destination identity) or
  * volume/muted/soloed (mixer/performance state) — those are excluded by the ticket and never
@@ -61,7 +68,7 @@ export function copyTrackConfig(track: Track): CopiedTrackConfig {
     automation: track.automation.map((a) => ({ ...a, events: a.events.map((e) => ({ ...e })) })),
     playbackMode: track.playbackMode,
     voiceMode: track.voiceMode,
-    instrument: track.instrument ? { ...track.instrument, params: { ...track.instrument.params } } : null,
+    instrument: track.instrument ? cloneInstrument(track.instrument) : null,
     pan: track.pan,
   };
 }
@@ -86,9 +93,7 @@ export function copyTrackConfig(track: Track): CopiedTrackConfig {
 export function pasteTrackConfig(project: Project, trackId: TrackId, config: CopiedTrackConfig): Project {
   const asset: Asset | undefined = config.assetId != null ? project.assets.find((a) => a.id === config.assetId) : undefined;
   const assetId: AssetId | null = asset ? asset.id : null;
-  const instrument: TrackInstrument | null = config.instrument
-    ? { ...config.instrument, params: { ...config.instrument.params } }
-    : null;
+  const instrument: TrackInstrument | null = config.instrument ? cloneInstrument(config.instrument) : null;
 
   const idMap = new Map<FxId, FxId>();
   const fx: FxInstance[] = config.fx.map((f) => {

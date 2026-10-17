@@ -1,6 +1,7 @@
 import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/instruments";
+import { ModulationSlot, type ModulationUi } from "./ModulationSlot";
 import { DEFAULT_ENVELOPE } from "../model/types";
-import type { Asset, InstrumentKindId, Note, SampleEnvelope, Track } from "../model/types";
+import type { Asset, InstrumentKindId, Note, SampleEnvelope, Track, TrackLfo } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
 
 interface Props {
@@ -14,6 +15,12 @@ interface Props {
   note: Note | null;
   onSetInstrument: (trackId: string, kind: InstrumentKindId | null) => void;
   onSetInstrumentParam: (trackId: string, paramId: string, value: number) => void;
+  /** Engine-reported modulation options for the selected synth, or null before the engine exists
+   * (the modulation slot then stays hidden). */
+  modulation: ModulationUi | null;
+  onAddLfo: (trackId: string, target: string) => void;
+  onSetLfo: (trackId: string, index: number, patch: Partial<TrackLfo>) => void;
+  onRemoveLfo: (trackId: string, index: number) => void;
   onSetEnvelope: (assetId: number, envelope: Partial<SampleEnvelope>) => void;
   onSetNotePitch: (noteId: string, pitch: number) => void;
   onSetNoteVelocity: (noteId: string, velocity: number) => void;
@@ -68,6 +75,10 @@ export function InstrumentPanel({
   note,
   onSetInstrument,
   onSetInstrumentParam,
+  modulation,
+  onAddLfo,
+  onSetLfo,
+  onRemoveLfo,
   onSetEnvelope,
   onSetNotePitch,
   onSetNoteVelocity,
@@ -158,6 +169,17 @@ export function InstrumentPanel({
             </div>
             {def.sustained && <div className="instrument-hint">Sustained: each note's length is its held time.</div>}
           </div>
+        )}
+
+        {synth && def && modulation && (
+          <ModulationSlot
+            lfos={synth.lfos ?? []}
+            ui={modulation}
+            labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
+            onAdd={(target) => onAddLfo(track.id, target)}
+            onChange={(index, patch) => onSetLfo(track.id, index, patch)}
+            onRemove={(index) => onRemoveLfo(track.id, index)}
+          />
         )}
 
         {!synth && asset && (

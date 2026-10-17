@@ -5,7 +5,7 @@ import { instrumentHostFor } from "../src/audio/instruments";
 import { compileInstrumentNotes, compileNote } from "../src/audio/compile";
 import { Playback } from "../src/audio/playback";
 import { createInitialProject, assignAsset, addAsset, addNote, setNotePitch } from "../src/model/project";
-import { INSTRUMENT_DEFS, rootMidiNote, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
+import { INSTRUMENT_DEFS, MAX_TRACK_LFOS, addInstrumentLfo, removeInstrumentLfo, rootMidiNote, setInstrumentLfo, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
 import { pasteTrackConfig, copyTrackConfig } from "../src/model/trackConfig";
 import { mockRuntime } from "./mockRuntime";
 
@@ -159,12 +159,10 @@ describe("compileInstrumentNotes", () => {
     expect(rootMidiNote(pad.tracks[0])).toBeCloseTo(45);
   });
 
-  it("exposes Filter Mod on bass (separate from bite) but not on pulse, whose repeat sets filter and drive", () => {
-    const bass = projectWithNotes("bass");
-    expect(bass.tracks[0].instrument?.params.filterMod).toBe(0.4);
-    expect(INSTRUMENT_DEFS.bass.params.find((p) => p.id === "filterMod")?.label).toBe("Filter Mod");
-    expect(INSTRUMENT_DEFS.pulse.params.some((p) => p.id === "filterMod")).toBe(false);
-    expect(INSTRUMENT_DEFS.pad.params.some((p) => p.id === "filterMod")).toBe(false);
+  it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
+    for (const kind of ["bass", "pulse", "pad", "fm"] as const) {
+      expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
+    }
   });
 
   it("treats fm as sustained, with FM's catalog defaults and an A2 root", () => {
@@ -209,5 +207,59 @@ describe("rootMidiNote", () => {
     expect(rootMidiNote(pulse)).toBeCloseTo(45); // 110 Hz = A2
     expect(rootMidiNote(createInitialProject().tracks[0])).toBeNull();
     expect(rootMidiNote(setTrackInstrument(createInitialProject(), "track-1", "hihat").tracks[0])).toBeNull();
+  });
+});
+
+describe("instrument LFO modulation slots", () => {
+  it("adds, edits (clamped) and removes LFOs; at most MAX_TRACK_LFOS", () => {
+    let project = setTrackInstrument(createInitialProject(), "track-1", "bass");
+    project = addInstrumentLfo(project, "track-1", "cutoff");
+    expect(project.tracks[0].instrument?.lfos).toEqual([
+      { waveform: "sine", sync: false, rateHz: 1, division: "1/4", phase: 0, amount: 0.3, target: "cutoff" },
+    ]);
+    project = setInstrumentLfo(project, "track-1", 0, { rateHz: 999, amount: -4, phase: 3, waveform: "saw", sync: true, division: "1/8" });
+    expect(project.tracks[0].instrument?.lfos?.[0]).toMatchObject({ rateHz: 40, amount: -1, phase: 1, waveform: "saw", sync: true, division: "1/8" });
+    expect(setInstrumentLfo(project, "track-1", 5, { amount: 1 }).tracks[0]).toEqual(project.tracks[0]);
+    for (let i = 0; i < 10; i++) project = addInstrumentLfo(project, "track-1", "body");
+    expect(project.tracks[0].instrument?.lfos).toHaveLength(MAX_TRACK_LFOS);
+    project = removeInstrumentLfo(project, "track-1", 0);
+    expect(project.tracks[0].instrument?.lfos).toHaveLength(MAX_TRACK_LFOS - 1);
+    for (let i = 0; i < 3; i++) project = removeInstrumentLfo(project, "track-1", 0);
+    expect("lfos" in (project.tracks[0].instrument ?? {})).toBe(false);
+  });
+
+  it("a new synth kind starts with no LFOs; copy/paste carries them by value", () => {
+    let project = setTrackInstrument(createInitialProject(), "track-1", "bass");
+    project = addInstrumentLfo(project, "track-1", "cutoff");
+    expect(setTrackInstrument(project, "track-1", "pulse").tracks[0].instrument?.lfos).toBeUndefined();
+    const pasted = pasteTrackConfig(project, "track-2", copyTrackConfig(project.tracks[0]));
+    expect(pasted.tracks[1].instrument?.lfos).toEqual(project.tracks[0].instrument?.lfos);
+    expect(pasted.tracks[1].instrument?.lfos?.[0]).not.toBe(project.tracks[0].instrument?.lfos?.[0]);
+  });
+
+  it("InstrumentHost resolves names to engine ids, sends once, and clears removed slots", () => {
+    const { runtime, calls } = mockRuntime();
+    let project = setTrackInstrument(createInitialProject(), "track-1", "bass");
+    project = addInstrumentLfo(project, "track-1", "cutoff");
+    project = setInstrumentLfo(project, "track-1", 0, { sync: true, division: "1/8", waveform: "triangle", amount: 0.5 });
+    syncBuses(runtime, project, buses);
+    // bass mock table: cutoff is index 3; triangle = 1, "1/8" = division index 10.
+    expect(calls.setInstrumentLfo).toEqual([[1, 0, { target: 3, amount: 0.5, waveform: 1, sync: true, rateHz: 1, division: 10, phase: 0 }]]);
+    syncBuses(runtime, project, buses);
+    expect(calls.setInstrumentLfo).toHaveLength(1); // unchanged -> not resent
+    project = setInstrumentLfo(project, "track-1", 0, { amount: -0.25 });
+    syncBuses(runtime, project, buses);
+    expect(calls.setInstrumentLfo).toHaveLength(2);
+    project = removeInstrumentLfo(project, "track-1", 0);
+    syncBuses(runtime, project, buses);
+    expect(calls.clearInstrumentLfo).toEqual([[1, 0]]);
+  });
+
+  it("an LFO aimed at something the engine does not offer as a target stays off", () => {
+    const { runtime, calls } = mockRuntime();
+    let project = setTrackInstrument(createInitialProject(), "track-1", "bass");
+    project = addInstrumentLfo(project, "track-1", "attack"); // not a modulation target in the mock
+    syncBuses(runtime, project, buses);
+    expect(calls.setInstrumentLfo).toEqual([]);
   });
 });

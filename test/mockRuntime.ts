@@ -9,7 +9,18 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release"],
   pad: ["tune", "tone", "movement", "detune", "space", "attack", "release"],
   fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
-  bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide", "filterMod"],
+  bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide"],
+};
+// Which mock controls the engine reports as modulation targets (a stand-in for ModDomain tables).
+const MODULATABLE = new Set(["bass.tune", "bass.body", "bass.cutoff", "bass.resonance", "pulse.cutoff", "pulse.pump"]);
+export const MODULATION_INFO = {
+  maxLfos: 4,
+  waveforms: ["sine", "triangle", "square", "saw"],
+  divisions: ["4 bars", "2 bars", "1/1", "1/2.", "1/2", "1/4.", "1/2T", "1/4", "1/8.", "1/4T", "1/8", "1/16.", "1/8T", "1/16", "1/16T", "1/32"].map(
+    (name, i) => ({ name, beats: 16 / 2 ** i }),
+  ),
+  minRateHz: 0.01,
+  maxRateHz: 40,
 };
 const KIND_IDS: [string, InstrumentKind][] = [
   ["kick", InstrumentKind.Kick],
@@ -36,6 +47,8 @@ export function mockRuntime() {
     instrumentNoteOn: [] as [number, Record<string, number>][],
     instrumentNoteOff: [] as number[],
     setSampleEnvelope: [] as [number, Record<string, number>][],
+    setInstrumentLfo: [] as [number, number, Record<string, unknown>][],
+    clearInstrumentLfo: [] as [number, number][],
   };
   const runtime = {
     setNodeParameter: vi.fn(),
@@ -70,11 +83,24 @@ export function mockRuntime() {
       renderQuantumFrames: 128,
       maxCaptureSeconds: 30,
       instruments: KIND_IDS.map(([id, kind]) => ({ kind, id, name: id, category: "drum", params: [] })),
+      modulation: MODULATION_INFO,
     })),
     getInstrumentParams: vi.fn((kind: InstrumentKind) => {
       const id = KIND_IDS.find(([, k]) => k === kind)![0];
-      return INSTRUMENT_PARAM_NAMES[id].map((name, i) => ({ id: i, name, min: 0, max: 1, default: 0, unit: "" }));
+      return INSTRUMENT_PARAM_NAMES[id].map((name, i) => ({
+        id: i, name, min: 0, max: 1, default: 0, unit: "",
+        modulation: MODULATABLE.has(`${id}.${name}`) ? "linear" : "none",
+      }));
     }),
+    getModulationInfo: vi.fn(() => MODULATION_INFO),
+    getModulationTargets: vi.fn((kind: InstrumentKind) => {
+      const id = KIND_IDS.find(([, k]) => k === kind)![0];
+      return INSTRUMENT_PARAM_NAMES[id]
+        .map((name, i) => ({ id: i, name, min: 0, max: 1, default: 0, unit: "", modulation: "linear" }))
+        .filter((p) => MODULATABLE.has(`${id}.${p.name}`));
+    }),
+    setInstrumentLfo: vi.fn((id: number, slot: number, lfo: Record<string, unknown>) => calls.setInstrumentLfo.push([id, slot, lfo])),
+    clearInstrumentLfo: vi.fn((id: number, slot: number) => calls.clearInstrumentLfo.push([id, slot])),
     createInstrument: vi.fn((kind: number, opts: { bus?: number } = {}) => {
       const id = nextInstrument++;
       calls.createInstrument.push({ kind, ...opts, id });
