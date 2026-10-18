@@ -55,11 +55,19 @@ src/audio/        — the one place the model meets webdsp:
                       useAudioRuntime.ts — the only place AudioRuntime.create() is called
 src/persistence/  — IndexedDB-backed project + sample save/load (db.ts, projectStore.ts).
                     No backend; fully local/offline.
-src/components/   — React: transport bar, pattern bar, chain editor, sequencer grid
-                    (MASTER row + tracks), FX panel (contextual to the selected track or
-                    MASTER), automation lane editor. Playhead and the position readout are
-                    driven by requestAnimationFrame reading Transport's own clock — never
-                    React state — see hooks/usePlayheadAnimation.ts, hooks/useRafText.ts.
+src/app/          — layout, kept apart from state and behaviour: layout.ts (view types, the
+                    one `useLayout()` breakpoint hook, and the pure `deriveLayout()` that
+                    says what shows where), Chrome / Workspace / SidePanel / Dock /
+                    PatternsView / MobileTabBar (arrangement per breakpoint), editModel.ts
+                    (the Edit panel's clipboard rows and bar tools). App.tsx owns the state
+                    and handlers and passes already-wired props to these.
+src/components/   — React: transport bar, pattern strip (the pattern being edited), Patterns
+                    page (library + queue with reordering), sequencer grid (MASTER row +
+                    tracks), FX / Instrument / Edit panels (contextual to the selected track
+                    or MASTER), automation lane editor. Playhead and the position and "bar x
+                    / y" readouts are driven by requestAnimationFrame reading Transport's
+                    own clock — never React state — see hooks/usePlayheadAnimation.ts,
+                    hooks/useRafText.ts, components/RafText.tsx.
 ```
 
 The application model (`src/model/`) never imports `"webdsp"`. `src/audio/compile.ts` is the
@@ -231,13 +239,32 @@ console error.
 
 ## Timeline viewport
 
-The grid uses a fixed pixel width per beat (`components/timelineConstants.ts`'s
-`BEAT_WIDTH_PX`), not a 100%-stretched grid — this is what makes a capped, horizontally-
-scrollable viewport possible. The default viewport caps at `VIEWPORT_BARS` (2) bars; a longer
-pattern scrolls horizontally inside `.timeline-scroll` rather than shrinking every beat to
-fit. The playhead is positioned in pixels (`beat * BEAT_WIDTH_PX`) via
-`usePlayheadAnimation`'s `requestAnimationFrame` loop, independent of the viewport — it's
-fine for it to scroll out of view; nothing here auto-scrolls to follow it.
+The grid uses a fixed pixel width per beat (the zoom level, `components/timelineConstants.ts`),
+not a 100%-stretched grid, and it fills whatever width the layout gives it: a wide screen shows
+more of the pattern (about 34 steps at 1440px with the default zoom), a longer pattern scrolls
+horizontally inside `.timeline-scroll`, and a shorter one shows an explicit "end of pattern" zone
+(`.timeline-content::after`). Only the visible step cells are mounted (`useVisibleColumnWindow`).
+The playhead is positioned in pixels via `usePlayheadAnimation`'s `requestAnimationFrame` loop,
+independent of the viewport — it's fine for it to scroll out of view; nothing here auto-scrolls
+to follow it. Both per-frame loops take an `enabled` flag and stop while the timeline isn't
+visible (Patterns view, a phone's takeover views, another tab).
+
+## Layout
+
+Regions are fixed-size: content scrolls inside them and never resizes a neighbour, nothing
+animates size or position, and only the active tab/panel is mounted. Desktop: top bar and tabs
+(Sequencer | Patterns), transport, the pattern strip, then the left column (Assets | MIDI | Edit,
+260px), the grid with the bank tabs in its corner, and the bottom panel (Instrument | FX | Track
+Editor | Mixer). A phone has one 44px top bar and four tabs (Timeline | Track | Mixer | Library).
+The breakpoint (768px) lives in `app/layout.ts` and, because CSS cannot import it,
+`@media (max-width: 768px)` in `index.css` — `test/layout.test.ts` fails if they drift apart.
+
+## Pattern queue reordering
+
+The Patterns page's ▲ ▼ move a queue entry (`model/project.ts`'s `moveChainEntry`). Because the
+transport walks the queue with an ever-increasing step counter, App.tsx also calls
+`Transport.shiftChainSteps(chainShiftForReorder(...))` in the same handler, so the entry that is
+sounding stays "now" and the next step follows its successor in the new order.
 
 ## Extending
 

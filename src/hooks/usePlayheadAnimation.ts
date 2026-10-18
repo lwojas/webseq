@@ -20,27 +20,51 @@
 // compositor-only, so the browser never re-lays-out the page to redraw this line.
 import { useEffect, useRef } from "react";
 
-export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: number) {
+export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: number, enabled = true) {
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // Not visible (pattern picker / settings view open, another tab or the Patterns view showing):
+    // don't run the loop at all. It restarts, and redraws from the audio clock, the moment the
+    // timeline is visible again.
+    if (!enabled) return;
     let frame: number;
+    // Style writes are skipped when nothing changed (a stopped or paused playhead would otherwise
+    // re-assign `display: none` every frame, dirtying style for nothing).
+    let lastEl: HTMLDivElement | null = null;
+    let hidden: boolean | null = null;
+    let lastTransform = "";
     const draw = () => {
       const el = elementRef.current;
       if (el) {
+        if (el !== lastEl) {
+          lastEl = el;
+          hidden = null;
+          lastTransform = "";
+        }
         const beat = getBeat();
         if (beat === null) {
-          el.style.display = "none";
+          if (hidden !== true) {
+            el.style.display = "none";
+            hidden = true;
+          }
         } else {
-          el.style.display = "";
-          el.style.transform = `translateX(${beat * pxPerBeat}px)`;
+          if (hidden !== false) {
+            el.style.display = "";
+            hidden = false;
+          }
+          const transform = `translateX(${beat * pxPerBeat}px)`;
+          if (transform !== lastTransform) {
+            el.style.transform = transform;
+            lastTransform = transform;
+          }
         }
       }
       frame = requestAnimationFrame(draw);
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [getBeat, pxPerBeat]);
+  }, [getBeat, pxPerBeat, enabled]);
 
   return elementRef;
 }

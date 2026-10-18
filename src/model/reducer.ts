@@ -57,6 +57,7 @@ export type Action =
   | { type: "QUEUE_PATTERN_NEXT"; patternId: PatternId; afterEntryId: ChainEntryId | null }
   | { type: "REMOVE_FROM_QUEUE"; patternId: PatternId }
   | { type: "REMOVE_CHAIN_ENTRY"; entryId: ChainEntryId }
+  | { type: "MOVE_CHAIN_ENTRY"; entryId: ChainEntryId; toIndex: number }
   | { type: "ADD_FX"; target: FxTarget; fxType: FxType }
   | { type: "REMOVE_FX"; target: FxTarget; fxId: FxId }
   | { type: "MOVE_FX"; target: FxTarget; fxId: FxId; index: number }
@@ -165,6 +166,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.removePatternFromQueue(state, action.patternId);
     case "REMOVE_CHAIN_ENTRY":
       return project.removeChainEntry(state, action.entryId);
+    case "MOVE_CHAIN_ENTRY":
+      return project.moveChainEntry(state, action.entryId, action.toIndex);
     case "ADD_FX":
       return fx.addFx(state, action.target, action.fxType);
     case "REMOVE_FX":

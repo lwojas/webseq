@@ -34,7 +34,7 @@ function yToValue(y: number, def: FxParamDef): number {
  * section 15 ("keep automation visually clean"). Sparse points, linear interpolation between
  * them, matching model/types.ts's AutomationLane contract exactly — this is a direct picture
  * of that data, not a separate curve representation. Positions are scoped to the pattern
- * currently open in the timeline (see PatternBar) for editing purposes, even though playback
+ * currently open in the timeline (see PatternStrip) for editing purposes, even though playback
  * (Transport) evaluates a lane against whichever chain step is actually sounding — see
  * Transport.pollAutomation's doc comment for that distinction. */
 export function AutomationLane({ lane, paramDef, totalBeats, pxPerBeat, onSetPoint, onRemovePoint, onClear }: Props) {

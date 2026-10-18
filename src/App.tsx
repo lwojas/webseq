@@ -1,26 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
-import { notesForTrack, totalBeats, trackById } from "./model/types";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
-import { copyTrackConfig, hasTrackConfig, type CopiedTrackConfig } from "./model/trackConfig";
-import {
-  canPasteSynthLfos,
-  copyBank,
-  copyFx,
-  copyInstrument,
-  copyModulation,
-  copyTrack,
-  hasInstrument,
-  hasModulation,
-  type BankClip,
-  type FxClip,
-  type InstrumentClip,
-  type ModulationClip,
-  type TrackClip,
-} from "./model/edit";
-import { MAX_PATTERN_BARS } from "./model/notes";
+import { adjacentPatternId } from "./model/patternNav";
+import { chainShiftForReorder, moveChainEntry } from "./model/project";
+import { buildEditPanelModel, trackLabel, type EditClipboard } from "./app/editModel";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
@@ -32,76 +18,16 @@ import { syncBuses } from "./audio/busSync";
 import { encodeWav } from "./audio/wav";
 import { saveProject, loadProject, listProjects, deleteProject } from "./persistence/projectStore";
 import { remapAssetIds } from "./model/project";
-import { TransportBar, type ResamplePhase } from "./components/TransportBar";
-import { PatternBar } from "./components/PatternBar";
-import { PatternList } from "./components/PatternList";
-import { PatternQueue } from "./components/PatternQueue";
-import { AssetsPanel, type ImportBatchResult } from "./components/AssetsPanel";
-import { MidiPanel } from "./components/MidiPanel";
-import { SequencerGrid } from "./components/SequencerGrid";
-import { FxPanel } from "./components/FxPanel";
-import { MixerPanel } from "./components/MixerPanel";
-import { InstrumentPanel } from "./components/InstrumentPanel";
+import type { ResamplePhase } from "./components/TransportBar";
+import type { ImportBatchResult } from "./components/AssetsPanel";
 import type { ModulationUi } from "./components/ModulationSlot";
-import { EditPanel, type BarTool, type ClipboardRow } from "./components/EditPanel";
-import { TrackEditor } from "./components/TrackEditor";
+import type { BarTool, ClipboardRow } from "./components/EditPanel";
+import { Chrome } from "./app/Chrome";
+import { Workspace } from "./app/Workspace";
+import { PatternsView } from "./app/PatternsView";
+import { MobileTabBar } from "./app/MobileTabBar";
+import { deriveLayout, effectiveSideView, useLayout, type BottomPanelView, type LibraryView, type MainView, type MobileTab, type SidePanelView, type Takeover, type TrackSubTab } from "./app/layout";
 import { useMidiControls } from "./midi/useMidiControls";
-
-/** The side panel (left of the timeline — see screenshots/concept.png) is tabbed so further
- * views can be added later without another layout change: add an entry here and a matching
- * branch in the side-panel-content render below. */
-type SidePanelView = "assets" | "midi";
-const SIDE_PANEL_VIEWS: { id: SidePanelView; label: string }[] = [
-  { id: "assets", label: "Assets" },
-  { id: "midi", label: "MIDI" },
-];
-
-/** The panel below the timeline (see screenshots/concept.png) switches between the FX rack and
- * the Instrument editor (both contextual to whatever's selected in the timeline) and the Mixer
- * (all tracks at once) — same tabbed pattern as the side panel above. Instrument lives here,
- * not on the track row, because a track plays exactly one sound source: editing it in place
- * keeps the track context the sequencer is built around. */
-type BottomPanelView = "fx" | "instrument" | "editor" | "edit" | "mixer";
-const BOTTOM_PANEL_VIEWS: { id: BottomPanelView; label: string }[] = [
-  { id: "fx", label: "FX" },
-  { id: "instrument", label: "Instrument" },
-  { id: "editor", label: "Track Editor" },
-  { id: "edit", label: "Edit" },
-  { id: "mixer", label: "Mixer" },
-];
-
-/** On a phone-sized viewport there isn't room for the side panel and bottom panel to sit
- * alongside the timeline the way they do on desktop (see index.css's `@media (max-width:
- * 768px)` block, which shows exactly one of these four sections at a time), so mobile gets
- * its own bottom tab bar covering all of them instead of the desktop's two separate tab
- * strips. This is pure navigation state — desktop's existing `sidePanelView`/`bottomPanelView`
- * still own which content actually renders inside each section (see handleSelectMobileTab). */
-type MobileTab = "timeline" | "fx" | "instrument" | "editor" | "edit" | "mixer" | "assets" | "patterns";
-const MOBILE_TABS: { id: MobileTab; label: string }[] = [
-  { id: "timeline", label: "Timeline" },
-  { id: "fx", label: "FX" },
-  { id: "instrument", label: "Inst" },
-  { id: "editor", label: "Track" },
-  { id: "edit", label: "Edit" },
-  { id: "mixer", label: "Mixer" },
-  { id: "assets", label: "Assets" },
-  { id: "patterns", label: "Patterns" },
-];
-
-/** Top-level toggle between the Sequencer workspace and the Patterns view (pattern library +
- * queue, PatternList/PatternQueue) — see index.css's `data-main-view` rules. Both are always
- * mounted; only CSS `display` toggles between them (the same mechanism `data-mobile-tab`
- * already uses, deliberately not conditional JSX unmount/remount) so switching never loses
- * SequencerGrid's scroll position/virtualization state, and costs nothing beyond a style
- * recalc. Rendered as a `.mode-toggle` pill switch, not the `-tab`-suffixed strip used by the
- * local panel views below, so this page-level mode change doesn't read as just another tab
- * (ECS-151). PatternBar is also keyed off `data-main-view` (hidden, not unmounted, in the
- * Patterns view) since it edits the sequencer's current pattern, which isn't relevant there. */
-type MainView = "sequencer" | "patterns";
-const MAIN_VIEWS: { id: MainView; label: string }[] = [
-  { id: "sequencer", label: "Sequencer" },
-  { id: "patterns", label: "Patterns" },
-];
 
 /** Frees every sample the engine holds. New and Load replace the whole project, so the previous
  * project's decoded audio would otherwise stay resident for the rest of the session (ECS-84).
@@ -110,13 +36,8 @@ function releaseEngineSamples(rt: AudioRuntime): void {
   for (const sample of rt.listSamples()) rt.removeSample(sample.id);
 }
 
-/** The positional "Track 03" label the ECS-112 clipboard's transient feedback uses — the same
- * numbering TrackRow/MixerPanel already show per track, not `track.name` (which becomes the
- * assigned sample's filename once one is assigned, per project.ts's assignAsset). */
-function trackLabel(tracks: { id: TrackId }[], trackId: TrackId): string {
-  const idx = tracks.findIndex((t) => t.id === trackId);
-  return `Track ${String(idx + 1).padStart(2, "0")}`;
-}
+/** What the Edit panel gets while it isn't showing: shared empties, so nothing is allocated. */
+const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[] } = { clipboardRows: [], barTools: [] };
 
 export function App() {
   const { runtime, error, init } = useAudioRuntime();
@@ -140,8 +61,12 @@ export function App() {
   const [manual, setManual] = useState<ManualPlaybackSnapshot>({ auditionAssetId: null, loopingTrackIds: [] });
   const [selectedPatternId, setSelectedPatternId] = useState(project.patterns[0].id);
   const [sidePanelView, setSidePanelView] = useState<SidePanelView>("assets");
-  const [bottomPanelView, setBottomPanelView] = useState<BottomPanelView>("fx");
+  const [bottomPanelView, setBottomPanelView] = useState<BottomPanelView>("instrument");
   const [mobileTab, setMobileTab] = useState<MobileTab>("timeline");
+  const [trackSubTab, setTrackSubTab] = useState<TrackSubTab>("instrument");
+  const [libraryView, setLibraryView] = useState<LibraryView>("assets");
+  const [takeover, setTakeover] = useState<Takeover>("none");
+  const layout = useLayout();
   const [mainView, setMainView] = useState<MainView>("sequencer");
   const [selectedTarget, setSelectedTarget] = useState<FxTarget>("master");
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
@@ -170,25 +95,12 @@ export function App() {
   // plain data (CopiedNote has no id/trackId — see notes.ts's doc comment), cleared on
   // New/Load so a stale "copied from Track X" label can never outlive the project it names.
   const [noteClipboard, setNoteClipboard] = useState<{ sourceTrackId: TrackId; notes: CopiedNote[] } | null>(null);
-  // ECS-124: a separate clipboard slot, not a combined payload with noteClipboard above — a
-  // reusable-configuration copy and a sequence copy answer different questions ("what does
-  // this track sound like" vs. "what does it play"), and keeping them separate avoids having
-  // to decide what a single Cmd+C should mean. Deliberately button-only (no keyboard shortcut
-  // of its own): Cmd/Ctrl+C/V are already the note clipboard's, and reusing them for a second,
-  // different payload would make what gets copied ambiguous.
-  const [trackConfigClipboard, setTrackConfigClipboard] = useState<CopiedTrackConfig | null>(null);
   const [clipboardStatus, setClipboardStatus] = useState<string | null>(null);
   // The Edit panel's object clipboard: one slot per object kind (so copying FX never discards a
   // copied Track), each remembering where it came from for the panel's status text. Sequence has
   // no slot here: it is the note clipboard above, so the Edit panel and Cmd+C/V share it. Cleared
   // on New/Load with the others.
-  const [editClipboard, setEditClipboard] = useState<{
-    track?: { clip: TrackClip; from: string };
-    instrument?: { clip: InstrumentClip; from: string };
-    fx?: { clip: FxClip; from: string };
-    modulation?: { clip: ModulationClip; from: string };
-    bank?: { clip: BankClip; from: string };
-  }>({});
+  const [editClipboard, setEditClipboard] = useState<EditClipboard>({});
 
   const getBusId = useCallback((target: FxTarget) => busIdForTarget(trackBusesRef.current, target), []);
 
@@ -291,6 +203,34 @@ export function App() {
   // its pattern -- see model/project.ts's removeChainEntry doc comment.
   const handleRemoveChainEntry = useCallback((entryId: ChainEntryId) => {
     dispatch({ type: "REMOVE_CHAIN_ENTRY", entryId });
+  }, []);
+
+  // Reordering the queue while it plays: the transport walks the queue with an ever-increasing step
+  // counter, so a plain reorder would make "now" jump to another row and could repeat the sounding
+  // pattern next. Shift the counter by the playing entry's change of position, in the same event
+  // handler as the dispatch (a click: React flushes it before any scheduler tick can run), so the
+  // sounding entry stays "now" and the next step follows ITS successor in the new order.
+  const handleMoveChainEntry = useCallback((entryId: ChainEntryId, toIndex: number) => {
+    const current = projectRef.current;
+    const reordered = moveChainEntry(current, entryId, toIndex);
+    if (reordered === current) return;
+    const transport = transportRef.current;
+    if (transport && transport.getStatus() !== "stopped") {
+      transport.shiftChainSteps(chainShiftForReorder(current.patternChain, reordered.patternChain, transport.getCurrentChainEntryId()));
+    }
+    dispatch({ type: "MOVE_CHAIN_ENTRY", entryId, toIndex });
+  }, []);
+
+  // "bar 2 / 4" for whatever the transport is sounding. Reads refs only, so the callback is stable
+  // and the RafText readouts that use it never re-subscribe.
+  const getPlayingBarText = useCallback(() => {
+    const info = transportRef.current?.getPlayheadInfo();
+    if (!info || info.patternId == null) return "";
+    const current = projectRef.current;
+    const pattern = current.patterns.find((p) => p.id === info.patternId);
+    if (!pattern) return "";
+    const bar = Math.min(pattern.bars, Math.floor(info.beat / current.beatsPerBar) + 1);
+    return `bar ${bar} / ${pattern.bars}`;
   }, []);
 
   const midi = useMidiControls(
@@ -408,28 +348,6 @@ export function App() {
         : `${label} · ${preview.pasted}/${preview.pasted + preview.skipped} notes — ${preview.skipped} skipped (no room)`,
     );
   }, [noteClipboard, selectedTarget, selectedPatternId, project]);
-
-  // ECS-124: reusable track-configuration copy/paste — asset reference, FX chain, automation,
-  // playback/voice mode. Button-only (see trackConfigClipboard's doc comment above for why
-  // there's no keyboard shortcut). Paste always replaces the destination's configuration
-  // atomically (see trackConfig.ts's pasteTrackConfig doc comment for why a merge isn't safe).
-  const handleCopyTrackConfig = useCallback(
-    (trackId: TrackId) => {
-      const track = trackById(project, trackId);
-      if (!track || !hasTrackConfig(track)) return;
-      setTrackConfigClipboard(copyTrackConfig(track));
-      setClipboardStatus(`${trackLabel(project.tracks, trackId)} · config copied`);
-    },
-    [project],
-  );
-  const handlePasteTrackConfig = useCallback(() => {
-    if (!trackConfigClipboard || selectedTarget === "master") return;
-    const assetStale =
-      trackConfigClipboard.assetId != null && !project.assets.some((a) => a.id === trackConfigClipboard.assetId);
-    dispatch({ type: "PASTE_TRACK_CONFIG", trackId: selectedTarget, config: trackConfigClipboard });
-    const label = trackLabel(project.tracks, selectedTarget);
-    setClipboardStatus(assetStale ? `${label} · config pasted — copied asset no longer exists` : `${label} · config pasted`);
-  }, [trackConfigClipboard, selectedTarget, project]);
 
   // Clears the transient clipboard feedback after a couple seconds — same pattern as
   // saveStatus's own timer above.
@@ -558,8 +476,32 @@ export function App() {
     }
   }, []);
 
+  // Pattern navigation. ◀ ▶ and the [ ] keys step without opening the picker; picking from the
+  // picker selects AND closes it.
+  const handleStepPattern = useCallback(
+    (direction: -1 | 1) => setSelectedPatternId((current) => adjacentPatternId(projectRef.current.patterns, current, direction)),
+    [],
+  );
+  const handlePickPattern = useCallback((id: PatternId) => {
+    setSelectedPatternId(id);
+    setTakeover("none");
+  }, []);
+  const handleTogglePicker = useCallback(() => setTakeover((t) => (t === "picker" ? "none" : "picker")), []);
+  const handleToggleSettings = useCallback(() => setTakeover((t) => (t === "settings" ? "none" : "settings")), []);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setTakeover("none");
+        return;
+      }
+      // [ and ] step to the previous/next pattern. Not while typing (the rename field etc.).
+      if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const target = e.target as HTMLElement | null;
+        if (target && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))) return;
+        handleStepPattern(e.key === "[" ? -1 : 1);
+        return;
+      }
       if (e.key === "Backspace" || e.key === "Delete") {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) return;
@@ -637,6 +579,7 @@ export function App() {
     noteClipboard,
     handleCopyTrack,
     handlePasteNotes,
+    handleStepPattern,
   ]);
 
   const getPositionText = useCallback(() => {
@@ -768,13 +711,14 @@ export function App() {
     [],
   );
 
-  // Keeps desktop's bottomPanelView in sync when mobile nav picks FX/Mixer, so the same
-  // state that already decides what renders inside .bottom-panel (see the workspace JSX
-  // below) works unchanged for both layouts — mobile just has a different set of buttons
-  // driving it.
+  // Changing tab always leaves a takeover view (picker / settings), which only exist on the Timeline.
   const handleSelectMobileTab = useCallback((tab: MobileTab) => {
     setMobileTab(tab);
-    if (tab === "fx" || tab === "instrument" || tab === "editor" || tab === "edit" || tab === "mixer") setBottomPanelView(tab);
+    setTakeover("none");
+  }, []);
+  const handleSelectLibraryView = useCallback((view: LibraryView) => {
+    setLibraryView(view);
+    if (view !== "patterns") setSidePanelView(view);
   }, []);
 
   // --- persistence ---
@@ -838,7 +782,6 @@ export function App() {
     // back to null on paste — see trackConfig.ts) — just avoids a copy from a previous
     // project session confusingly outliving it (ECS-112/ECS-124).
     setNoteClipboard(null);
-    setTrackConfigClipboard(null);
     setEditClipboard({});
   }, [loadTargetId, runtime, init]);
 
@@ -852,7 +795,6 @@ export function App() {
     dispatch({ type: "LOAD_PROJECT", project: createInitialProject() });
     setStatus("stopped");
     setNoteClipboard(null);
-    setTrackConfigClipboard(null);
     setEditClipboard({});
   }, [runtime]);
 
@@ -890,453 +832,346 @@ export function App() {
       targets: runtime.getModulationTargets(kind).map((p) => p.name),
     };
   }, [runtime, selectedKindId]);
-  const selectedTrackHasConfig = selectedTrack != null && hasTrackConfig(selectedTrack);
   const selectedTrackAsset =
     selectedTrack?.assetId != null ? (project.assets.find((a) => a.id === selectedTrack.assetId) ?? null) : null;
   const selectedTrackAssetUseCount =
     selectedTrackAsset == null ? 0 : project.tracks.filter((t) => t.assetId === selectedTrackAsset.id).length;
   const selectedNote =
     selectedNoteId && selectedTrack ? (selectedPattern.notes[selectedNoteId] ?? null) : null;
-  // --- Edit panel (clipboard + Bar Tools); model logic lives in model/edit.ts ---
-  const bankName = (bank: number) => `Bank ${String.fromCharCode(65 + bank)}`;
-  const trackWhere = (trackId: TrackId) =>
-    `${bankName(Math.floor(project.tracks.findIndex((t) => t.id === trackId) / BANK_SIZE))} / ${trackLabel(project.tracks, trackId)}`;
-  const noTrack = "Select a track";
-  const trackBlock = (track: Track | undefined, has: boolean, empty: string) => (!track ? noTrack : has ? null : empty);
-  const clipboardRows: ClipboardRow[] = (() => {
-    const t = selectedTrack;
-    const paste = (has: boolean, what: string) => (!t ? noTrack : has ? null : `No ${what} copied`);
-    const ec = editClipboard;
-    const noteFrom = noteClipboard
-      ? `${trackWhere(noteClipboard.sourceTrackId)} · ${noteClipboard.notes.length} note${noteClipboard.notes.length === 1 ? "" : "s"}`
-      : null;
-    const done = (msg: string) => setClipboardStatus(msg);
-    return [
-      {
-        id: "track", label: "Track", copied: ec.track?.from ?? null,
-        copyBlocked: trackBlock(t, true, ""),
-        pasteBlocked: paste(!!ec.track, "Track"),
-        onCopy: () => {
-          const clip = t && copyTrack(project, t.id, selectedPattern.id);
-          if (!t || !clip) return;
-          setEditClipboard((c) => ({ ...c, track: { clip, from: trackWhere(t.id) } }));
-          done(`Track copied · ${trackWhere(t.id)}`);
-        },
-        onPaste: () => {
-          if (!t || !ec.track) return;
-          dispatch({ type: "PASTE_TRACK", trackId: t.id, patternId: selectedPattern.id, clip: ec.track.clip });
-          done(`Track pasted → ${trackWhere(t.id)}`);
-        },
-      },
-      {
-        id: "sequence", label: "Sequence", copied: noteFrom,
-        copyBlocked: trackBlock(t, selectedTrackHasNotes, "No steps on this track"),
-        pasteBlocked: paste(!!noteClipboard, "Sequence"),
-        onCopy: () => t && handleCopyTrack(t.id),
-        onPaste: handlePasteNotes,
-      },
-      {
-        id: "instrument", label: "Instrument", copied: ec.instrument?.from ?? null,
-        copyBlocked: trackBlock(t, !!t && hasInstrument(t), "Track has no sample or synth"),
-        pasteBlocked: paste(!!ec.instrument, "Instrument"),
-        onCopy: () => {
-          if (!t) return;
-          setEditClipboard((c) => ({ ...c, instrument: { clip: copyInstrument(t), from: trackWhere(t.id) } }));
-          done(`Instrument copied · ${trackWhere(t.id)}`);
-        },
-        onPaste: () => {
-          if (!t || !ec.instrument) return;
-          const stale = ec.instrument.clip.assetId != null && !project.assets.some((a) => a.id === ec.instrument!.clip.assetId);
-          dispatch({ type: "PASTE_INSTRUMENT", trackId: t.id, clip: ec.instrument.clip });
-          done(`Instrument pasted → ${trackWhere(t.id)}${stale ? " — copied asset no longer exists" : ""}`);
-        },
-      },
-      {
-        id: "fx", label: "FX", copied: ec.fx?.from ?? null,
-        copyBlocked: trackBlock(t, !!t && t.fx.length > 0, "Track has no FX"),
-        pasteBlocked: paste(!!ec.fx, "FX"),
-        onCopy: () => {
-          if (!t) return;
-          setEditClipboard((c) => ({ ...c, fx: { clip: copyFx(t), from: trackWhere(t.id) } }));
-          done(`FX copied · ${trackWhere(t.id)}`);
-        },
-        onPaste: () => {
-          if (!t || !ec.fx) return;
-          dispatch({ type: "PASTE_FX", trackId: t.id, clip: ec.fx.clip });
-          done(`FX pasted → ${trackWhere(t.id)}`);
-        },
-      },
-      {
-        id: "modulation", label: "Modulation", copied: ec.modulation?.from ?? null,
-        copyBlocked: trackBlock(t, !!t && hasModulation(t), "Track has no modulation"),
-        pasteBlocked: paste(!!ec.modulation, "Modulation"),
-        onCopy: () => {
-          if (!t) return;
-          setEditClipboard((c) => ({ ...c, modulation: { clip: copyModulation(t), from: trackWhere(t.id) } }));
-          done(`Modulation copied · ${trackWhere(t.id)}`);
-        },
-        onPaste: () => {
-          if (!t || !ec.modulation) return;
-          const clip = ec.modulation.clip;
-          dispatch({ type: "PASTE_MODULATION", trackId: t.id, clip });
-          const skipped = clip.lfos.length > 0 && !canPasteSynthLfos(t, clip);
-          done(`Modulation pasted → ${trackWhere(t.id)}${skipped ? " — synth LFOs skipped (different synth)" : ""}`);
-        },
-      },
-      {
-        id: "bank", label: "Bank", copied: ec.bank?.from ?? null,
-        copyBlocked: null,
-        pasteBlocked: ec.bank ? null : "No Bank copied",
-        onCopy: () => {
-          setEditClipboard((c) => ({ ...c, bank: { clip: copyBank(project, activeBank), from: bankName(activeBank) } }));
-          done(`Bank copied · ${bankName(activeBank)}`);
-        },
-        onPaste: () => {
-          if (!ec.bank) return;
-          dispatch({ type: "PASTE_BANK", bank: activeBank, clip: ec.bank.clip });
-          done(`Bank pasted → ${bankName(activeBank)}`);
-        },
-      },
-    ];
-  })();
-  // "Current bar" is derived from existing selection, not a new one: the bar holding the selected
-  // step in the selected pattern.
-  const selectedStepBar =
-    selectedNote && selectedNote.trackId === selectedTrack?.id ? Math.floor(selectedNote.start / project.beatsPerBar) : null;
-  const barTools: BarTool[] = [
-    {
-      id: "duplicate-sequence", label: "Duplicate Sequence",
-      blocked: selectedPattern.bars * 2 > MAX_PATTERN_BARS ? `Would exceed ${MAX_PATTERN_BARS} bars` : null,
-      hint: `${selectedPattern.bars} → ${selectedPattern.bars * 2} bars`,
-      onRun: () => {
-        dispatch({ type: "DUPLICATE_SEQUENCE", patternId: selectedPattern.id });
-        setClipboardStatus(`Sequence duplicated · ${selectedPattern.bars * 2} bars`);
-      },
-    },
-    {
-      id: "duplicate-bar", label: "Duplicate Bar",
-      blocked:
-        selectedStepBar === null
-          ? "Select a step to choose its bar"
-          : selectedPattern.bars + 1 > MAX_PATTERN_BARS
-            ? `Would exceed ${MAX_PATTERN_BARS} bars`
-            : null,
-      hint: selectedStepBar === null ? null : `Bar ${selectedStepBar + 1} → end (bar ${selectedPattern.bars + 1})`,
-      onRun: () => {
-        if (selectedStepBar === null) return;
-        dispatch({ type: "DUPLICATE_BAR", patternId: selectedPattern.id, bar: selectedStepBar });
-        setClipboardStatus(`Bar ${selectedStepBar + 1} appended as bar ${selectedPattern.bars + 1}`);
-      },
-    },
-  ];
+  // The Edit panel's rows are closures over the selection and clipboard; build them only while the
+  // panel is actually showing (the Edit tab of the side panel on desktop, the Track tab's Edit
+  // sub-tab on a phone) instead of on every render of the app.
+  const editShowing = layout.isPhone ? mobileTab === "track" && trackSubTab === "edit" : sidePanelView === "edit";
+  const { clipboardRows, barTools } = editShowing
+    ? buildEditPanelModel({
+        project,
+        selectedTrack,
+        selectedPattern,
+        selectedNote,
+        selectedTrackHasNotes,
+        editClipboard,
+        setEditClipboard,
+        noteClipboard,
+        activeBank,
+        dispatch,
+        setClipboardStatus,
+        onCopySequence: handleCopyTrack,
+        onPasteSequence: handlePasteNotes,
+        onClearSequence: handleClearTrack,
+      })
+    : NO_EDIT_MODEL;
   const playheadInfo = transportRef.current?.getPlayheadInfo();
   // Polled, unlike playheadInfo above -- the queue now advances on its own (see
-  // Project.patternChain's doc comment), so PatternBar/PatternList/PatternQueue's highlighting
+  // Project.patternChain's doc comment), so PatternStrip/PatternList/PatternQueue's highlighting
   // needs a real state update on a boundary crossing even when nothing else re-renders the
   // app (see usePlayingPosition's doc comment).
   const { patternId: playingPatternId, chainEntryId: playingChainEntryId } = usePlayingPosition(transportRef, status === "playing");
 
+  // --- layout ---
+  // What is showing where is decided by deriveLayout (and rendered by Chrome / Workspace); App only
+  // owns the state and the behaviour.
+  const derived = deriveLayout(layout, { mobileTab, mainView, takeover, bottomPanelView, trackSubTab, libraryView });
+  const handleSelectDockView = (view: BottomPanelView) => {
+    if (layout.isPhone) setTrackSubTab(view as TrackSubTab);
+    else setBottomPanelView(view);
+  };
+  const handleSelectMainView = (view: MainView) => {
+    setMainView(view);
+    setTakeover("none");
+  };
+  // "Edit ▸" on the Patterns page: open that pattern in the timeline (Sequencer view / Timeline tab).
+  const handleEditPattern = (id: PatternId) => {
+    setSelectedPatternId(id);
+    setTakeover("none");
+    if (layout.isPhone) setMobileTab("timeline");
+    else setMainView("sequencer");
+  };
+
+  // Track stepping (◀ ▶ in the Track column / phone Track tab): across all banks, moving the bank
+  // with the selection so the selected row is always the one on screen.
+  const selectedIndex = selectedTrack ? project.tracks.findIndex((t) => t.id === selectedTrack.id) : -1;
+  const handleStepTrack = (direction: -1 | 1) => {
+    const next = selectedIndex === -1 ? (direction === 1 ? 0 : -1) : selectedIndex + direction;
+    const track = project.tracks[next];
+    if (!track) return;
+    handleSelectTarget(track.id);
+    setActiveBank(Math.floor(next / BANK_SIZE));
+  };
+  const trackHeadLabel = selectedTrack
+    ? `${String(selectedIndex + 1).padStart(2, "0")} · ${trackHasSource(selectedTrack) ? selectedTrack.name : "empty"}`
+    : selectedTarget === "master"
+      ? "MASTER"
+      : "—";
+
+  const projectBarProps = {
+    saveStatus,
+    saveError,
+    savedProjects,
+    loadTargetId,
+    onNew: handleNewProject,
+    onSave: handleSaveProject,
+    onSelectSaved: setLoadTargetId,
+    onLoad: handleLoadProject,
+    onDelete: handleDeleteProject,
+  };
+  const transportProps = {
+    status,
+    bpm: project.bpm,
+    swing: project.swing,
+    gridResolution,
+    onPlay: handlePlay,
+    onPause: handlePause,
+    onStop: handleStop,
+    onBpmChange: handleBpmChange,
+    onSwingChange: handleSwingChange,
+    onGridResolutionChange: setGridResolution,
+    zoomPercent,
+    canZoomIn,
+    canZoomOut,
+    onZoomIn,
+    onZoomOut,
+    getPositionText,
+    canResample: status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing",
+    onResample: handleResample,
+    resamplePhase,
+    resampleError,
+    getResampleLabel,
+  };
+  const instrumentProps = {
+    track: selectedTrack ?? null,
+    asset: selectedTrackAsset,
+    assetUseCount: selectedTrackAssetUseCount,
+    onSetInstrument: handleSetInstrument,
+    onSetInstrumentParam: handleSetInstrumentParam,
+    modulation: modulationUi,
+    onAddLfo: handleAddLfo,
+    onSetLfo: handleSetLfo,
+    onRemoveLfo: handleRemoveLfo,
+    onSetEnvelope: handleSetEnvelope,
+    onSetPlaybackMode: handleSetTrackPlaybackMode,
+    onSetVoiceMode: handleSetTrackVoiceMode,
+  };
+  const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus };
+  const trackHeaderProps = {
+    track: selectedTrack ?? null,
+    label: trackHeadLabel,
+    canPrev: selectedIndex > 0,
+    canNext: selectedIndex < project.tracks.length - 1,
+    onStep: handleStepTrack,
+    onSetMuted: handleSetTrackMuted,
+    onSetSoloed: handleSetTrackSoloed,
+    playing: status === "playing",
+    onTogglePlay: () => (status === "playing" ? handleStop() : void handlePlay()),
+  };
+  const addPattern = () => dispatch({ type: "ADD_PATTERN" });
+  const setPatternBars = (id: PatternId, bars: number) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars });
+  const duplicatePattern = (id: PatternId) => dispatch({ type: "DUPLICATE_PATTERN", patternId: id });
+  const removePattern = (id: PatternId) => dispatch({ type: "REMOVE_PATTERN", patternId: id });
+  const renamePattern = (id: PatternId, name: string) => dispatch({ type: "RENAME_PATTERN", patternId: id, name });
+
   return (
-    <div className="app" data-mobile-tab={mobileTab} data-main-view={mainView}>
-      <div className="topbar">
-        <div>
-          <span className="brand">WEBSEQ</span>
-          <input
-            className="project-name-input"
-            value={project.name}
-            onChange={(e) => dispatch({ type: "SET_PROJECT_NAME", name: e.target.value })}
-          />
-        </div>
-        <div className="project-controls">
-          <button className="btn small" onClick={handleNewProject}>
-            New
-          </button>
-          <button className="btn small" onClick={handleSaveProject} disabled={saveStatus === "saving"}>
-            {saveStatus === "saving" ? "Saving…" : "Save"}
-          </button>
-          {saveStatus === "saved" && <span className="save-status saved">Saved ✓</span>}
-          {saveStatus === "error" && (
-            <span className="save-status error" title={saveError ?? undefined}>
-              Save failed
-            </span>
-          )}
-          <select className="project-select" value={loadTargetId} onChange={(e) => setLoadTargetId(e.target.value)}>
-            <option value="">— saved projects —</option>
-            {savedProjects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <button className="btn small" onClick={handleLoadProject} disabled={!loadTargetId}>
-            Load
-          </button>
-          <button className="btn small danger" onClick={handleDeleteProject} disabled={!loadTargetId}>
-            Delete
-          </button>
-        </div>
-        <div className="subtitle">
-          {totalBeats(selectedPattern, project.beatsPerBar)} beats / {selectedPattern.bars} bar
-          {selectedPattern.bars > 1 ? "s" : ""}
-        </div>
-      </div>
-
-      <TransportBar
-        status={status}
-        bpm={project.bpm}
-        swing={project.swing}
-        gridResolution={gridResolution}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onStop={handleStop}
-        onBpmChange={handleBpmChange}
-        onSwingChange={handleSwingChange}
-        onGridResolutionChange={setGridResolution}
-        zoomPercent={zoomPercent}
-        canZoomIn={canZoomIn}
-        canZoomOut={canZoomOut}
-        onZoomIn={onZoomIn}
-        onZoomOut={onZoomOut}
-        getPositionText={getPositionText}
-        canResample={status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing"}
-        onResample={handleResample}
-        resamplePhase={resamplePhase}
-        resampleError={resampleError}
-        getResampleLabel={getResampleLabel}
+    <div className="app" data-mobile-tab={mobileTab} data-main-view={mainView} data-takeover={derived.takeover} data-library-view={libraryView}>
+      <Chrome
+        layout={layout}
+        mainView={mainView}
+        onSelectMainView={handleSelectMainView}
+        mobileTab={mobileTab}
+        libraryView={libraryView}
+        onSelectLibraryView={handleSelectLibraryView}
+        projectName={project.name}
+        onRenameProject={(name) => dispatch({ type: "SET_PROJECT_NAME", name })}
+        subtitle={`${totalBeats(selectedPattern, project.beatsPerBar)} beats / ${selectedPattern.bars} bar${selectedPattern.bars > 1 ? "s" : ""}`}
+        projectBar={projectBarProps}
+        transport={transportProps}
+        patternStrip={{
+          patterns: project.patterns,
+          selectedPatternId,
+          playingPatternId,
+          onStep: handleStepPattern,
+          onRename: renamePattern,
+          onSetBars: setPatternBars,
+          onDuplicate: duplicatePattern,
+          onAddPattern: addPattern,
+          onEditPlaying: () => playingPatternId && setSelectedPatternId(playingPatternId),
+          getPlayingBarText,
+        }}
+        mobileTopBar={{
+          status,
+          onPlay: () => void handlePlay(),
+          onStop: handleStop,
+          patterns: project.patterns,
+          selectedPatternId,
+          bpm: project.bpm,
+          pickerOpen: derived.takeover === "picker",
+          settingsOpen: derived.takeover === "settings",
+          onStep: handleStepPattern,
+          onTogglePicker: handleTogglePicker,
+          onToggleSettings: handleToggleSettings,
+        }}
       />
 
-      <nav className="mode-toggle">
-        <div className="mode-toggle-track">
-          {MAIN_VIEWS.map((view) => (
-            <button
-              key={view.id}
-              className={`mode-toggle-option ${mainView === view.id ? "active" : ""}`}
-              onClick={() => setMainView(view.id)}
-            >
-              {view.label}
-            </button>
-          ))}
-        </div>
-      </nav>
-
-      <PatternBar
-        patterns={project.patterns}
-        selectedPatternId={selectedPatternId}
-        onSelectPattern={setSelectedPatternId}
-        onAddPattern={() => dispatch({ type: "ADD_PATTERN" })}
-        onDuplicatePattern={(id) => dispatch({ type: "DUPLICATE_PATTERN", patternId: id })}
-        onRemovePattern={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
-        onRenamePattern={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
-        onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
-        playingPatternId={playingPatternId}
+      <Workspace
+        layout={layout}
+        derived={derived}
+        mobileTab={mobileTab}
+        sidePanel={{
+          view: effectiveSideView(layout, sidePanelView),
+          onSelectView: setSidePanelView,
+          assets: {
+            assets: project.assets,
+            selectedTarget,
+            onImport: importAssets,
+            importStatus: importBatchResult,
+            onAssign: handleAssignAsset,
+            onRename: handleRenameAsset,
+            onRemove: handleRemoveAsset,
+            auditioningAssetId: manual.auditionAssetId,
+            onAudition: handleAuditionAsset,
+            auditionDisabled: resamplePhase === "pending",
+          },
+          midi: {
+            status: midi.status,
+            hasAccess: midi.hasAccess,
+            error: midi.error,
+            inputs: midi.inputs,
+            outputs: midi.outputs,
+            log: midi.log,
+            onRequestAccess: midi.requestAccess,
+            onConnect: midi.connect,
+            onDisconnect: midi.disconnect,
+          },
+          edit: editProps,
+        }}
+        grid={{
+          project,
+          pattern: selectedPattern,
+          selectedTarget,
+          onSelectTarget: handleSelectTarget,
+          selectedNoteId,
+          onSelectNote: setSelectedNoteId,
+          onAddNote: handleAddNote,
+          onResizeNote: handleResizeNote,
+          onMoveNote: handleMoveNote,
+          onRemoveNote: handleRemoveNote,
+          onSetMuted: handleSetTrackMuted,
+          onSetSoloed: handleSetTrackSoloed,
+          bank: activeBank,
+          bankSummaries,
+          onSelectBank: setActiveBank,
+          loopingTrackIds: manual.loopingTrackIds,
+          triggerDisabled: resamplePhase === "pending",
+          onTriggerTrack: handleTriggerTrack,
+          getPlayheadBeat,
+          pxPerBeat,
+          active: derived.timelineVisible,
+          bankPlacement: layout.isPhone ? "row" : "corner",
+        }}
+        picker={{
+          patterns: project.patterns,
+          selectedPatternId,
+          playingPatternId,
+          onPick: handlePickPattern,
+          onAddPattern: addPattern,
+          onDuplicate: duplicatePattern,
+          onRemove: removePattern,
+          onRename: renamePattern,
+          onSetBars: setPatternBars,
+        }}
+        settings={{
+          projectName: project.name,
+          onRenameProject: (name) => dispatch({ type: "SET_PROJECT_NAME", name }),
+          projectBar: projectBarProps,
+          transport: transportProps,
+        }}
+        trackHeader={trackHeaderProps}
+        dock={{
+          onSelect: handleSelectDockView,
+          fx: {
+            target: selectedTarget,
+            track: selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null),
+            fx: fxOwner?.fx ?? [],
+            automation: fxOwner?.automation ?? [],
+            patternTotalBeats: totalBeats(selectedPattern, project.beatsPerBar),
+            pxPerBeat,
+            selectedFxId,
+            selectedAutomationParamId,
+            onSelectFx: (id) => {
+              setSelectedFxId(id);
+              setSelectedAutomationParamId(null);
+            },
+            onAddFx: handleAddFx,
+            onRemoveFx: handleRemoveFx,
+            onMoveFx: handleMoveFx,
+            onSetFxParam: handleSetFxParam,
+            onSetFxEnabled: handleSetFxEnabled,
+            onSelectAutomationParam: setSelectedAutomationParamId,
+            onSetAutomationPoint: handleSetAutomationPoint,
+            onRemoveAutomationPoint: handleRemoveAutomationPoint,
+            onClearAutomationLane: handleClearAutomationLane,
+          },
+          instrument: instrumentProps,
+          editor: {
+            track: selectedTrack ?? null,
+            pattern: selectedPattern,
+            beatsPerBar: project.beatsPerBar,
+            selectedNoteId,
+            onSelectNote: setSelectedNoteId,
+            onAddNote: handleAddNote,
+            onResizeNote: handleResizeNote,
+            onMoveNote: handleMoveNote,
+            onRemoveNote: handleRemoveNote,
+            onSetNotePitch: handleSetNotePitch,
+            onSetNoteVelocity: handleSetNoteVelocity,
+            onSetNoteDuration: handleSetNoteDuration,
+            onSetTrackEventLfo: handleSetTrackEventLfo,
+            onSetNoteLfo: handleSetNoteLfo,
+            onSetTrackNotesLfo: handleSetTrackNotesLfo,
+          },
+          edit: editProps,
+          mixer: {
+            tracks: tracksInBank(project, activeBank),
+            trackNumberOffset: activeBank * BANK_SIZE,
+            onSetVolume: handleSetTrackVolume,
+            onSetMuted: handleSetTrackMuted,
+            onSetSoloed: handleSetTrackSoloed,
+            onSetPan: handleSetTrackPan,
+          },
+        }}
       />
 
-      <div className="workspace">
-        <aside className="side-panel">
-          <div className="side-panel-tabs">
-            {SIDE_PANEL_VIEWS.map((view) => (
-              <button
-                key={view.id}
-                className={`side-panel-tab ${sidePanelView === view.id ? "active" : ""}`}
-                onClick={() => setSidePanelView(view.id)}
-              >
-                {view.label}
-              </button>
-            ))}
-          </div>
-          <div className="side-panel-content">
-            {sidePanelView === "assets" && (
-              <AssetsPanel
-                assets={project.assets}
-                selectedTarget={selectedTarget}
-                onImport={importAssets}
-                importStatus={importBatchResult}
-                onAssign={handleAssignAsset}
-                onRename={handleRenameAsset}
-                onRemove={handleRemoveAsset}
-                auditioningAssetId={manual.auditionAssetId}
-                onAudition={handleAuditionAsset}
-                auditionDisabled={resamplePhase === "pending"}
-              />
-            )}
-            {sidePanelView === "midi" && (
-              <MidiPanel
-                status={midi.status}
-                hasAccess={midi.hasAccess}
-                error={midi.error}
-                inputs={midi.inputs}
-                outputs={midi.outputs}
-                log={midi.log}
-                onRequestAccess={midi.requestAccess}
-                onConnect={midi.connect}
-                onDisconnect={midi.disconnect}
-              />
-            )}
-          </div>
-        </aside>
+      <PatternsView
+        active={derived.patternsVisible}
+        header={{
+          editing: selectedPattern,
+          playing: playingPatternId ? project.patterns.find((p) => p.id === playingPatternId) : undefined,
+          onEditSelected: () => handleEditPattern(selectedPatternId),
+          onAdd: addPattern,
+          getPlayingBarText,
+          backLabel: layout.isPhone ? "back to timeline" : "back to sequencer",
+        }}
+        list={{
+          patterns: project.patterns,
+          selectedPatternId,
+          playingPatternId,
+          onSelect: setSelectedPatternId,
+          onEdit: handleEditPattern,
+          onDuplicate: duplicatePattern,
+          onRemove: removePattern,
+          onRename: renamePattern,
+          onSetBars: setPatternBars,
+          onQueueNext: handleQueueNext,
+        }}
+        queue={{
+          patternChain: project.patternChain,
+          patterns: project.patterns,
+          playingChainEntryId,
+          onRemoveEntry: handleRemoveChainEntry,
+          onMoveEntry: handleMoveChainEntry,
+          getPlayingBarText,
+        }}
+      />
 
-        <div className="main">
-          <SequencerGrid
-            project={project}
-            pattern={selectedPattern}
-            selectedTarget={selectedTarget}
-            onSelectTarget={handleSelectTarget}
-            selectedNoteId={selectedNoteId}
-            onSelectNote={setSelectedNoteId}
-            onAddNote={handleAddNote}
-            onResizeNote={handleResizeNote}
-            onMoveNote={handleMoveNote}
-            onRemoveNote={handleRemoveNote}
-            onSetMuted={handleSetTrackMuted}
-            onSetSoloed={handleSetTrackSoloed}
-            bank={activeBank}
-            bankSummaries={bankSummaries}
-            onSelectBank={setActiveBank}
-            loopingTrackIds={manual.loopingTrackIds}
-            triggerDisabled={resamplePhase === "pending"}
-            onTriggerTrack={handleTriggerTrack}
-            getPlayheadBeat={getPlayheadBeat}
-            pxPerBeat={pxPerBeat}
-          />
-          <div className="bottom-panel">
-            <div className="bottom-panel-tabs">
-              {BOTTOM_PANEL_VIEWS.map((view) => (
-                <button
-                  key={view.id}
-                  className={`bottom-panel-tab ${bottomPanelView === view.id ? "active" : ""}`}
-                  onClick={() => setBottomPanelView(view.id)}
-                >
-                  {view.label}
-                </button>
-              ))}
-            </div>
-            {bottomPanelView === "fx" && (
-              <FxPanel
-                target={selectedTarget}
-                track={selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null)}
-                fx={fxOwner?.fx ?? []}
-                automation={fxOwner?.automation ?? []}
-                patternTotalBeats={totalBeats(selectedPattern, project.beatsPerBar)}
-                pxPerBeat={pxPerBeat}
-                selectedFxId={selectedFxId}
-                selectedAutomationParamId={selectedAutomationParamId}
-                onSelectFx={(id) => {
-                  setSelectedFxId(id);
-                  setSelectedAutomationParamId(null);
-                }}
-                onAddFx={handleAddFx}
-                onRemoveFx={handleRemoveFx}
-                onMoveFx={handleMoveFx}
-                onSetFxParam={handleSetFxParam}
-                onSetFxEnabled={handleSetFxEnabled}
-                onSelectAutomationParam={setSelectedAutomationParamId}
-                onSetAutomationPoint={handleSetAutomationPoint}
-                onRemoveAutomationPoint={handleRemoveAutomationPoint}
-                onClearAutomationLane={handleClearAutomationLane}
-                onSetPlaybackMode={handleSetTrackPlaybackMode}
-                onSetVoiceMode={handleSetTrackVoiceMode}
-                hasNotes={selectedTrackHasNotes}
-                onClearTrack={handleClearTrack}
-                canPaste={noteClipboard !== null}
-                clipboardStatus={clipboardStatus}
-                onCopyTrack={handleCopyTrack}
-                onPasteTrack={handlePasteNotes}
-                hasConfig={selectedTrackHasConfig}
-                canPasteConfig={trackConfigClipboard !== null}
-                onCopyTrackConfig={handleCopyTrackConfig}
-                onPasteTrackConfig={handlePasteTrackConfig}
-              />
-            )}
-            {bottomPanelView === "instrument" && (
-              <InstrumentPanel
-                track={selectedTrack ?? null}
-                asset={selectedTrackAsset}
-                assetUseCount={selectedTrackAssetUseCount}
-                note={selectedNote && selectedNote.trackId === selectedTrack?.id ? selectedNote : null}
-                onSetInstrument={handleSetInstrument}
-                onSetInstrumentParam={handleSetInstrumentParam}
-                modulation={modulationUi}
-                onAddLfo={handleAddLfo}
-                onSetLfo={handleSetLfo}
-                onRemoveLfo={handleRemoveLfo}
-                onSetEnvelope={handleSetEnvelope}
-                onSetNotePitch={handleSetNotePitch}
-                onSetNoteVelocity={handleSetNoteVelocity}
-              />
-            )}
-            {bottomPanelView === "editor" && (
-              <TrackEditor
-                track={selectedTrack ?? null}
-                pattern={selectedPattern}
-                beatsPerBar={project.beatsPerBar}
-                selectedNoteId={selectedNoteId}
-                onSelectNote={setSelectedNoteId}
-                onAddNote={handleAddNote}
-                onResizeNote={handleResizeNote}
-                onMoveNote={handleMoveNote}
-                onRemoveNote={handleRemoveNote}
-                onSetNotePitch={handleSetNotePitch}
-                onSetNoteVelocity={handleSetNoteVelocity}
-                onSetNoteDuration={handleSetNoteDuration}
-                onSetTrackEventLfo={handleSetTrackEventLfo}
-                onSetNoteLfo={handleSetNoteLfo}
-                onSetTrackNotesLfo={handleSetTrackNotesLfo}
-              />
-            )}
-            {bottomPanelView === "edit" && <EditPanel clipboard={clipboardRows} barTools={barTools} feedback={clipboardStatus} />}
-            {bottomPanelView === "mixer" && (
-              <MixerPanel
-                tracks={tracksInBank(project, activeBank)}
-                trackNumberOffset={activeBank * BANK_SIZE}
-                onSetVolume={handleSetTrackVolume}
-                onSetMuted={handleSetTrackMuted}
-                onSetSoloed={handleSetTrackSoloed}
-                onSetPan={handleSetTrackPan}
-              />
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Always mounted alongside .workspace above -- data-main-view toggles which is visible
-          via CSS display, the same mechanism data-mobile-tab already uses, so switching never
-          unmounts/remounts SequencerGrid (see MainView's doc comment). */}
-      <div className="patterns-view">
-        <PatternList
-          patterns={project.patterns}
-          selectedPatternId={selectedPatternId}
-          playingPatternId={playingPatternId}
-          onSelect={setSelectedPatternId}
-          onAdd={() => dispatch({ type: "ADD_PATTERN" })}
-          onDuplicate={(id) => dispatch({ type: "DUPLICATE_PATTERN", patternId: id })}
-          onRemove={(id) => dispatch({ type: "REMOVE_PATTERN", patternId: id })}
-          onRename={(id, name) => dispatch({ type: "RENAME_PATTERN", patternId: id, name })}
-          onSetBars={(id, bars) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars })}
-          onQueueNext={handleQueueNext}
-        />
-        <PatternQueue
-          patternChain={project.patternChain}
-          patterns={project.patterns}
-          playingChainEntryId={playingChainEntryId}
-          onRemoveEntry={handleRemoveChainEntry}
-        />
-      </div>
-
-      {/* Hidden on desktop (see index.css) — on a phone-sized viewport this replaces the
-          desktop side-panel/bottom-panel tab strips as the one control that switches which
-          of Timeline/FX/Mixer/Assets/Patterns is visible (see the @media block's section-
-          visibility rules keyed off .app's data-mobile-tab attribute above). */}
-      <nav className="mobile-tabbar">
-        {MOBILE_TABS.map((tab) => (
-          <button
-            key={tab.id}
-            className={`mobile-tab ${mobileTab === tab.id ? "active" : ""}`}
-            onClick={() => handleSelectMobileTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
+      <MobileTabBar active={mobileTab} onSelect={handleSelectMobileTab} />
 
       {error && <div className="gesture-veil">Audio engine failed to start: {error}</div>}
       {!runtime && !error && (

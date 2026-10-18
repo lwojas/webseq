@@ -36,6 +36,7 @@ export function useVisibleColumnWindow(
   totalBeats: number,
   overscanBeats: number,
   initialVisibleBeats: number,
+  enabled = true,
 ): ColumnWindow {
   const [window, setWindow] = useState<ColumnWindow>(() => ({
     start: 0,
@@ -44,22 +45,34 @@ export function useVisibleColumnWindow(
   const windowRef = useRef(window);
 
   useEffect(() => {
+    // Paused while the timeline isn't visible (same rationale as usePlayheadAnimation's `enabled`).
+    if (!enabled) return;
     let frame: number;
+    // The window is only recomputed (and its object only allocated) when the scroll position or the
+    // viewport width actually changed since the last frame; most frames just compare two numbers.
+    let lastLeft = NaN;
+    let lastWidth = NaN;
     const tick = () => {
       const el = scrollRef.current;
       if (el) {
-        const next = computeVisibleColumnWindow(el.scrollLeft, el.clientWidth, pxPerBeat, totalBeats, overscanBeats);
-        const prev = windowRef.current;
-        if (next.start !== prev.start || next.end !== prev.end) {
-          windowRef.current = next;
-          setWindow(next);
+        const left = el.scrollLeft;
+        const width = el.clientWidth;
+        if (left !== lastLeft || width !== lastWidth) {
+          lastLeft = left;
+          lastWidth = width;
+          const next = computeVisibleColumnWindow(left, width, pxPerBeat, totalBeats, overscanBeats);
+          const prev = windowRef.current;
+          if (next.start !== prev.start || next.end !== prev.end) {
+            windowRef.current = next;
+            setWindow(next);
+          }
         }
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [scrollRef, pxPerBeat, totalBeats, overscanBeats]);
+  }, [scrollRef, pxPerBeat, totalBeats, overscanBeats, enabled]);
 
   return window;
 }

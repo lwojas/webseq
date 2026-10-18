@@ -3,7 +3,7 @@ import type { FxTarget, Note, NoteId, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, trackHasSource } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
 
-interface Props {
+export interface Props {
   index: number;
   track: Track;
   /** This track's notes only (see useStableTrackNotes) — never the whole Pattern, so that an
@@ -38,7 +38,7 @@ interface Props {
   onTrigger: (trackId: TrackId) => void;
 }
 
-export const TrackRow = memo(function TrackRow({
+function TrackRowImpl({
   index,
   track,
   notes,
@@ -70,13 +70,18 @@ export const TrackRow = memo(function TrackRow({
   const end = Math.min(visibleEnd, beats);
 
   return (
-    <div className={`track-row ${selected ? "selected" : ""}`}>
+    <div className={`track-row ${selected ? "selected" : ""} ${track.muted ? "muted" : ""}`}>
       <div className="track-header" onClick={() => onSelectTarget(track.id)}>
         <span className="track-num">{String(index + 1).padStart(2, "0")}</span>
         <span className={`track-name ${trackHasSource(track) ? "" : "unassigned"}`}>
           {trackHasSource(track) ? track.name : "— empty —"}
         </span>
+        {trackHasSource(track) && <span className="track-source-tag">{track.instrument ? "SYN" : "SMP"}</span>}
         {track.fx.length > 0 && <span className="track-fx-badge">{track.fx.length}FX</span>}
+        {/* Phone: the M/S buttons are hidden (see index.css), but the STATE still shows — a muted or
+            soloed track reads at a glance with no controls and no extra row. */}
+        {track.muted && <span className="track-state-tag muted">M</span>}
+        {track.soloed && <span className="track-state-tag soloed">S</span>}
         {selected && trackHasSource(track) && (
           // Only on the selected track, so the header stays uncluttered (ECS-83). Its click must
           // not reach the header's select handler.
@@ -148,4 +153,53 @@ export const TrackRow = memo(function TrackRow({
       </div>
     </div>
   );
-});
+}
+
+/** Re-render only when something this row actually shows changed. `track` is a new object on every
+ * edit to that track (volume and pan drags, instrument params, FX params...), none of which the
+ * row displays, so comparing the displayed fields keeps a fader drag from re-rendering its row.
+ *
+ * Written out field by field, not with rest-spread / Object.keys: this runs for every row on every
+ * render of the app, and those would allocate two objects and an array per row per render.
+ * test/trackRow.test.ts fails if a prop is added to Props and not compared here. */
+export function sameRow(a: Props, b: Props): boolean {
+  if (
+    a.index !== b.index ||
+    a.notes !== b.notes ||
+    a.beats !== b.beats ||
+    a.beatsPerBar !== b.beatsPerBar ||
+    a.pxPerBeat !== b.pxPerBeat ||
+    a.visibleStart !== b.visibleStart ||
+    a.visibleEnd !== b.visibleEnd ||
+    a.selected !== b.selected ||
+    a.selectedNoteId !== b.selectedNoteId ||
+    a.onSelectNote !== b.onSelectNote ||
+    a.onSelectTarget !== b.onSelectTarget ||
+    a.onAddNote !== b.onAddNote ||
+    a.onResizeNote !== b.onResizeNote ||
+    a.onMoveNote !== b.onMoveNote ||
+    a.onRemoveNote !== b.onRemoveNote ||
+    a.onSetMuted !== b.onSetMuted ||
+    a.onSetSoloed !== b.onSetSoloed ||
+    a.looping !== b.looping ||
+    a.triggerDisabled !== b.triggerDisabled ||
+    a.onTrigger !== b.onTrigger
+  ) {
+    return false;
+  }
+  const ta = a.track;
+  const tb = b.track;
+  return (
+    ta === tb ||
+    (ta.id === tb.id &&
+      ta.name === tb.name &&
+      ta.assetId === tb.assetId &&
+      ta.instrument?.kind === tb.instrument?.kind &&
+      ta.fx.length === tb.fx.length &&
+      ta.muted === tb.muted &&
+      ta.soloed === tb.soloed &&
+      ta.playbackMode === tb.playbackMode)
+  );
+}
+
+export const TrackRow = memo(TrackRowImpl, sameRow);

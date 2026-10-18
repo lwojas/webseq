@@ -62,7 +62,7 @@ export interface SequencerRegistryDeps {
   readonly getCurrentChainEntryId?: () => ChainEntryId | null;
   /**
    * Selects `patternId` for editing — the same thing clicking its row in `PatternList`/its chip
-   * in `PatternBar` does (`App.tsx`'s `setSelectedPatternId`). Omitted means `pattern.<n>.selected`
+   * in `PatternStrip` does (`App.tsx`'s `setSelectedPatternId`). Omitted means `pattern.<n>.selected`
    * is feedback-only.
    */
   readonly selectPattern?: (patternId: PatternId) => void;
@@ -415,7 +415,7 @@ function createPatternQueuedControl(index: number, deps: SequencerRegistryDeps):
 
 /**
  * pattern.<n>.selected: whether `project.patterns[index]` is the one selected for editing
- * (`App.tsx`'s `selectedPatternId`) — independent of playing/queued, same separation `PatternBar`/
+ * (`App.tsx`'s `selectedPatternId`) — independent of playing/queued, same separation `PatternStrip`/
  * `PatternList` already keep. Writable: `setValue(true)` selects it (the same action clicking its
  * row does); `setValue(false)` is a no-op, since there's always exactly one selected pattern and
  * no "deselect" affordance anywhere in the UI either.
@@ -477,7 +477,7 @@ function createPatternNameControl(index: number, deps: SequencerRegistryDeps): P
   };
 }
 
-/** pattern.<n>.bars: `project.patterns[index]`'s bar count. Writable, same bounds as `PatternBar`/`PatternList`'s own bars input. */
+/** pattern.<n>.bars: `project.patterns[index]`'s bar count. Writable, same bounds as `PatternStrip`/`PatternList`'s own bars input. */
 function createPatternBarsControl(index: number, deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
   const def: NumericControlDef = { id: `pattern.${index}.bars`, label: `Pattern ${index + 1} bars`, kind: "number", min: 1, max: 64, default: 1 };
   const bars = (project: Project) => project.patterns[index]?.bars ?? def.default;
