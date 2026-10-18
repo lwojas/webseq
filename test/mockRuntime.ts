@@ -9,6 +9,7 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release"],
   pad: ["tune", "tone", "movement", "detune", "space", "attack", "release"],
   hypersaw: ["tune", "detune", "spread", "density", "cutoff", "attack", "decay", "sustain", "release"],
+  pwmbeast: ["tune", "width", "pwm", "rate", "shape", "harmonics", "drive", "cutoff", "resonance", "envamt", "sub", "attack", "decay", "sustain", "release"],
   fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide"],
 };
@@ -31,6 +32,7 @@ const KIND_IDS: [string, InstrumentKind][] = [
   ["pad", InstrumentKind.Pad],
   ["fm", InstrumentKind.Fm],
   ["hypersaw", InstrumentKind.Hypersaw],
+  ["pwmbeast", InstrumentKind.PwmBeast],
 ];
 
 export function mockRuntime() {

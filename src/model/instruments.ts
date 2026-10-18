@@ -229,6 +229,33 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "release", label: "Release", min: 0.01, max: 6, step: 0.01, unit: "s", default: 0.4 },
     ],
   },
+  // Pulse-width-modulated character synth (webdsp docs/pwm-beast-instrument.md). Sustained.
+  // Width/PWM/Rate/Shape set the pulse and its movement (Shape 1 = the note envelope drives the
+  // width), Harmonics is the fold stage, Drive the asymmetric drive, Env Amt how far the internal
+  // envelope opens the filter.
+  pwmbeast: {
+    kind: "pwmbeast",
+    label: "PWM Beast",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 440, step: 0.5, unit: "Hz", default: 55 },
+      { id: "width", label: "Width", min: 0.05, max: 0.95, step: 0.01, default: 0.3 },
+      { id: "pwm", label: "PWM", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "rate", label: "PWM Rate", min: 0.1, max: 200, step: 0.1, unit: "Hz", default: 3.5 },
+      { id: "shape", label: "PWM Shape", min: 0, max: 1, step: 0.01, default: 0.35 },
+      { id: "harmonics", label: "Harmonics", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "drive", label: "Drive", min: 0, max: 1, step: 0.01, default: 0.4 },
+      { id: "cutoff", label: "Cutoff", min: 60, max: 8000, step: 1, unit: "Hz", default: 500 },
+      { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.45 },
+      { id: "envamt", label: "Env Amt", min: 0, max: 1, step: 0.01, default: 0.7 },
+      { id: "sub", label: "Sub", min: 0, max: 1, step: 0.01, default: 0.25 },
+      { id: "attack", label: "Attack", min: 0.001, max: 0.25, step: 0.001, unit: "s", default: 0.003 },
+      { id: "decay", label: "Decay", min: 0.03, max: 2, step: 0.01, unit: "s", default: 0.3 },
+      { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0.6 },
+      { id: "release", label: "Release", min: 0.01, max: 1.5, step: 0.01, unit: "s", default: 0.12 },
+    ],
+  },
 };
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];

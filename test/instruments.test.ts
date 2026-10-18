@@ -117,7 +117,7 @@ describe("InstrumentHost", () => {
 });
 
 describe("compileInstrumentNotes", () => {
-  function projectWithNotes(kind: "kick" | "bass" | "pulse" | "pad" | "fm" | "hypersaw") {
+  function projectWithNotes(kind: "kick" | "bass" | "pulse" | "pad" | "fm" | "hypersaw" | "pwmbeast") {
     let project = setTrackInstrument(createInitialProject(), "track-1", kind);
     const patternId = project.patterns[0].id;
     project = addNote(project, patternId, "track-1", 4);
@@ -160,7 +160,7 @@ describe("compileInstrumentNotes", () => {
   });
 
   it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
-    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw"] as const) {
+    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast"] as const) {
       expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
     }
   });
@@ -187,6 +187,18 @@ describe("compileInstrumentNotes", () => {
       sustain: 0.8, release: 0.4,
     });
     expect(rootMidiNote(hs.tracks[0])).toBeCloseTo(45);
+  });
+
+  it("treats pwmbeast as sustained, with its catalog defaults and an A1 root", () => {
+    const spb = 60 / (120 * 4);
+    const pb = projectWithNotes("pwmbeast");
+    const [p] = compileInstrumentNotes(pb.patterns[0], pb.tracks, 120, 10);
+    expect(p.params.duration).toBeCloseTo(1 * spb);
+    expect(pb.tracks[0].instrument?.params).toEqual({
+      tune: 55, width: 0.3, pwm: 0.5, rate: 3.5, shape: 0.35, harmonics: 0.5, drive: 0.4, cutoff: 500,
+      resonance: 0.45, envamt: 0.7, sub: 0.25, attack: 0.003, decay: 0.3, sustain: 0.6, release: 0.12,
+    });
+    expect(rootMidiNote(pb.tracks[0])).toBeCloseTo(33);
   });
 
   it("yields nothing for sample-only projects", () => {
