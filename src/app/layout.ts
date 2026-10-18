@@ -122,6 +122,10 @@ export interface DerivedLayout {
   patternsVisible: boolean;
 }
 
+// Constant arrays, so deriveLayout (called on every render of the app) never allocates one.
+const PHONE_TRACK_VIEWS: BottomPanelView[] = TRACK_SUB_TABS.map((t) => t.id);
+const NO_VIEWS: BottomPanelView[] = [];
+
 export function deriveLayout(env: LayoutEnv, state: LayoutState): DerivedLayout {
   const { isPhone } = env;
   // Only a phone's Timeline tab has a takeover; desktop has none.
@@ -129,8 +133,8 @@ export function deriveLayout(env: LayoutEnv, state: LayoutState): DerivedLayout 
   const timelineVisible = takeover === "none" && (isPhone ? state.mobileTab === "timeline" : state.mainView === "sequencer");
   const dockViews: BottomPanelView[] = isPhone
     ? state.mobileTab === "mixer"
-      ? []
-      : TRACK_SUB_TABS.map((t) => t.id)
+      ? NO_VIEWS
+      : PHONE_TRACK_VIEWS
     : DESKTOP_DOCK_VIEWS;
   const activeDockView: BottomPanelView = isPhone
     ? state.mobileTab === "mixer"

@@ -3,7 +3,7 @@ import type { FxTarget, Note, NoteId, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, trackHasSource } from "../model/types";
 import { NoteBlock } from "./NoteBlock";
 
-interface Props {
+export interface Props {
   index: number;
   track: Track;
   /** This track's notes only (see useStableTrackNotes) — never the whole Pattern, so that an
@@ -157,15 +157,38 @@ function TrackRowImpl({
 
 /** Re-render only when something this row actually shows changed. `track` is a new object on every
  * edit to that track (volume and pan drags, instrument params, FX params...), none of which the
- * row displays, so comparing the displayed fields keeps a fader drag in the Track column from
- * re-rendering its row (and the memoised callbacks keep every other row quiet as before). */
-function sameRow(a: Props, b: Props): boolean {
-  const { track: ta, ...restA } = a;
-  const { track: tb, ...restB } = b;
-  const keys = Object.keys(restA) as (keyof typeof restA)[];
-  for (const key of keys) {
-    if (restA[key] !== restB[key]) return false;
+ * row displays, so comparing the displayed fields keeps a fader drag from re-rendering its row.
+ *
+ * Written out field by field, not with rest-spread / Object.keys: this runs for every row on every
+ * render of the app, and those would allocate two objects and an array per row per render.
+ * test/trackRow.test.ts fails if a prop is added to Props and not compared here. */
+export function sameRow(a: Props, b: Props): boolean {
+  if (
+    a.index !== b.index ||
+    a.notes !== b.notes ||
+    a.beats !== b.beats ||
+    a.beatsPerBar !== b.beatsPerBar ||
+    a.pxPerBeat !== b.pxPerBeat ||
+    a.visibleStart !== b.visibleStart ||
+    a.visibleEnd !== b.visibleEnd ||
+    a.selected !== b.selected ||
+    a.selectedNoteId !== b.selectedNoteId ||
+    a.onSelectNote !== b.onSelectNote ||
+    a.onSelectTarget !== b.onSelectTarget ||
+    a.onAddNote !== b.onAddNote ||
+    a.onResizeNote !== b.onResizeNote ||
+    a.onMoveNote !== b.onMoveNote ||
+    a.onRemoveNote !== b.onRemoveNote ||
+    a.onSetMuted !== b.onSetMuted ||
+    a.onSetSoloed !== b.onSetSoloed ||
+    a.looping !== b.looping ||
+    a.triggerDisabled !== b.triggerDisabled ||
+    a.onTrigger !== b.onTrigger
+  ) {
+    return false;
   }
+  const ta = a.track;
+  const tb = b.track;
   return (
     ta === tb ||
     (ta.id === tb.id &&

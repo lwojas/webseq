@@ -21,6 +21,7 @@ import { remapAssetIds } from "./model/project";
 import type { ResamplePhase } from "./components/TransportBar";
 import type { ImportBatchResult } from "./components/AssetsPanel";
 import type { ModulationUi } from "./components/ModulationSlot";
+import type { BarTool, ClipboardRow } from "./components/EditPanel";
 import { Chrome } from "./app/Chrome";
 import { Workspace } from "./app/Workspace";
 import { PatternsView } from "./app/PatternsView";
@@ -34,6 +35,9 @@ import { useMidiControls } from "./midi/useMidiControls";
 function releaseEngineSamples(rt: AudioRuntime): void {
   for (const sample of rt.listSamples()) rt.removeSample(sample.id);
 }
+
+/** What the Edit panel gets while it isn't showing: shared empties, so nothing is allocated. */
+const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[] } = { clipboardRows: [], barTools: [] };
 
 export function App() {
   const { runtime, error, init } = useAudioRuntime();
@@ -834,22 +838,28 @@ export function App() {
     selectedTrackAsset == null ? 0 : project.tracks.filter((t) => t.assetId === selectedTrackAsset.id).length;
   const selectedNote =
     selectedNoteId && selectedTrack ? (selectedPattern.notes[selectedNoteId] ?? null) : null;
-  const { clipboardRows, barTools } = buildEditPanelModel({
-    project,
-    selectedTrack,
-    selectedPattern,
-    selectedNote,
-    selectedTrackHasNotes,
-    editClipboard,
-    setEditClipboard,
-    noteClipboard,
-    activeBank,
-    dispatch,
-    setClipboardStatus,
-    onCopySequence: handleCopyTrack,
-    onPasteSequence: handlePasteNotes,
-    onClearSequence: handleClearTrack,
-  });
+  // The Edit panel's rows are closures over the selection and clipboard; build them only while the
+  // panel is actually showing (the Edit tab of the side panel on desktop, the Track tab's Edit
+  // sub-tab on a phone) instead of on every render of the app.
+  const editShowing = layout.isPhone ? mobileTab === "track" && trackSubTab === "edit" : sidePanelView === "edit";
+  const { clipboardRows, barTools } = editShowing
+    ? buildEditPanelModel({
+        project,
+        selectedTrack,
+        selectedPattern,
+        selectedNote,
+        selectedTrackHasNotes,
+        editClipboard,
+        setEditClipboard,
+        noteClipboard,
+        activeBank,
+        dispatch,
+        setClipboardStatus,
+        onCopySequence: handleCopyTrack,
+        onPasteSequence: handlePasteNotes,
+        onClearSequence: handleClearTrack,
+      })
+    : NO_EDIT_MODEL;
   const playheadInfo = transportRef.current?.getPlayheadInfo();
   // Polled, unlike playheadInfo above -- the queue now advances on its own (see
   // Project.patternChain's doc comment), so PatternStrip/PatternList/PatternQueue's highlighting

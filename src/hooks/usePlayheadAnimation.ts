@@ -29,15 +29,35 @@ export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: nu
     // timeline is visible again.
     if (!enabled) return;
     let frame: number;
+    // Style writes are skipped when nothing changed (a stopped or paused playhead would otherwise
+    // re-assign `display: none` every frame, dirtying style for nothing).
+    let lastEl: HTMLDivElement | null = null;
+    let hidden: boolean | null = null;
+    let lastTransform = "";
     const draw = () => {
       const el = elementRef.current;
       if (el) {
+        if (el !== lastEl) {
+          lastEl = el;
+          hidden = null;
+          lastTransform = "";
+        }
         const beat = getBeat();
         if (beat === null) {
-          el.style.display = "none";
+          if (hidden !== true) {
+            el.style.display = "none";
+            hidden = true;
+          }
         } else {
-          el.style.display = "";
-          el.style.transform = `translateX(${beat * pxPerBeat}px)`;
+          if (hidden !== false) {
+            el.style.display = "";
+            hidden = false;
+          }
+          const transform = `translateX(${beat * pxPerBeat}px)`;
+          if (transform !== lastTransform) {
+            el.style.transform = transform;
+            lastTransform = transform;
+          }
         }
       }
       frame = requestAnimationFrame(draw);

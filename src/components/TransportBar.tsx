@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { MAX_BPM, MAX_SWING, MIN_BPM, MIN_SWING } from "../model/project";
 import { GRID_RESOLUTIONS, type GridResolution } from "../model/notes";
 import type { PlaybackStatus, ResampleStatus } from "../audio/transport";
@@ -68,7 +69,9 @@ export function TransportBar({
   variant = "bar",
 }: Props) {
   const positionRef = useRafText(getPositionText);
-  const resampleLiveRef = useRafText(() => getResampleLabel().toUpperCase());
+  // A stable getter: an inline arrow would restart the per-frame loop on every render.
+  const getResampleText = useCallback(() => getResampleLabel().toUpperCase(), [getResampleLabel]);
+  const resampleLiveRef = useRafText(getResampleText);
   const bpmDisabled = resamplePhase === "pending" || resamplePhase === "processing";
 
   return (
