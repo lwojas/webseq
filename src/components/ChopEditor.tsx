@@ -8,6 +8,7 @@ interface Props {
   /** The asset's original bytes, for drawing the waveform (undefined if unavailable). */
   getAssetBytes: (assetId: number) => ArrayBuffer | undefined;
   onSetCues: (assetId: number, cues: number[]) => void;
+  onAuditionSlice: (assetId: number, slice: number) => void;
 }
 
 const EVEN_SPLITS = [2, 4, 8, 16, 32];
@@ -17,7 +18,7 @@ const NUDGE = 0.005;
  * 1..N+1 — a chop track's note pitch 0 plays slice 1, pitch 1 slice 2, and so on. Tap empty
  * waveform to add a cue, drag a cue to move it, select one and press Remove (or Delete) to drop
  * it. Drags preview locally and commit once on release, so the engine is updated once. */
-export function ChopEditor({ asset, getAssetBytes, onSetCues }: Props) {
+export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }: Props) {
   const cues = asset.cues ?? [];
   const [draft, setDraft] = useState<number[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -164,6 +165,15 @@ export function ChopEditor({ asset, getAssetBytes, onSetCues }: Props) {
             onKeyDown={onCueKeyDown(i)}
             onFocus={() => setSelected(i)}
           />
+        ))}
+      </div>
+      <div className="chop-pads" role="group" aria-label="Audition slices">
+        {sliceBounds.slice(0, -1).map((_, i) => (
+          <button key={i} className="chop-pad" onPointerDown={() => onAuditionSlice(asset.id, i)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onAuditionSlice(asset.id, i)}
+            title={`Play slice ${i + 1}`}>
+            {i + 1}
+          </button>
         ))}
       </div>
       <div className="instrument-hint">

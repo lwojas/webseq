@@ -12,7 +12,7 @@ audio.
 | Mode | `Track.sampleMode` (`"chromatic"` default, `"chop"`) | Per track, so the same sample can be chromatic on one track and chopped on another. Absent on old projects = chromatic, so they play as before. |
 | Slice choice | `Note.pitch` | In chop mode a step's pitch (0, 1, 2, ...) is the slice index (0 = slice 1). It does not transpose. Negative pitch has no slice and is skipped; a pitch past the last slice plays nothing. |
 
-Pure logic is in `model/chop.ts` (`evenCues`, `addCue`, `moveCue` — never crosses neighbours —
+The cue maths itself is webdsp's (`addCue`, `moveCue`, `cueRegions`, `computePeaks`, ...); `model/chop.ts` wraps it with webseq's 49-slice cap (a note's pitch is 0..48). Pure logic is in `model/chop.ts` (`evenCues`, `addCue`, `moveCue` — never crosses neighbours —
 `removeCue`, `cueRegions`). `project.ts` has `setTrackSampleMode` / `setAssetCues`.
 
 ## Audio path
@@ -32,6 +32,8 @@ stored bytes and cached):
 
 * tap the waveform to add a cue; drag a cue to move it (committed on release); arrow keys nudge a
   focused cue, Delete removes it; **Remove cue** / **Clear**; 2/4/8/16/32 even splits;
+* a row of **audition pads** (one per slice) plays that slice on tap, independent of the sequence
+  (`Playback.auditionSlice` -> `trigger({ region })`; a new pad cuts the previous one);
 * slices are numbered to match the note's pitch; the Track Editor shows "Slice n" for chop tracks.
 
 Tests: `test/chop.test.ts`.

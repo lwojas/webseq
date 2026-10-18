@@ -415,6 +415,9 @@ export function App() {
   // Manual playback (ECS-83). Each one makes sure the runtime, buses and Playback exist first,
   // since the first click may be the one that initialises audio. That await is still inside
   // the user gesture, the same as Play.
+  const handleAuditionSlice = useCallback((assetId: AssetId, slice: number) => {
+    playbackRef.current?.auditionSlice(assetId, slice);
+  }, []);
   const handleAuditionAsset = useCallback(
     async (assetId: AssetId) => {
       await ensureTransport();
@@ -960,6 +963,7 @@ export function App() {
     onSetVoiceMode: handleSetTrackVoiceMode,
     onSetSampleMode: handleSetSampleMode,
     onSetCues: handleSetCues,
+    onAuditionSlice: handleAuditionSlice,
     getAssetBytes,
   };
   const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus };

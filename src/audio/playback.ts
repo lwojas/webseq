@@ -108,6 +108,17 @@ export class Playback {
     return true;
   }
 
+  /** Plays one slice (0-based) of `assetId`'s cue points, independent of the sequence. A new slice
+   * cuts the previous audition (pads can be hammered). Returns false if refused. */
+  auditionSlice(assetId: AssetId, slice: number): boolean {
+    if (this.isCaptureBusy()) return false;
+    this.stopAudition();
+    const handle = this.runtime.trigger({ sampleId: assetId, region: slice, gain: AUDITION_GAIN });
+    this.audition = { assetId, handle };
+    this.notify();
+    return true;
+  }
+
   stopAudition(): void {
     if (!this.audition) return;
     this.runtime.release(this.audition.handle);

@@ -3023,3 +3023,34 @@ select {
     left: 15px;
   }
 }
+
+/* Chop editor audition pads: one per slice, tap to play it (independent of the sequence). */
+.chop-pads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.chop-pad {
+  min-width: 28px;
+  padding: 4px 6px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chop-pad:active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+@media (pointer: coarse) {
+  .chop-pad {
+    min-width: 40px;
+    padding: 10px 8px;
+  }
+}

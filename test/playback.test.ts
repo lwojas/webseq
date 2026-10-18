@@ -98,6 +98,15 @@ describe("audition", () => {
     expect(seen).toEqual([1, null]);
   });
 
+  it("auditions a slice via the engine region, cutting the previous slice, never touching a bus", () => {
+    const { playback, released, triggered } = setup();
+    expect(playback.auditionSlice(1, 2)).toBe(true);
+    expect(triggered[0].params).toEqual({ sampleId: 1, region: 2, gain: AUDITION_GAIN });
+    playback.auditionSlice(1, 0);
+    expect(released).toEqual([triggered[0].handle]);
+    expect(triggered[1].params.region).toBe(0);
+  });
+
   it("is refused while a resample is armed or capturing, without touching the engine", () => {
     const { playback, runtime, setBusy } = setup({ busy: true });
     expect(playback.auditionAsset(1)).toBe(false);
