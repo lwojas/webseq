@@ -7,6 +7,7 @@
 import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import { effectiveSampleMode } from "../model/chop";
 import { instrumentDefFor } from "../model/instruments";
 import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
 
@@ -73,7 +74,15 @@ export function compileNote(
   };
   if (busId !== undefined) event.bus = busId;
   if (effectivePlaybackMode(track) === "loop") event.loop = true;
-  if (note.pitch) event.pitch = note.pitch;
+  if (effectiveSampleMode(track) === "chop") {
+    // Chop: the note's pitch selects the slice (0 = first) and never transposes. A negative
+    // pitch has no slice; a slice beyond the sample's count is dropped by the engine.
+    const slice = Math.round(note.pitch ?? 0);
+    if (slice < 0) return null;
+    event.region = slice;
+  } else if (note.pitch) {
+    event.pitch = note.pitch;
+  }
   return event;
 }
 

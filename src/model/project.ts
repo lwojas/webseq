@@ -3,7 +3,8 @@
 // anything else without modification. Note-editing operations (notes.ts) are wrapped here so
 // callers never need to manually locate-and-replace a pattern in project.patterns.
 
-import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, SampleEnvelope, Track, TrackId, VoiceMode } from "./types";
+import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, Track, TrackId, VoiceMode } from "./types";
+import { normalizeCues } from "./chop";
 import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE } from "./types";
 import * as notes from "./notes";
 
@@ -254,6 +255,23 @@ export function setTrackPlaybackMode(project: Project, trackId: TrackId, playbac
 
 export function setTrackVoiceMode(project: Project, trackId: TrackId, voiceMode: VoiceMode): Project {
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, voiceMode } : t)) };
+}
+
+export function setTrackSampleMode(project: Project, trackId: TrackId, sampleMode: SampleMode): Project {
+  return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, sampleMode } : t)) };
+}
+
+/** Sets an asset's cue points (normalised; an empty result removes the field). */
+export function setAssetCues(project: Project, assetId: AssetId, cues: number[]): Project {
+  const next = normalizeCues(cues);
+  return {
+    ...project,
+    assets: project.assets.map((a) => {
+      if (a.id !== assetId) return a;
+      const { cues: _old, ...rest } = a;
+      return next.length > 0 ? { ...rest, cues: next } : rest;
+    }),
+  };
 }
 
 // --- patterns ---

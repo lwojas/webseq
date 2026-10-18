@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import { forgetPeaks } from "./audio/peaks";
+import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -436,6 +437,7 @@ export function App() {
     (assetId: AssetId) => {
       runtime?.removeSample(assetId);
       assetDataRef.current.delete(assetId);
+      forgetPeaks(assetId);
       dispatch({ type: "REMOVE_ASSET", assetId });
     },
     [runtime],
@@ -706,6 +708,12 @@ export function App() {
     (trackId: TrackId, playbackMode: PlaybackMode) => dispatch({ type: "SET_TRACK_PLAYBACK_MODE", trackId, playbackMode }),
     [],
   );
+  const handleSetSampleMode = useCallback(
+    (trackId: TrackId, sampleMode: SampleMode) => dispatch({ type: "SET_TRACK_SAMPLE_MODE", trackId, sampleMode }),
+    [],
+  );
+  const handleSetCues = useCallback((assetId: AssetId, cues: number[]) => dispatch({ type: "SET_ASSET_CUES", assetId, cues }), []);
+  const getAssetBytes = useCallback((assetId: AssetId) => assetDataRef.current.get(assetId), []);
   const handleSetTrackVoiceMode = useCallback(
     (trackId: TrackId, voiceMode: VoiceMode) => dispatch({ type: "SET_TRACK_VOICE_MODE", trackId, voiceMode }),
     [],
@@ -950,6 +958,9 @@ export function App() {
     onSetEnvelope: handleSetEnvelope,
     onSetPlaybackMode: handleSetTrackPlaybackMode,
     onSetVoiceMode: handleSetTrackVoiceMode,
+    onSetSampleMode: handleSetSampleMode,
+    onSetCues: handleSetCues,
+    getAssetBytes,
   };
   const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus };
   const trackHeaderProps = {
@@ -1123,6 +1134,7 @@ export function App() {
             onSetNotePitch: handleSetNotePitch,
             onSetNoteVelocity: handleSetNoteVelocity,
             onSetNoteDuration: handleSetNoteDuration,
+            chopAsset: selectedTrackAsset,
             onSetTrackEventLfo: handleSetTrackEventLfo,
             onSetNoteLfo: handleSetNoteLfo,
             onSetTrackNotesLfo: handleSetTrackNotesLfo,

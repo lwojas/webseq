@@ -1,7 +1,9 @@
 import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/instruments";
 import { ModulationSlot, type ModulationUi } from "./ModulationSlot";
+import { ChopEditor } from "./ChopEditor";
+import { effectiveSampleMode } from "../model/chop";
 import { DEFAULT_ENVELOPE, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
-import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, Track, TrackLfo, VoiceMode } from "../model/types";
+import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackLfo, VoiceMode } from "../model/types";
 
 interface Props {
   /** The selected track, or null when MASTER is selected (it has no sound source). */
@@ -24,6 +26,10 @@ interface Props {
    * instance (see audio/instruments.ts), so neither applies to them. */
   onSetPlaybackMode: (trackId: string, mode: PlaybackMode) => void;
   onSetVoiceMode: (trackId: string, mode: VoiceMode) => void;
+  /** Chromatic (pitch transposes) vs chop (pitch picks a slice) for a sample track. */
+  onSetSampleMode: (trackId: string, mode: SampleMode) => void;
+  onSetCues: (assetId: number, cues: number[]) => void;
+  getAssetBytes: (assetId: number) => ArrayBuffer | undefined;
 }
 
 interface SliderProps {
@@ -81,6 +87,9 @@ export function InstrumentPanel({
   onSetEnvelope,
   onSetPlaybackMode,
   onSetVoiceMode,
+  onSetSampleMode,
+  onSetCues,
+  getAssetBytes,
 }: Props) {
   if (!track) {
     return (
@@ -128,6 +137,21 @@ export function InstrumentPanel({
                     title={mode === "loop" ? "Tile the sample to fill this track's note lengths" : "Play through once, bounded by note length"}
                   >
                     {mode === "one-shot" ? "One-shot" : "Loop"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="track-mode-group">
+              <span className="track-mode-label">Pitch</span>
+              <div className="track-mode-toggle">
+                {(["chromatic", "chop"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    className={effectiveSampleMode(track) === mode ? "active" : ""}
+                    onClick={() => onSetSampleMode(track.id, mode)}
+                    title={mode === "chop" ? "A step's pitch picks a slice of the sample (cue points below)" : "A step's pitch transposes the sample"}
+                  >
+                    {mode === "chromatic" ? "Chromatic" : "Chop"}
                   </button>
                 ))}
               </div>
@@ -239,6 +263,16 @@ export function InstrumentPanel({
             {assetUseCount > 1 && (
               <div className="instrument-hint">The envelope belongs to the sample, so it applies on all {assetUseCount} tracks that play it.</div>
             )}
+          </div>
+        )}
+
+        {!synth && asset && effectiveSampleMode(track) === "chop" && (
+          <div className="module-panel">
+            <div className="module-panel-header">
+              <span className="name">{asset.name} — Slices</span>
+            </div>
+            <ChopEditor asset={asset} getAssetBytes={getAssetBytes} onSetCues={onSetCues} />
+            {assetUseCount > 1 && <div className="instrument-hint">Cue points belong to the sample, so they apply on all {assetUseCount} tracks that play it.</div>}
           </div>
         )}
 

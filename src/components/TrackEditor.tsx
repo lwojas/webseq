@@ -1,9 +1,10 @@
 import { memo, useMemo } from "react";
-import type { Note, NoteId, Pattern, Track, TrackEventLfo, TrackId } from "../model/types";
+import type { Asset, Note, NoteId, Pattern, Track, TrackEventLfo, TrackId } from "../model/types";
 import { eventLfoOf } from "../model/eventLfo";
 import { TrackLfoPanel } from "./TrackLfoPanel";
 import { notesForTrack, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
+import { effectiveSampleMode, sliceCount } from "../model/chop";
 import { rootMidiNote } from "../model/instruments";
 import { NoteBlock } from "./NoteBlock";
 import { TRACK_EDITOR_COLUMN_PX } from "./timelineConstants";
@@ -22,6 +23,8 @@ interface Props {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
+  /** The sample the selected track plays, for chop slice count. */
+  chopAsset?: Asset | null;
   onSetTrackEventLfo: (trackId: TrackId, patch: Partial<TrackEventLfo>) => void;
   onSetNoteLfo: (noteId: NoteId, amount: number) => void;
   onSetTrackNotesLfo: (trackId: TrackId, amount: number) => void;
@@ -40,7 +43,8 @@ const MAX_AUDIBLE_HZ = 16000;
 /** The note a pitch offset sounds as. For a synth with a Hz root, that is its real note
  * (root + offset, e.g. Bass 55 Hz = A-1); otherwise (samples, unpitched roots) only the
  * offset in semitones is meaningful. */
-function formatPitch(pitch: number, root: number | null): string {
+function formatPitch(pitch: number, root: number | null, chop = false): string {
+  if (chop) return `Slice ${pitch + 1}`;
   if (root === null) return pitch === 0 ? "0 st" : `${pitch > 0 ? "+" : ""}${pitch} st`;
   const midi = Math.round(root + pitch);
   return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
@@ -48,7 +52,9 @@ function formatPitch(pitch: number, root: number | null): string {
 
 /** Offsets to offer: all of them for a sample, only the audible span for a synth root, always
  * including the note's current value. */
-function pitchOptions(root: number | null, current: number): number[] {
+function pitchOptions(root: number | null, current: number, slices: number | null): number[] {
+  // Chop track: one option per slice (at least one), plus the current value so a stale step shows.
+  if (slices !== null) return PITCH_OFFSETS.filter((p) => p >= 0 && (p < Math.max(1, slices) || p === current)).reverse();
   if (root === null) return PITCH_OFFSETS;
   return PITCH_OFFSETS.filter((p) => {
     const hz = 440 * Math.pow(2, (root + p - 69) / 12);
@@ -72,6 +78,8 @@ interface CardProps {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
+  /** Chop track: how many slices its sample has (pitch picks one). null = chromatic. */
+  slices: number | null;
   /** Shown only while the track's LFO is on. */
   lfoOn: boolean;
   onSetNoteLfo: (noteId: NoteId, amount: number) => void;
@@ -82,6 +90,7 @@ interface CardProps {
 const NoteCard = memo(function NoteCard({
   note,
   root,
+  slices,
   selected,
   onSelectNote,
   onRemoveNote,
@@ -107,11 +116,11 @@ const NoteCard = memo(function NoteCard({
           value={pitch}
           onChange={(e) => onSetNotePitch(note.id, Number(e.target.value))}
           aria-label="Pitch"
-          title={root === null ? "Semitones relative to the sample's original pitch" : "Note, from the instrument's Root plus the offset"}
+          title={slices !== null ? "Which slice of the sample this step plays" : root === null ? "Semitones relative to the sample's original pitch" : "Note, from the instrument's Root plus the offset"}
         >
-          {pitchOptions(root, pitch).map((p) => (
+          {pitchOptions(root, pitch, slices).map((p) => (
             <option key={p} value={p}>
-              {formatPitch(p, root)}
+              {formatPitch(p, root, slices !== null)}
             </option>
           ))}
         </select>
@@ -183,12 +192,14 @@ export const TrackEditor = memo(function TrackEditor({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteDuration,
+  chopAsset,
   onSetTrackEventLfo,
   onSetNoteLfo,
   onSetTrackNotesLfo,
 }: Props) {
   const trackId = track?.id ?? null;
   const root = track ? rootMidiNote(track) : null;
+  const slices = track && effectiveSampleMode(track) === "chop" ? Math.max(1, sliceCount(chopAsset)) : null;
   const notes = useMemo(() => (trackId ? notesForTrack(pattern, trackId) : []), [pattern, trackId]);
 
   if (!track) {
@@ -245,7 +256,7 @@ export const TrackEditor = memo(function TrackEditor({
               onRemove={() => onRemoveNote(note.id)}
               lfo={lfo.enabled ? note.lfo : undefined}
             >
-              <span className="te-note-label">{formatPitch(note.pitch ?? 0, root)}</span>
+              <span className="te-note-label">{formatPitch(note.pitch ?? 0, root, slices !== null)}</span>
             </NoteBlock>
           ))}
         </div>
@@ -255,6 +266,7 @@ export const TrackEditor = memo(function TrackEditor({
               key={note.id}
               note={note}
               root={root}
+              slices={slices}
               selected={note.id === selectedNoteId}
               onSelectNote={onSelectNote}
               onRemoveNote={onRemoveNote}

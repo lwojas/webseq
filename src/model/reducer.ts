@@ -1,4 +1,4 @@
-import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
+import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
 import type { CopiedNote } from "./notes";
 import type { CopiedTrackConfig } from "./trackConfig";
 import type { Asset } from "./types";
@@ -32,6 +32,8 @@ export type Action =
   | { type: "ADD_INSTRUMENT_LFO"; trackId: TrackId; target: string }
   | { type: "SET_INSTRUMENT_LFO"; trackId: TrackId; index: number; patch: Partial<TrackLfo> }
   | { type: "REMOVE_INSTRUMENT_LFO"; trackId: TrackId; index: number }
+  | { type: "SET_TRACK_SAMPLE_MODE"; trackId: TrackId; sampleMode: SampleMode }
+  | { type: "SET_ASSET_CUES"; assetId: AssetId; cues: number[] }
   | { type: "SET_ASSET_ENVELOPE"; assetId: AssetId; envelope: Partial<SampleEnvelope> }
   | { type: "SET_NOTE_PITCH"; patternId: PatternId; noteId: NoteId; pitch: number }
   | { type: "SET_NOTE_VELOCITY"; patternId: PatternId; noteId: NoteId; velocity: number }
@@ -112,6 +114,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return instruments.setInstrumentLfo(state, action.trackId, action.index, action.patch);
     case "REMOVE_INSTRUMENT_LFO":
       return instruments.removeInstrumentLfo(state, action.trackId, action.index);
+    case "SET_TRACK_SAMPLE_MODE":
+      return project.setTrackSampleMode(state, action.trackId, action.sampleMode);
+    case "SET_ASSET_CUES":
+      return project.setAssetCues(state, action.assetId, action.cues);
     case "SET_ASSET_ENVELOPE":
       return project.setAssetEnvelope(state, action.assetId, action.envelope);
     case "SET_NOTE_PITCH":

@@ -2925,3 +2925,101 @@ select {
     border-bottom: none;
   }
 }
+
+/* --- Chop editor (Instrument tab): waveform with draggable cue points. Cue handles are 20px
+   wide hit areas around a 2px line so they stay grabbable by touch. --- */
+.chop-editor {
+  padding: 8px 10px 10px;
+}
+
+.chop-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chop-wave {
+  position: relative;
+  height: 96px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.chop-wave canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.chop-wave-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.chop-slice-label {
+  position: absolute;
+  top: 2px;
+  padding-left: 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.chop-cue {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  margin-left: -10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.chop-cue::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 9px;
+  width: 2px;
+  background: var(--amber);
+}
+
+.chop-cue.selected::before,
+.chop-cue:focus-visible::before {
+  background: var(--danger);
+}
+
+.chop-cue:focus {
+  outline: none;
+}
+
+@media (pointer: coarse) {
+  .chop-wave {
+    height: 120px;
+  }
+
+  .chop-cue {
+    width: 32px;
+    margin-left: -16px;
+  }
+
+  .chop-cue::before {
+    left: 15px;
+  }
+}

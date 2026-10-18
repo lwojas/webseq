@@ -47,6 +47,7 @@ export function mockRuntime() {
     instrumentNoteOn: [] as [number, Record<string, number>][],
     instrumentNoteOff: [] as number[],
     setSampleEnvelope: [] as [number, Record<string, number>][],
+    setSampleRegions: [] as [number, { start: number; end: number }[]][],
     setInstrumentLfo: [] as [number, number, Record<string, unknown>][],
     clearInstrumentLfo: [] as [number, number][],
   };
@@ -110,6 +111,7 @@ export function mockRuntime() {
     setInstrumentParameter: vi.fn((id: number, param: number, value: number) => calls.setInstrumentParameter.push([id, param, value])),
     instrumentNoteOn: vi.fn((id: number, p: Record<string, number>) => calls.instrumentNoteOn.push([id, p])),
     instrumentNoteOff: vi.fn((id: number) => calls.instrumentNoteOff.push(id)),
+    setSampleRegions: vi.fn((id: number, regions: { start: number; end: number }[]) => calls.setSampleRegions.push([id, regions])),
     setSampleEnvelope: vi.fn((id: number, env: Record<string, number>) => calls.setSampleEnvelope.push([id, env])),
   };
   return { runtime: runtime as unknown as AudioRuntime, calls, chains, raw: runtime };

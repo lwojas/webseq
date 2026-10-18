@@ -8,6 +8,7 @@
 // untouched bus), and volume/pan don't end dormancy, so they go to every track.
 import { MASTER_BUS, type AudioRuntime } from "webdsp";
 import type { Project } from "../model/types";
+import { assetLengthFrames, cueRegions } from "../model/chop";
 import { DEFAULT_ENVELOPE } from "../model/types";
 import type { TrackBusMap } from "./buses";
 import { fxChainsFor } from "./fxChain";
@@ -34,6 +35,26 @@ function syncSampleEnvelopes(runtime: AudioRuntime, project: Project): void {
   }
 }
 
+// Last cue set pushed per asset, per runtime, like the envelopes above. Fractions become frame
+// regions here, only for assets that have (or had) cues. A re-imported/reloaded asset has a new
+// id and so is pushed afresh.
+const pushedRegions = new WeakMap<AudioRuntime, Map<number, string>>();
+
+function syncSampleRegions(runtime: AudioRuntime, project: Project): void {
+  let pushed = pushedRegions.get(runtime);
+  if (!pushed) {
+    pushed = new Map();
+    pushedRegions.set(runtime, pushed);
+  }
+  for (const asset of project.assets) {
+    const key = JSON.stringify(asset.cues ?? []);
+    if ((pushed.get(asset.id) ?? "[]") === key) continue;
+    pushed.set(asset.id, key);
+    const cues = asset.cues ?? [];
+    runtime.setSampleRegions(asset.id, cues.length > 0 ? cueRegions(cues, assetLengthFrames(asset)) : []);
+  }
+}
+
 export function syncBuses(runtime: AudioRuntime, project: Project, buses: TrackBusMap): void {
   const chains = fxChainsFor(runtime);
   chains.sync(MASTER_BUS, project.master.fx);
@@ -45,4 +66,5 @@ export function syncBuses(runtime: AudioRuntime, project: Project, buses: TrackB
   }
   instrumentHostFor(runtime).sync(project, buses);
   syncSampleEnvelopes(runtime, project);
+  syncSampleRegions(runtime, project);
 }

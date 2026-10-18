@@ -71,6 +71,12 @@ export interface Track {
    * (ECS-82/ECS-87). "mono" only ever constrains a track against itself, never other tracks.
    * Optional for the same missing-field-defaults-safely reason as playbackMode. */
   voiceMode?: VoiceMode;
+  /** Chromatic: a note's pitch transposes the sample. Chop: the sample's cue points (Asset.cues)
+   * slice it and a note's pitch picks the slice (0 = first) instead of transposing — see
+   * audio/compile.ts and model/chop.ts. A property of how *this track* plays the sample, so two
+   * tracks may use the same asset differently. Optional like playbackMode (old projects lack it);
+   * read through effectiveSampleMode. */
+  sampleMode?: SampleMode;
   /** Stereo position, -1 (left) .. 0 (centre) .. +1 (right), pushed to the engine as the track
    * bus's NodeParam.BusPan (see audio/mixer.ts). Optional for the same missing-field-defaults-
    * safely reason as playbackMode — read through effectivePan. */
@@ -138,6 +144,8 @@ export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "ba
 /** One-shot: plays through once, bounded by its triggering note's length (today's only
  * behavior). Loop: the same, but the asset tiles/repeats to fill that note's full length
  * instead of just playing once — see audio/compile.ts's compileNote. */
+export type SampleMode = "chromatic" | "chop";
+
 export type PlaybackMode = "one-shot" | "loop";
 export const DEFAULT_PLAYBACK_MODE: PlaybackMode = "one-shot";
 
@@ -281,6 +289,11 @@ export interface Asset {
    * the track, because that is where the engine keeps it — two tracks sharing an asset share
    * its envelope. Absent = the engine default (no audible envelope). */
   envelope?: SampleEnvelope;
+  /** Cue points for chop playback: sorted interior slice boundaries as fractions (0..1) of the
+   * sample, so N cues make N+1 contiguous slices (see model/chop.ts). Describes the audio, so it
+   * lives on the Asset like webdsp's regions; whether a track uses it is Track.sampleMode.
+   * Absent/empty = no slices. */
+  cues?: number[];
   /** Only set when origin === "resample": which pattern this was captured from. Historical
    * metadata only — the pattern may since have been edited, renamed, or deleted. */
   sourcePatternId?: PatternId;
