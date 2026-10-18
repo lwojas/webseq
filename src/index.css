@@ -46,6 +46,10 @@ select {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* Mobile browsers size 100vh to the tallest viewport (URL bar retracted), which pushes the
+     bottom-anchored .mobile-tabbar under the browser/system chrome on Android. dvh tracks the
+     visible viewport; the 100vh line above is the fallback for browsers without it. */
+  height: 100dvh;
   min-height: 0;
 }
 
@@ -55,7 +59,10 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  /* No vertical padding: the page tabs at the right span the whole row, so their underline sits on
+     the row's bottom border instead of floating mid-row. */
+  padding: 0 16px;
+  min-height: 36px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
   letter-spacing: 0.04em;
@@ -124,7 +131,7 @@ select {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 10px 16px;
+  padding: 8px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -250,18 +257,128 @@ select {
   color: var(--danger);
 }
 
-/* --- pattern bar / launcher --- */
+/* --- pattern strip + picker --- */
 
-.pattern-bar {
+/* ONE fixed-height row, whatever the pattern count: it holds only what sequencing needs (step,
+   open the picker, bar count, add). The pattern LIST lives in .pattern-picker, which replaces the
+   timeline while open — this row never wraps or grows, so adding patterns can never push the grid
+   around or force it to re-layout. */
+.pattern-strip {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: 8px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  overflow: hidden;
 }
 
+.pattern-strip-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 12em;
+  max-width: 18em;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.pattern-strip-name.open {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pattern-strip-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pattern-step:disabled,
+.bars-stepper .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.bars-stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bars-stepper-label {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.bars-stepper-value {
+  color: var(--amber);
+  font-weight: 700;
+  font-size: 11px;
+  min-width: 2em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.pattern-strip-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pattern-strip-label.editing {
+  color: var(--accent);
+}
+
+.pattern-strip-label.playing {
+  color: var(--amber);
+}
+
+/* The pattern being edited, renamed in place. */
+.pattern-strip-input {
+  width: 12em;
+}
+
+.pattern-strip-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-strong);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.pattern-strip-playing {
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pattern-strip-playing.idle {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.pattern-strip-playing-bar {
+  color: var(--text-dim);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+/* Small uppercase section label; also the "Queue" heading in PatternQueue. */
 .pattern-bar-label {
   color: var(--text-dim);
   text-transform: uppercase;
@@ -270,45 +387,100 @@ select {
   flex-shrink: 0;
 }
 
-.pattern-chips {
+/* The pattern list, shown INSTEAD of the timeline (see the data-takeover rules at the end of this
+   file) — a view, not an overlay. Mounted only while open. The list scrolls inside this fixed
+   region; the footer with the rare / destructive actions stays pinned. */
+.pattern-picker {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  background: var(--panel);
 }
 
-.pattern-chip {
+.pattern-picker-title {
+  flex-shrink: 0;
+  padding: 10px 12px 0;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.pattern-picker-count {
+  color: var(--amber);
+  margin-left: 6px;
+}
+
+.pattern-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  align-content: start;
+  padding: 10px 12px;
+}
+
+.pattern-picker-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   background: var(--panel-alt);
   border: 1px solid var(--border-strong);
-  color: var(--text-dim);
-  padding: 4px 10px;
   border-radius: 3px;
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
   cursor: pointer;
   font-size: 11px;
+  min-width: 0;
 }
 
-.pattern-chip.active {
+.pattern-picker-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pattern-picker-chip-meta {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.pattern-picker-chip.active {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: #eafffa;
 }
 
-/* Visualizes Transport's playing pattern, independent of .active above (the editing
-   selection) -- a chip/row can be selected and/or playing at once. Shared with
-   .pattern-list-row/.queue-row (the Patterns view) so the same "playing" cue reads identically
-   everywhere it appears. */
-.pattern-chip.playing,
+.pattern-picker-chip.active .pattern-picker-chip-meta {
+  color: #eafffa;
+}
+
+.pattern-picker-chip.playing {
+  border-color: var(--amber);
+}
+
+.pattern-picker-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--panel-alt);
+  border-top: 1px solid var(--border);
+}
+
+/* Visualizes Transport's playing pattern, independent of .active (the editing selection) -- a
+   row can be selected and/or playing at once. Shared with the Patterns view's rows so the same
+   "playing" cue reads identically everywhere it appears. */
 .pattern-list-row.playing,
 .queue-row.playing {
   border-color: var(--amber);
   box-shadow: 0 0 4px rgba(240, 168, 60, 0.4);
-}
-
-.pattern-edit-fields {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-left: auto;
 }
 
 .pattern-name-input {
@@ -342,44 +514,39 @@ select {
    it's styled as a physical segmented-control / hardware mode toggle instead: a pill-shaped
    track with the active side filled solid, rather than an underline on a flat strip (ECS-151;
    both views stay mounted, this only flips which is visible). */
-.mode-toggle {
+.topbar-right {
   display: flex;
   align-items: center;
+  align-self: stretch;
+  gap: 16px;
+}
+
+/* The page-level tabs (Sequencer / Patterns): plain underlined tabs, the same visual language as
+   every other tab strip in the app (.side-panel-tab, .bottom-panel-tab). */
+.top-tabs {
+  display: flex;
+  align-self: stretch;
   flex-shrink: 0;
-  padding: 8px 16px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
 }
 
-.mode-toggle-track {
-  display: inline-flex;
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 2px;
-  gap: 2px;
-}
-
-.mode-toggle-option {
+.top-tab {
   background: transparent;
   border: none;
-  border-radius: 999px;
   color: var(--text-dim);
-  padding: 6px 18px;
+  padding: 0 14px;
   cursor: pointer;
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: 0.05em;
 }
 
-.mode-toggle-option:hover {
+.top-tab:hover {
   color: var(--text);
 }
 
-.mode-toggle-option.active {
-  background: var(--accent-dim);
-  color: #eafffa;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+.top-tab.active {
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 /* --- patterns view (pattern library | queue, two columns) --- */
@@ -391,7 +558,59 @@ select {
   flex: 1;
   min-height: 0;
   display: none;
+  flex-direction: column;
   overflow: hidden;
+}
+
+.patterns-columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Says the two roles once, in words: EDITING is the pattern open in the timeline, PLAYING is what
+   the transport is sounding. They can differ. */
+.patterns-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.patterns-header-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.patterns-header-idle {
+  color: var(--text-dim);
+}
+
+.patterns-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.patterns-header-edit {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.patterns-header-edit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.patterns-header-back {
+  color: var(--text-dim);
 }
 
 .app[data-main-view="patterns"] .workspace {
@@ -402,10 +621,10 @@ select {
   display: flex;
 }
 
-/* PatternBar edits the sequencer's current pattern -- not relevant once the Patterns view's
+/* The pattern strip edits the sequencer's current pattern -- not relevant once the Patterns view's
    own library/queue (.patterns-view) takes over, so it's hidden (not unmounted, same rationale
    as the rules above) rather than shown alongside it (ECS-151). */
-.app[data-main-view="patterns"] .pattern-bar {
+.app[data-main-view="patterns"] .pattern-strip {
   display: none;
 }
 
@@ -441,11 +660,11 @@ select {
 .pattern-list-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   background: var(--panel-alt);
   border: 1px solid var(--border-strong);
   border-radius: 3px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   cursor: pointer;
 }
 
@@ -453,10 +672,59 @@ select {
   border-color: var(--accent);
 }
 
-.pattern-list-row .pattern-name-input {
+.pattern-list-tags {
+  display: flex;
+  gap: 4px;
+  width: 132px;
+  flex-shrink: 0;
+}
+
+/* EDITING / PLAYING in words, not just border colours. */
+.status-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.status-tag.editing {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: #eafffa;
+}
+
+.status-tag.playing {
+  background: rgba(240, 168, 60, 0.15);
+  border: 1px solid var(--amber);
+  color: var(--amber);
+}
+
+.pattern-list-name-text,
+.pattern-list-row .pattern-list-name {
   flex: 1;
   min-width: 0;
   width: auto;
+}
+
+.pattern-list-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.pattern-list-name-text.strong {
+  font-weight: 700;
+}
+
+.pattern-list-meta {
+  color: var(--text-dim);
+  font-size: 10px;
+  min-width: 8em;
+  flex-shrink: 0;
 }
 
 .pattern-list-bars {
@@ -468,6 +736,52 @@ select {
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.pattern-edit-btn {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.row-menu-wrap {
+  position: relative;
+}
+
+.row-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  z-index: 5;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+}
+
+.row-menu button {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.row-menu button:hover:not(:disabled) {
+  background: var(--panel-alt);
+}
+
+.row-menu button.danger {
+  color: var(--danger);
+}
+
+.row-menu button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .queue-row {
@@ -494,6 +808,29 @@ select {
   font-size: 11px;
 }
 
+.queue-row-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.queue-row-tag.playing {
+  color: var(--amber);
+}
+
+.queue-row-tag.next {
+  color: var(--accent);
+}
+
+.queue-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 /* --- workspace (side panel + main content) --- */
 
 .workspace {
@@ -507,13 +844,14 @@ select {
    sidebar for views that want their own vertical real estate rather than a horizontal strip.
    Assets is the first tenant; further views can add their own section alongside it. */
 .side-panel {
-  width: 240px;
+  width: 260px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--panel);
   border-right: 1px solid var(--border);
   overflow: hidden;
+  contain: layout paint;
 }
 
 .side-panel-tabs {
@@ -567,8 +905,10 @@ select {
 
 .assets-panel-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -820,6 +1160,35 @@ select {
   background: var(--accent);
 }
 
+/* Desktop: the four bank tabs live in the grid header's track-column corner (SequencerGrid's
+   bankPlacement="corner") instead of a row of their own. A fixed 4-item control, so it sits with
+   the tracks it selects and the pattern strip doesn't share a row with it. */
+.grid-header .track-col-label.track-col-banks {
+  padding: 0;
+  display: flex;
+}
+
+.bank-bar-corner {
+  flex: 1;
+  border-bottom: none;
+  background: transparent;
+}
+
+.bank-bar-corner .bank-tab {
+  flex: 1;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 2px;
+}
+
+.bank-bar-corner .bank-tab:last-child {
+  border-right: none;
+}
+
+.bank-bar-corner .bank-tab-range {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .bank-tab {
     flex: 1;
@@ -845,10 +1214,8 @@ select {
   color: var(--amber);
 }
 
-/* Caps the visible viewport to ~VIEWPORT_BARS bars (see timelineConstants.ts) and scrolls
-   for anything longer — horizontally for a pattern wider than the viewport, vertically for
-   more tracks than fit — instead of stretching to fill available space. This is `.sequencer`'s
-   own bounded scroll region (see .main's doc comment just above). */
+/* The grid's own bounded scroll region: it fills the width it is given (no fixed bar cap) and
+   scrolls horizontally for a pattern wider than the view, vertically for more tracks than fit. */
 .timeline-scroll {
   flex: 1;
   min-height: 0;
@@ -856,8 +1223,25 @@ select {
 }
 
 .timeline-content {
+  position: relative;
   width: max-content;
   min-width: 100%;
+}
+
+/* Past the last step of a pattern shorter than the screen: an explicit "end of pattern" zone, so
+   the empty space reads as the end of the pattern, not as more of it. Static (no per-frame cost);
+   --content-width is the pattern's pixel width, set by SequencerGrid. Zero-width when the pattern
+   is wider than the view. */
+.timeline-content::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--header-width) + var(--content-width, 0px));
+  right: 0;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 1px solid var(--border-strong);
+  pointer-events: none;
 }
 
 .grid-header {
@@ -1020,6 +1404,45 @@ select {
   letter-spacing: 0.06em;
 }
 
+.track-source-tag {
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+/* Phone only (shown in the 768px block): the M/S buttons are hidden there, but a muted/soloed
+   track still reads at a glance. */
+.track-state-tag {
+  display: none;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.track-state-tag.muted {
+  background: rgba(240, 168, 60, 0.15);
+  border: 1px solid var(--amber);
+  color: var(--amber);
+}
+
+.track-state-tag.soloed {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: #eafffa;
+}
+
+/* A muted track: dimmed name and lane (opacity only — no repaint-heavy effects on the rows). */
+.track-row.muted .track-header .track-name {
+  color: var(--text-dim);
+}
+
+.track-row.muted .track-lane {
+  opacity: 0.5;
+}
+
 .track-fx-badge {
   background: var(--accent-dim);
   color: #eafffa;
@@ -1127,7 +1550,8 @@ select {
    bounded box, so it never grows to push the sequencer around and never scrolls with it.
    Whichever tab is active (.fx-panel / .mixer-panel) owns the scrolling within this box. */
 .bottom-panel {
-  height: 260px;
+  height: 276px;
+  contain: layout paint;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1215,6 +1639,7 @@ select {
 
 .track-mode-toggle {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
 }
 
@@ -1253,19 +1678,7 @@ select {
   color: #eafffa;
 }
 
-.track-clear-btn {
-  background: var(--panel);
-  border: 1px solid var(--danger);
-  color: var(--danger);
-  padding: 3px 8px;
-  cursor: pointer;
-  font-size: 10px;
-}
 
-.track-clear-btn:hover {
-  background: var(--danger);
-  color: var(--bg);
-}
 
 /* Transient "Track 03 · 4 notes" feedback (ECS-112) — same treatment as AssetsPanel's
    .import-status (uppercase micro-label in --accent), cleared by App.tsx after 2s.
@@ -1849,45 +2262,37 @@ select {
 }
 
 @media (max-width: 768px) {
-  /* Phone track header: no mute/solo (the Mixer tab has them), and the name is cut to four
-     characters — enough to tell a loaded track from "— empty —". */
+  /* Phone track header: the M/S BUTTONS are hidden (they're in the Track tab header and the Mixer),
+     but the STATE stays visible as an M / S tag, so the name gets the room instead (~9 characters)
+     and a muted track still reads at a glance. */
   .track-header .track-mute,
-  .track-header .track-solo {
+  .track-header .track-solo,
+  .track-header .track-source-tag,
+  .track-header .track-fx-badge {
     display: none;
   }
 
-  .track-header .track-name:not(.master-name) {
-    flex: 0 1 auto;
-    max-width: 4ch;
-    text-overflow: clip;
+  .track-state-tag {
+    display: inline-block;
   }
 
-  .topbar {
-    flex-wrap: wrap;
-    row-gap: 8px;
+  .pattern-picker-list {
+    grid-template-columns: repeat(3, 1fr);
   }
 
-  .topbar .subtitle {
+  /* The Track tab's sub-tabs (Inst / FX / Notes / Edit) share the full width, like the tab bar. */
+  .bottom-panel-tab {
+    flex: 1;
+    padding: 12px 4px;
+  }
+
+  /* The Track tab header already names the track, so its panels drop their own title line. */
+  .app[data-mobile-tab="track"] .fx-panel-title {
     display: none;
   }
 
   .project-controls {
     flex-wrap: wrap;
-  }
-
-  .transport {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-
-  .transport .spacer {
-    display: none;
-  }
-
-  .pattern-edit-fields {
-    flex-wrap: wrap;
-    row-gap: 8px;
-    margin-left: 0;
   }
 
   .pattern-name-input {
@@ -1904,8 +2309,7 @@ select {
   }
 
   .side-panel-tabs,
-  .bottom-panel-tabs,
-  .mode-toggle {
+  .top-tabs {
     display: none;
   }
 
@@ -1917,13 +2321,9 @@ select {
     display: none;
   }
 
-  .app[data-mobile-tab="assets"] .side-panel {
-    display: flex;
-    width: 100%;
-    flex: 1;
-    border-right: none;
-  }
-
+  /* Exactly one section at a time, keyed off .app[data-mobile-tab]: Timeline = the grid;
+     Track / Mixer = the bottom panel (Track has its own header + Inst/FX/Notes/Edit sub-tabs,
+     Mixer has none); Library = Assets / MIDI (the side panel) or the Patterns manager. */
   .app[data-mobile-tab="timeline"] .main {
     display: flex;
     flex: 1;
@@ -1934,19 +2334,13 @@ select {
     flex: 1;
   }
 
-  .app[data-mobile-tab="fx"] .main,
-  .app[data-mobile-tab="instrument"] .main,
-  .app[data-mobile-tab="editor"] .main,
-  .app[data-mobile-tab="edit"] .main,
+  .app[data-mobile-tab="track"] .main,
   .app[data-mobile-tab="mixer"] .main {
     display: flex;
     flex: 1;
   }
 
-  .app[data-mobile-tab="fx"] .bottom-panel,
-  .app[data-mobile-tab="instrument"] .bottom-panel,
-  .app[data-mobile-tab="editor"] .bottom-panel,
-  .app[data-mobile-tab="edit"] .bottom-panel,
+  .app[data-mobile-tab="track"] .bottom-panel,
   .app[data-mobile-tab="mixer"] .bottom-panel {
     display: flex;
     flex: 1;
@@ -1954,17 +2348,52 @@ select {
     border-top: none;
   }
 
-  /* data-main-view's desktop-only show/hide (further up this file) is irrelevant on mobile --
-     data-mobile-tab is the one thing that decides visibility here, same as it already is for
-     .side-panel/.main/.bottom-panel above. */
-  .app[data-mobile-tab="patterns"] .patterns-view {
+  .app[data-mobile-tab="library"]:not([data-library-view="patterns"]) .side-panel {
+    display: flex;
+    width: 100%;
+    flex: 1;
+    border-right: none;
+  }
+
+  .app[data-mobile-tab="library"][data-library-view="patterns"] .patterns-view {
     display: flex;
     flex: 1;
+  }
+
+  /* The Patterns sub-tab is not in the workspace, so the (then empty) workspace must not keep
+     claiming its share of the height. */
+  .app[data-mobile-tab="library"][data-library-view="patterns"] .workspace {
+    display: none;
+  }
+
+  /* Stacked on a phone: the page scrolls as one instead of splitting the height between two columns. */
+  .patterns-columns {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .pattern-list-column,
+  .pattern-queue-column {
+    flex: none;
+    overflow: visible;
   }
 
   .pattern-list-column {
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+
+  .patterns-header-back {
+    display: none;
+  }
+
+  .pattern-list-tags {
+    width: auto;
+    min-width: 0;
+  }
+
+  .pattern-list-meta {
+    display: none;
   }
 
   /* Same overflow strategy as .pattern-edit-fields above: wrap onto a second line rather than
@@ -1983,11 +2412,15 @@ select {
     flex-shrink: 0;
     border-top: 1px solid var(--border);
     background: var(--panel);
+    /* Clears the Android gesture/nav bar when the page is edge-to-edge (viewport-fit=cover,
+       see index.html); 0 where there is no inset. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .mobile-tab {
     flex: 1;
     min-width: 0;
+    min-height: 48px;
     background: transparent;
     border: none;
     border-right: 1px solid var(--border);
@@ -2001,6 +2434,24 @@ select {
 
   .mobile-tab:last-child {
     border-right: none;
+  }
+
+  /* Mixer: four channel strips fill the width with a sliver of the fifth showing (the cue to
+     scroll), the strips take the full panel height, and the fader uses all of it instead of the
+     desktop's 130px cap. */
+  .mixer-panel {
+    scroll-snap-type: x proximity;
+  }
+
+  .mixer-strip {
+    width: calc((100vw - 24px) / 4.4);
+    scroll-snap-align: start;
+  }
+
+  .mixer-fader {
+    width: calc(100cqh - 4px);
+    /* A flex item in a narrow wrapper: without this it shrinks back to the input's ~129px default. */
+    flex-shrink: 0;
   }
 
   .mobile-tab.active {
@@ -2025,9 +2476,6 @@ select {
     padding: 9px 12px;
   }
 
-  .pattern-chip {
-    padding: 8px 10px;
-  }
 
   .te-card select,
   .te-remove {
@@ -2060,21 +2508,18 @@ select {
 
   .track-mode-toggle button,
   .track-copy-btn,
-  .track-paste-btn,
-  .track-clear-btn {
+  .track-paste-btn {
     padding: 9px 12px;
   }
 
   .side-panel-tab,
+  .top-tab,
   .bottom-panel-tab,
   .bank-tab,
   .mobile-tab {
     padding: 12px 2px;
   }
 
-  .mode-toggle-option {
-    padding: 10px 18px;
-  }
 
   .mixer-mute,
   .mixer-solo {
@@ -2276,4 +2721,207 @@ select {
 .edit-feedback {
   flex-basis: 100%;
   margin-top: 0;
+}
+
+/* The Edit panel inside the (260px) side column: one stack of full-width groups instead of the
+   dock's two side-by-side ones. */
+.side-panel .edit-panel {
+  flex: none;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow: visible;
+  gap: 14px;
+  padding: 12px;
+}
+
+.side-panel .edit-group {
+  min-width: 0;
+  width: 100%;
+}
+
+.side-panel .edit-row {
+  flex-wrap: wrap;
+}
+
+.side-panel .edit-row-status {
+  flex-basis: 100%;
+}
+
+.side-panel .edit-row-status:empty {
+  display: none;
+}
+
+.side-panel .edit-tool-btn {
+  min-width: 0;
+}
+
+/* --- Phone chrome: top bar, settings view, library tabs, Track tab header --- */
+
+/* One fixed 44px row that never wraps, whatever the pattern count. */
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.mobile-topbar .btn,
+.mobile-topbar .pattern-strip-name {
+  height: 36px;
+  padding: 0 8px;
+}
+
+.mobile-topbar .pattern-strip-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-topbar-play {
+  width: 40px;
+  padding: 0;
+}
+
+.mobile-topbar-chip {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+}
+
+.library-tabs {
+  display: flex;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.library-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 12px 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.library-tab:last-child {
+  border-right: none;
+}
+
+.library-tab.active {
+  background: var(--panel-alt);
+  color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* The ⋯ view: rare controls only, in a fixed region that scrolls inside itself. */
+.settings-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+  background: var(--panel);
+}
+
+.settings-project-name {
+  flex: 1;
+  margin-left: 0;
+  width: auto;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 6px 8px;
+}
+
+.transport.transport-settings {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+}
+
+/* The phone Track tab's header: play, ◀ track ▶, M, S. */
+.track-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.track-head-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.track-head-step:disabled,
+.track-head-toggle:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.track-head-play {
+  width: 40px;
+  height: 36px;
+  padding: 0;
+}
+
+@media (pointer: coarse) {
+  .pattern-picker-chip {
+    padding: 10px;
+  }
+
+  .track-head .btn.small {
+    padding: 9px 12px;
+  }
+
+  .pattern-strip-name {
+    padding: 8px 10px;
+  }
+
+  .row-menu button {
+    padding: 12px;
+  }
+}
+
+/* --- Takeover views (pattern picker, phone settings) ---
+   While one is up it takes the timeline's place: the dock is hidden, and the grid is NOT RENDERED
+   (content-visibility: hidden skips its layout and paint but keeps its state, so the scroll
+   position survives; browsers without it fall back to display:none). SequencerGrid's per-frame
+   loops are paused separately via its `active` prop. Last in the file so these win over the phone
+   section's per-tab visibility rules (same specificity, later wins). */
+.app:not([data-takeover="none"]) .sequencer,
+.app:not([data-takeover="none"]) .bottom-panel {
+  display: none;
+}
+
+@supports (content-visibility: hidden) {
+  .app:not([data-takeover="none"]) .sequencer {
+    display: flex;
+    content-visibility: hidden;
+    flex: 0 0 0;
+    height: 0;
+    min-height: 0;
+    border-bottom: none;
+  }
 }

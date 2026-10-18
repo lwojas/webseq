@@ -20,10 +20,14 @@
 // compositor-only, so the browser never re-lays-out the page to redraw this line.
 import { useEffect, useRef } from "react";
 
-export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: number) {
+export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: number, enabled = true) {
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // Not visible (pattern picker / settings view open, another tab or the Patterns view showing):
+    // don't run the loop at all. It restarts, and redraws from the audio clock, the moment the
+    // timeline is visible again.
+    if (!enabled) return;
     let frame: number;
     const draw = () => {
       const el = elementRef.current;
@@ -40,7 +44,7 @@ export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: nu
     };
     frame = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(frame);
-  }, [getBeat, pxPerBeat]);
+  }, [getBeat, pxPerBeat, enabled]);
 
   return elementRef;
 }

@@ -36,6 +36,7 @@ export function useVisibleColumnWindow(
   totalBeats: number,
   overscanBeats: number,
   initialVisibleBeats: number,
+  enabled = true,
 ): ColumnWindow {
   const [window, setWindow] = useState<ColumnWindow>(() => ({
     start: 0,
@@ -44,6 +45,8 @@ export function useVisibleColumnWindow(
   const windowRef = useRef(window);
 
   useEffect(() => {
+    // Paused while the timeline isn't visible (same rationale as usePlayheadAnimation's `enabled`).
+    if (!enabled) return;
     let frame: number;
     const tick = () => {
       const el = scrollRef.current;
@@ -59,7 +62,7 @@ export function useVisibleColumnWindow(
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [scrollRef, pxPerBeat, totalBeats, overscanBeats]);
+  }, [scrollRef, pxPerBeat, totalBeats, overscanBeats, enabled]);
 
   return window;
 }

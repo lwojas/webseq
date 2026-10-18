@@ -3,7 +3,7 @@ import type { AudioRuntime, CaptureHandle, RuntimeCapabilities, SampleMetadata, 
 import { Transport } from "../src/audio/transport";
 import { Playback } from "../src/audio/playback";
 import { secondsPerBeat } from "../src/audio/compile";
-import { addAsset, addNote } from "../src/model/project";
+import { addAsset, addNote, chainShiftForReorder, moveChainEntry } from "../src/model/project";
 import { setNoteVelocity, addPattern, assignAsset, createInitialProject, setBpm, setChain, setSwing, setTrackVoiceMode } from "../src/model/project";
 import type { Asset, Project } from "../src/model/types";
 import { setTrackEventLfo, setTrackNotesLfo } from "../src/model/eventLfo";
@@ -347,6 +347,41 @@ describe("Transport", () => {
     expect(transport.getCurrentChainEntryId()).toBe("entry-0"); // stopped -> back at queue start
     vi.useRealTimers();
   });
+
+  it("reordering the queue mid-playback keeps the playing entry 'now' and continues from ITS successor", () => {
+    vi.useFakeTimers();
+    const { runtime, advance } = fakeRuntime();
+    let project = setBpm(createInitialProject(), 120);
+    project = addAsset(project, makeAsset(1, "kick.wav"));
+    const a = project.patterns[0].id;
+    project = assignAsset(project, "track-1", 1);
+    project = addNote(project, a, "track-1", 0);
+    project = addPattern(project, "Pattern B", 1);
+    const b = project.patterns[1].id;
+    project = addNote(project, b, "track-1", 0);
+    project = addPattern(project, "Pattern C", 1);
+    const c = project.patterns[2].id;
+    project = addNote(project, c, "track-1", 0);
+    project = setChain(project, [a, b, c].map((patternId, i) => ({ id: `e${i}`, patternId })));
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    transport.play(); // e0 (A)
+    advance(2.05); // e1 (B) is sounding
+    vi.advanceTimersByTime(25);
+    expect(transport.getCurrentChainEntryId()).toBe("e1");
+
+    // The user drags C to the front: [C, A, B]. B is still sounding, and B's successor is now C.
+    const reordered = moveChainEntry(project, "e2", 0);
+    transport.shiftChainSteps(chainShiftForReorder(project.patternChain, reordered.patternChain, transport.getCurrentChainEntryId()));
+    project = reordered;
+    expect(project.patternChain.map((e) => e.id)).toEqual(["e2", "e0", "e1"]);
+    expect(transport.getCurrentChainEntryId()).toBe("e1"); // still B: it did not jump to another row
+
+    advance(2.05); // the next step: after B (now last) the queue wraps to its new first entry, C
+    vi.advanceTimersByTime(25);
+    expect(transport.getCurrentChainEntryId()).toBe("e2");
+    vi.useRealTimers();
+  });
 });
 
 describe("Transport swing", () => {
@@ -679,5 +714,29 @@ describe("Transport beat grid", () => {
     expect(typeof setTempo.mock.calls[0][1].anchorTime).toBe("number");
     expect(scheduled).toBeDefined();
     transport.stop();
+  });
+});
+
+describe("queue reordering (pure)", () => {
+  const chain = ["a", "b", "c", "d"].map((id) => ({ id, patternId: `p-${id}` }));
+  const projectWith = (patternChain: typeof chain) => ({ ...createInitialProject(), patternChain });
+
+  it("moves an entry and keeps everyone else's relative order", () => {
+    expect(moveChainEntry(projectWith(chain), "d", 1).patternChain.map((e) => e.id)).toEqual(["a", "d", "b", "c"]);
+    expect(moveChainEntry(projectWith(chain), "a", 2).patternChain.map((e) => e.id)).toEqual(["b", "c", "a", "d"]);
+  });
+  it("clamps the target and no-ops when nothing changes", () => {
+    const p = projectWith(chain);
+    expect(moveChainEntry(p, "a", -5).patternChain.map((e) => e.id)).toEqual(["a", "b", "c", "d"]);
+    expect(moveChainEntry(p, "a", 0)).toBe(p);
+    expect(moveChainEntry(p, "zzz", 1)).toBe(p);
+    expect(moveChainEntry(p, "d", 99)).toBe(p);
+  });
+  it("computes the step shift from the playing entry's change of position", () => {
+    const moved = moveChainEntry(projectWith(chain), "d", 0).patternChain;
+    expect(chainShiftForReorder(chain, moved, "b")).toBe(1); // b went from index 1 to 2
+    expect(chainShiftForReorder(chain, moved, "d")).toBe(-3);
+    expect(chainShiftForReorder(chain, moved, null)).toBe(0);
+    expect(chainShiftForReorder(chain, moved.slice(1), "b")).toBe(0);
   });
 });

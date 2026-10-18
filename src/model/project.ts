@@ -396,6 +396,33 @@ export function removeChainEntry(project: Project, entryId: ChainEntryId): Proje
   return { ...project, patternChain };
 }
 
+/** Moves one queue entry to `toIndex` (clamped to the queue), keeping every other entry's relative
+ * order. A no-op (the same project) when the entry isn't found or is already there. The queue's
+ * contents never change, only their order, so it can never become empty or lose an entry. */
+export function moveChainEntry(project: Project, entryId: ChainEntryId, toIndex: number): Project {
+  const chain = project.patternChain;
+  const from = chain.findIndex((e) => e.id === entryId);
+  if (from === -1) return project;
+  const to = Math.min(chain.length - 1, Math.max(0, toIndex));
+  if (to === from) return project;
+  const next = chain.slice();
+  const [entry] = next.splice(from, 1);
+  next.splice(to, 0, entry);
+  return { ...project, patternChain: next };
+}
+
+/** How far the transport's step counter must move so the entry that is sounding right now keeps
+ * sounding as "now" — and the step after it follows ITS successor in the new order — when the queue
+ * goes from `oldChain` to `newChain` (a reordering of the same entries). The counter indexes the
+ * queue modulo its length (see resolveChainStep), so the shift is just the playing entry's change of
+ * position. 0 when nothing is playing, the entry is unknown, or the queue is a different size. */
+export function chainShiftForReorder(oldChain: ChainEntry[], newChain: ChainEntry[], playingEntryId: ChainEntryId | null): number {
+  if (!playingEntryId || oldChain.length !== newChain.length) return 0;
+  const from = oldChain.findIndex((e) => e.id === playingEntryId);
+  const to = newChain.findIndex((e) => e.id === playingEntryId);
+  return from === -1 || to === -1 ? 0 : to - from;
+}
+
 /** General-purpose queue setter — not reachable from the UI (there's no arbitrary multi-entry
  * queue editor any more), but still useful for tests and for constructing/loading a project
  * with a specific queue directly. Unlike queuePatternNext/removePatternFromQueue, this does not

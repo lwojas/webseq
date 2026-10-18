@@ -10,9 +10,11 @@
 // the one exception: its notes are positioned/sized as percentages of the track lane, not
 // pixels, so it never needs the scale directly.
 
-/** How many bars the default timeline viewport shows before it starts scrolling — see
- * project brief section 7. */
-export const VIEWPORT_BARS = 2;
+/** How many beat columns to mount on the very first render, before the grid has been measured (the
+ * visible window is then tracked from the real scroll position — see useVisibleColumnWindow). The
+ * timeline itself is no longer capped at a fixed number of bars: it fills the width it is given and
+ * scrolls when the pattern is longer, so a wide screen shows more of the pattern, not more blank. */
+export const INITIAL_VISIBLE_BEATS = 64;
 
 /** Bounded, discrete zoom levels (pixels per beat) — a +/- control or dropdown steps through
  * this fixed menu rather than offering continuous/pinch zoom, which would conflict with note

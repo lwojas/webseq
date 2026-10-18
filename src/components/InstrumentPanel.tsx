@@ -1,8 +1,7 @@
 import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/instruments";
 import { ModulationSlot, type ModulationUi } from "./ModulationSlot";
-import { DEFAULT_ENVELOPE } from "../model/types";
-import type { Asset, InstrumentKindId, Note, SampleEnvelope, Track, TrackLfo } from "../model/types";
-import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
+import { DEFAULT_ENVELOPE, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, Track, TrackLfo, VoiceMode } from "../model/types";
 
 interface Props {
   /** The selected track, or null when MASTER is selected (it has no sound source). */
@@ -11,8 +10,6 @@ interface Props {
   asset: Asset | null;
   /** How many tracks play `asset` — its envelope is shared between all of them. */
   assetUseCount: number;
-  /** The selected note, only when it belongs to `track` in the shown pattern. */
-  note: Note | null;
   onSetInstrument: (trackId: string, kind: InstrumentKindId | null) => void;
   onSetInstrumentParam: (trackId: string, paramId: string, value: number) => void;
   /** Engine-reported modulation options for the selected synth, or null before the engine exists
@@ -22,8 +19,11 @@ interface Props {
   onSetLfo: (trackId: string, index: number, patch: Partial<TrackLfo>) => void;
   onRemoveLfo: (trackId: string, index: number) => void;
   onSetEnvelope: (assetId: number, envelope: Partial<SampleEnvelope>) => void;
-  onSetNotePitch: (noteId: string, pitch: number) => void;
-  onSetNoteVelocity: (noteId: string, velocity: number) => void;
+  /** Sample playback (one-shot/loop) and voice (poly/mono): properties of the sound source, so they
+   * live here beside Source/Kind rather than in the FX tab. Synth tracks are always one monophonic
+   * instance (see audio/instruments.ts), so neither applies to them. */
+  onSetPlaybackMode: (trackId: string, mode: PlaybackMode) => void;
+  onSetVoiceMode: (trackId: string, mode: VoiceMode) => void;
 }
 
 interface SliderProps {
@@ -66,13 +66,12 @@ const ENVELOPE_FIELDS: { id: keyof SampleEnvelope; label: string; max: number; s
  * deliberately not part of the track row — it describes *what a track plays*, which is one thing
  * per track in this app (a sample or one synth), so it edits in place without leaving the
  * track's context. Sample tracks get the sample's ADSR; synth tracks get the instrument's own
- * controls (rendered generically from INSTRUMENT_DEFS). A selected note's pitch/velocity are
- * edited here too, since they are properties of what that track plays. */
+ * controls (rendered generically from INSTRUMENT_DEFS). Per-step pitch/velocity/length are NOT
+ * here: they belong to the Track Editor, which edits the steps themselves. */
 export function InstrumentPanel({
   track,
   asset,
   assetUseCount,
-  note,
   onSetInstrument,
   onSetInstrumentParam,
   modulation,
@@ -80,8 +79,8 @@ export function InstrumentPanel({
   onSetLfo,
   onRemoveLfo,
   onSetEnvelope,
-  onSetNotePitch,
-  onSetNoteVelocity,
+  onSetPlaybackMode,
+  onSetVoiceMode,
 }: Props) {
   if (!track) {
     return (
@@ -116,6 +115,40 @@ export function InstrumentPanel({
             </button>
           </div>
         </div>
+        {!synth && (
+          <>
+            <div className="track-mode-group">
+              <span className="track-mode-label">Mode</span>
+              <div className="track-mode-toggle">
+                {(["one-shot", "loop"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    className={effectivePlaybackMode(track) === mode ? "active" : ""}
+                    onClick={() => onSetPlaybackMode(track.id, mode)}
+                    title={mode === "loop" ? "Tile the sample to fill this track's note lengths" : "Play through once, bounded by note length"}
+                  >
+                    {mode === "one-shot" ? "One-shot" : "Loop"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="track-mode-group">
+              <span className="track-mode-label">Voice</span>
+              <div className="track-mode-toggle">
+                {(["poly", "mono"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    className={effectiveVoiceMode(track) === mode ? "active" : ""}
+                    onClick={() => onSetVoiceMode(track.id, mode)}
+                    title={mode === "mono" ? "This track's own voices never overlap each other" : "This track's voices may overlap (default)"}
+                  >
+                    {mode === "poly" ? "Poly" : "Mono"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
         {synth && (
           <div className="track-mode-group">
             <span className="track-mode-label">Kind</span>
@@ -211,33 +244,6 @@ export function InstrumentPanel({
 
         {!synth && !asset && (
           <div className="fx-panel-empty">No sound yet — load a sample on this track, or switch Source to Synth.</div>
-        )}
-
-        {note && (
-          <div className="module-panel">
-            <div className="module-panel-header">
-              <span className="name">Selected note</span>
-            </div>
-            <div className="module-params">
-              <Slider
-                label="Pitch"
-                min={MIN_NOTE_PITCH}
-                max={MAX_NOTE_PITCH}
-                step={1}
-                unit="st"
-                value={note.pitch ?? 0}
-                onChange={(v) => onSetNotePitch(note.id, v)}
-              />
-              <Slider
-                label="Velocity"
-                min={0}
-                max={1}
-                step={0.01}
-                value={note.velocity}
-                onChange={(v) => onSetNoteVelocity(note.id, v)}
-              />
-            </div>
-          </div>
         )}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, type CSSProperties } from "react";
 import type { FxTarget, NoteId, Pattern, Project, TrackId } from "../model/types";
 import { totalBeats } from "../model/types";
 import { BANK_SIZE, tracksInBank, type BankSummary } from "../model/project";
@@ -8,7 +8,7 @@ import { useStableTrackNotes } from "../hooks/useStableTrackNotes";
 import { TrackRow } from "./TrackRow";
 import { MasterRow } from "./MasterRow";
 import { BankBar } from "./BankBar";
-import { COLUMN_OVERSCAN_BEATS, VIEWPORT_BARS } from "./timelineConstants";
+import { COLUMN_OVERSCAN_BEATS, INITIAL_VISIBLE_BEATS } from "./timelineConstants";
 
 interface Props {
   project: Project;
@@ -38,13 +38,19 @@ interface Props {
   /** Current timeline zoom level, in pixels per beat — see useTimelineZoom and
    * timelineConstants.ts's ZOOM_LEVELS_PX_PER_BEAT doc comment (ECS-53). */
   pxPerBeat: number;
+  /** False while the timeline is not on screen (pattern picker / settings open, another tab or the
+   * Patterns view showing): the playhead and visible-column loops stop instead of running against a
+   * hidden grid. */
+  active: boolean;
+  /** Where the bank tabs go: "corner" of the grid header (desktop) or their own "row" (phone). */
+  bankPlacement: "corner" | "row";
 }
 
-/** The main sequencing surface for one pattern (the one currently selected in PatternBar).
- * The viewport shows up to VIEWPORT_BARS bars at fixed pixel width per beat (project brief
- * section 7) and scrolls horizontally for longer patterns, rather than stretching every beat
- * to fill available width — this is what makes "always show two bars" and "long patterns
- * scroll" both true using one ordinary DOM layout, no virtualization or canvas. */
+/** The main sequencing surface for one pattern (the one open in the pattern strip). Beats have a
+ * fixed pixel width (the zoom level) and the grid fills whatever width it is given, scrolling
+ * horizontally for longer patterns and showing an explicit "end of pattern" zone for shorter ones —
+ * so a wide screen shows more of the pattern instead of capping the view to a fixed number of
+ * bars. One ordinary DOM layout with only the visible step cells mounted; no canvas. */
 export function SequencerGrid({
   project,
   pattern,
@@ -66,33 +72,37 @@ export function SequencerGrid({
   onTriggerTrack,
   getPlayheadBeat,
   pxPerBeat,
+  active,
+  bankPlacement,
 }: Props) {
   const beats = totalBeats(pattern, project.beatsPerBar);
   const contentWidth = beats * pxPerBeat;
-  const viewportCap = VIEWPORT_BARS * project.beatsPerBar * pxPerBeat;
-  const playheadRef = usePlayheadAnimation(getPlayheadBeat, pxPerBeat);
+  const playheadRef = usePlayheadAnimation(getPlayheadBeat, pxPerBeat, active);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const visibleColumns = useVisibleColumnWindow(
     scrollRef,
     pxPerBeat,
     beats,
     COLUMN_OVERSCAN_BEATS,
-    VIEWPORT_BARS * project.beatsPerBar,
+    INITIAL_VISIBLE_BEATS,
+    active,
   );
   const trackNotes = useStableTrackNotes(pattern, project.tracks);
   const handleSelectMaster = useCallback(() => onSelectTarget("master"), [onSelectTarget]);
 
   return (
     <div className="sequencer" onClick={() => onSelectNote(null)}>
-      <BankBar activeBank={bank} summaries={bankSummaries} onSelect={onSelectBank} />
-      <div
-        className="timeline-scroll"
-        ref={scrollRef}
-        style={{ maxWidth: `calc(var(--header-width) + ${viewportCap}px)` }}
-      >
-        <div className="timeline-content">
+      {bankPlacement === "row" && <BankBar activeBank={bank} summaries={bankSummaries} onSelect={onSelectBank} />}
+      <div className="timeline-scroll" ref={scrollRef}>
+        <div className="timeline-content" style={{ "--content-width": `${contentWidth}px` } as CSSProperties}>
           <div className="grid-header">
-            <div className="track-col-label">Track / Sample</div>
+            {bankPlacement === "corner" ? (
+              <div className="track-col-label track-col-banks">
+                <BankBar variant="corner" activeBank={bank} summaries={bankSummaries} onSelect={onSelectBank} />
+              </div>
+            ) : (
+              <div className="track-col-label">Track</div>
+            )}
             <div className="beat-ruler" style={{ width: contentWidth, gridTemplateColumns: `repeat(${beats}, ${pxPerBeat}px)` }}>
               {Array.from({ length: beats }, (_, i) => (
                 <div key={i} className={`beat-num ${i % project.beatsPerBar === 0 ? "bar-start" : ""}`}>

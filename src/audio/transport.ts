@@ -179,6 +179,21 @@ export class Transport {
     return resolveChainStep(this.getProject(), this.currentPosition().stepIndex)?.entry.id ?? null;
   }
 
+  /** Moves the queue's step counter by `delta` so a queue REORDER doesn't disturb playback: the entry
+   * that is sounding stays the one that is "now" and the next step follows ITS successor in the new
+   * order (see model/project.ts's chainShiftForReorder for the delta). Only the counter and the
+   * labels of already-scheduled steps move; no audio is rescheduled. A step already handed to the
+   * engine inside the lookahead window (<= TICK_INTERVAL + lookahead) still plays the pattern it
+   * was scheduled with. Call it in the same event handler that dispatches the reorder, so no tick
+   * can see the new counter with the old queue. A stopped transport has nothing to preserve. */
+  shiftChainSteps(delta: number): void {
+    if (delta === 0 || this.status === "stopped") return;
+    this.nextStepIndex += delta;
+    for (const w of this.stepWindows) w.stepIndex += delta;
+    this.startPosition = { ...this.startPosition, stepIndex: this.startPosition.stepIndex + delta };
+    this.pausedPosition = { ...this.pausedPosition, stepIndex: this.pausedPosition.stepIndex + delta };
+  }
+
   /** Re-anchors playback to the current tempo/project without an audible jump, preserving
    * musical position. Call after a live BPM (or structural pattern/chain) change while
    * playing. Already-triggered notes finish under their original timing; only not-yet-

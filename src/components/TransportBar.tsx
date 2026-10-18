@@ -37,6 +37,10 @@ interface Props {
    * Transport.getResampleStatus() each frame the same way getPositionText already reads the
    * playhead, so this reflects the actual engine-armed state, not just "a click happened". */
   getResampleLabel: () => ResampleStatus;
+  /** "bar" (default): the desktop transport row, play buttons first. "settings": the phone's ⋯
+   * Settings view — only the tempo/swing/grid/zoom/resample fields, no play buttons (the phone
+   * top bar owns play/stop) and no position readout. */
+  variant?: "bar" | "settings";
 }
 
 export function TransportBar({
@@ -61,13 +65,15 @@ export function TransportBar({
   resamplePhase,
   resampleError,
   getResampleLabel,
+  variant = "bar",
 }: Props) {
   const positionRef = useRafText(getPositionText);
   const resampleLiveRef = useRafText(() => getResampleLabel().toUpperCase());
   const bpmDisabled = resamplePhase === "pending" || resamplePhase === "processing";
 
   return (
-    <div className="transport">
+    <div className={`transport ${variant === "settings" ? "transport-settings" : ""}`}>
+      {variant === "bar" && (
       <div className="transport-buttons">
         <button className={`btn ${status === "playing" ? "active" : ""}`} onClick={onPlay}>
           ▶ Play
@@ -79,6 +85,7 @@ export function TransportBar({
           ■ Stop
         </button>
       </div>
+      )}
 
       <div className="field">
         <span>BPM</span>
@@ -139,7 +146,7 @@ export function TransportBar({
         </button>
       </div>
 
-      <span className="position-readout" ref={positionRef} />
+      {variant === "bar" && <span className="position-readout" ref={positionRef} />}
 
       <div className="resample-control">
         <button
