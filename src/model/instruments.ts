@@ -209,6 +209,26 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "slide", label: "Slide", min: 0, max: 0.5, step: 0.01, unit: "s", default: 0 },
     ],
   },
+  // Seven detuned saws as one stereo voice (webdsp docs/hypersaw-instrument.md). Sustained: each
+  // note's length is its held time. Detune is in cents (outer pair), Spread the stereo width (it
+  // widens with detune), Density the centre-vs-sides mix.
+  hypersaw: {
+    kind: "hypersaw",
+    label: "Hypersaw",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 880, step: 0.5, unit: "Hz", default: 110 },
+      { id: "detune", label: "Detune", min: 0, max: 100, step: 0.5, unit: "ct", default: 25 },
+      { id: "spread", label: "Spread", min: 0, max: 1, step: 0.01, default: 0.8 },
+      { id: "density", label: "Density", min: 0, max: 1, step: 0.01, default: 0.7 },
+      { id: "cutoff", label: "Cutoff", min: 200, max: 16000, step: 1, unit: "Hz", default: 5000 },
+      { id: "attack", label: "Attack", min: 0.001, max: 4, step: 0.001, unit: "s", default: 0.01 },
+      { id: "decay", label: "Decay", min: 0.02, max: 4, step: 0.01, unit: "s", default: 0.5 },
+      { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0.8 },
+      { id: "release", label: "Release", min: 0.01, max: 6, step: 0.01, unit: "s", default: 0.4 },
+    ],
+  },
 };
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];
