@@ -7,6 +7,7 @@ import { useVisibleColumnWindow } from "../hooks/useVisibleColumnWindow";
 import { useStableTrackNotes } from "../hooks/useStableTrackNotes";
 import { TrackRow } from "./TrackRow";
 import { MasterRow } from "./MasterRow";
+import { AutomationRow, type AutomationRowProps } from "./AutomationRow";
 import { BankBar } from "./BankBar";
 import { COLUMN_OVERSCAN_BEATS, INITIAL_VISIBLE_BEATS } from "./timelineConstants";
 
@@ -42,6 +43,10 @@ interface Props {
    * Patterns view showing): the playhead and visible-column loops stop instead of running against a
    * hidden grid. */
   active: boolean;
+  /** The focused automation lane, drawn as a row directly under the selected track (or MASTER). It
+   * sits inside this scroll area at the same pxPerBeat, so it stays aligned with the notes above
+   * it and scrolls and zooms with them. Null = none. */
+  automationRow?: AutomationRowProps | null;
   /** Where the bank tabs go: "corner" of the grid header (desktop) or their own "row" (phone). */
   bankPlacement: "corner" | "row";
 }
@@ -74,6 +79,7 @@ export function SequencerGrid({
   pxPerBeat,
   active,
   bankPlacement,
+  automationRow,
 }: Props) {
   const beats = totalBeats(pattern, project.beatsPerBar);
   const contentWidth = beats * pxPerBeat;
@@ -88,6 +94,16 @@ export function SequencerGrid({
     active,
   );
   const trackNotes = useStableTrackNotes(pattern, project.tracks);
+  const laneRow = automationRow ? (
+    <AutomationRow
+      {...automationRow}
+      totalBeats={beats}
+      beatsPerBar={project.beatsPerBar}
+      pxPerBeat={pxPerBeat}
+      visibleStart={visibleColumns.start}
+      visibleEnd={visibleColumns.end}
+    />
+  ) : null;
   const handleSelectMaster = useCallback(() => onSelectTarget("master"), [onSelectTarget]);
 
   return (
@@ -120,6 +136,7 @@ export function SequencerGrid({
                 onSelect={handleSelectMaster}
               />
             </div>
+            {selectedTarget === "master" && laneRow}
             {tracksInBank(project, bank).map((track, i) => (
               <div key={track.id} onClick={(e) => e.stopPropagation()}>
                 <TrackRow
@@ -145,6 +162,7 @@ export function SequencerGrid({
                   triggerDisabled={triggerDisabled}
                   onTrigger={onTriggerTrack}
                 />
+                {selectedTarget === track.id && laneRow}
               </div>
             ))}
             <div className="playhead-wrapper" style={{ width: contentWidth }}>

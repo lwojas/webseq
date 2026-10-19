@@ -1,5 +1,5 @@
 import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/instruments";
-import { ModulationSlot, type ModulationUi } from "./ModulationSlot";
+import { ModBadge, ModulationSlot, modulationBadges, type AutomationUi, type ModulationUi } from "./ModulationSlot";
 import { ChopEditor } from "./ChopEditor";
 import { effectiveSampleMode } from "../model/chop";
 import { DEFAULT_ENVELOPE, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
@@ -21,6 +21,9 @@ interface Props {
   onSetLfo: (trackId: string, index: number, patch: Partial<TrackLfo>) => void;
   onRemoveLfo: (trackId: string, index: number) => void;
   onSetEnvelope: (assetId: number, envelope: Partial<SampleEnvelope>) => void;
+  /** Automation of the track's source parameters (synth controls, or a sample's envelope / pitch),
+   * or undefined before there is anything to automate. */
+  automation?: AutomationUi;
   /** Sample playback (one-shot/loop) and voice (poly/mono): properties of the sound source, so they
    * live here beside Source/Kind rather than in the FX tab. Synth tracks are always one monophonic
    * instance (see audio/instruments.ts), so neither applies to them. */
@@ -42,16 +45,27 @@ interface SliderProps {
   value: number;
   unit?: string;
   onChange: (value: number) => void;
+  /** Which modulation sources this control has (marker beside its name). */
+  badge?: { auto: boolean; lfos: number };
+  /** Clicking the name automates the control. */
+  onAutomate?: () => void;
 }
 
 function formatValue(value: number): string {
   return Math.abs(value) < 10 ? value.toFixed(2) : String(Math.round(value));
 }
 
-function Slider({ label, min, max, step, value, unit, onChange }: SliderProps) {
+function Slider({ label, min, max, step, value, unit, onChange, badge, onAutomate }: SliderProps) {
   return (
     <div className="module-param">
-      <span className="param-label static">{label}</span>
+      {onAutomate ? (
+        <button className="param-label" onClick={onAutomate} title="Automate this parameter">
+          {label}
+          <ModBadge badge={badge} />
+        </button>
+      ) : (
+        <span className="param-label static">{label}</span>
+      )}
       <div className="range-row">
         <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
         <span className="value">
@@ -87,6 +101,7 @@ export function InstrumentPanel({
   onSetLfo,
   onRemoveLfo,
   onSetEnvelope,
+  automation,
   onSetPlaybackMode,
   onSetVoiceMode,
   onSetSampleMode,
@@ -106,6 +121,7 @@ export function InstrumentPanel({
   const def = instrumentDefFor(track);
   const synth = track.instrument ?? null;
   const envelope = asset?.envelope ?? DEFAULT_ENVELOPE;
+  const badges = modulationBadges(automation?.lanes ?? [], synth?.lfos ?? []);
 
   return (
     <div className="fx-panel instrument-panel">
@@ -223,21 +239,22 @@ export function InstrumentPanel({
                   unit={p.unit}
                   value={synth.params[p.id] ?? p.default}
                   onChange={(v) => onSetInstrumentParam(track.id, p.id, v)}
+                  badge={badges[p.id]}
+                  onAutomate={automation ? () => automation.onAdd(p.id) : undefined}
                 />
                 ),
               )}
             </div>
             {def.sustained && <div className="instrument-hint">Sustained: each note's length is its held time.</div>}
-            {modulation && (
-              <ModulationSlot
-                lfos={synth.lfos ?? []}
-                ui={modulation}
-                labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
-                onAdd={(target) => onAddLfo(track.id, target)}
-                onChange={(index, patch) => onSetLfo(track.id, index, patch)}
-                onRemove={(index) => onRemoveLfo(track.id, index)}
-              />
-            )}
+            <ModulationSlot
+              lfos={synth.lfos ?? []}
+              ui={modulation}
+              labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
+              onAdd={(target) => onAddLfo(track.id, target)}
+              onChange={(index, patch) => onSetLfo(track.id, index, patch)}
+              onRemove={(index) => onRemoveLfo(track.id, index)}
+              automation={automation}
+            />
           </div>
         )}
 
@@ -260,9 +277,12 @@ export function InstrumentPanel({
                   unit={f.unit}
                   value={envelope[f.id]}
                   onChange={(v) => onSetEnvelope(asset.id, { [f.id]: v })}
+                  badge={badges[f.id]}
+                  onAutomate={automation ? () => automation.onAdd(f.id) : undefined}
                 />
               ))}
             </div>
+            <ModulationSlot lfos={[]} ui={null} labelFor={(id) => id} onAdd={() => {}} onChange={() => {}} onRemove={() => {}} automation={automation} />
             {assetUseCount > 1 && (
               <div className="instrument-hint">The envelope belongs to the sample, so it applies on all {assetUseCount} tracks that play it.</div>
             )}

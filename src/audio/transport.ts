@@ -24,11 +24,10 @@
 // know which queue entry is "playing" in order to insert a newly-queued pattern right after
 // it (so "queue next" means next, not "whenever the loop gets back around to it").
 import type { AudioRuntime, BusId, SampleMetadata, VoiceHandle } from "webdsp";
-import type { AutomationLane, ChainEntryId, FxInstance, FxTarget, PatternId, Project } from "../model/types";
+import type { ChainEntryId, FxTarget, PatternId, Project } from "../model/types";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
 import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat } from "./compile";
-import { valueAtBeat } from "../model/automation";
-import { fxChainsFor } from "./fxChain";
+import { applyAutomation, restoreAutomation } from "./automation";
 import { instrumentHostFor } from "./instruments";
 import type { Playback } from "./playback";
 
@@ -220,7 +219,7 @@ export class Transport {
     }
     this.runtime.cancelScheduled();
     instrumentHostFor(this.runtime).stopAll();
-    fxChainsFor(this.runtime).restoreBase();
+    restoreAutomation(this.runtime, this.getProject());
     for (const voice of this.activeVoices) this.runtime.release(voice);
     this.activeVoices.clear();
     this.playback.dropSequencerVoices();
@@ -449,36 +448,18 @@ export class Transport {
     this.pollAutomation(project);
   }
 
-  /** Applies each active FX automation lane's current value (track and master) as ordinary
-   * bus-parameter changes — see model/types.ts's AutomationLane doc comment for the
-   * position/interpolation contract this evaluates. Polled at the same ~25ms tick rate as
-   * note scheduling rather than sample-accurately ramped (webdsp has no automation-ramp
-   * primitive); this is an intentional, documented simplification appropriate for this
-   * project's "no automation curves/envelopes yet" scope (see project brief section 16).
-   * Automation is track/master-level (not per-pattern) and is evaluated against the beat
-   * offset within whichever chain step is currently sounding — i.e. it restarts every time a
-   * new pattern instance begins playing on that track, which is what lets one lane apply
-   * consistently across patterns of different lengths without per-pattern duplication. */
+  /** Applies each automation lane's current value (FX, synth and sample parameters of every
+   * track, and the master's FX) as ordinary base-value writes — see audio/automation.ts for how
+   * the three owners are reached and how the engine's LFOs combine with them. Polled at the same
+   * ~25ms tick rate as note scheduling rather than sample-accurately ramped (webdsp has no
+   * automation-ramp primitive); an intentional, documented simplification. Automation is
+   * track/master-level (not per-pattern) and is evaluated against the beat offset within
+   * whichever chain step is currently sounding — i.e. it restarts every time a new pattern
+   * instance begins playing on that track, which is what lets one lane apply consistently across
+   * patterns of different lengths without per-pattern duplication. */
   private pollAutomation(project: Project): void {
     if (this.status !== "playing") return;
     const { beat } = this.currentPosition();
-    this.applyAutomationFor(project.master, this.getBusId("master"), beat);
-    for (const track of project.tracks) {
-      this.applyAutomationFor(track, this.getBusId(track.id), beat);
-    }
-  }
-
-  private applyAutomationFor(owner: { fx: FxInstance[]; automation: AutomationLane[] }, busId: BusId | undefined, beat: number): void {
-    if (busId === undefined) return;
-    const chains = fxChainsFor(this.runtime);
-    for (const lane of owner.automation) {
-      const instance = owner.fx.find((f) => f.id === lane.fxId);
-      if (!instance || !instance.enabled) continue;
-      const value = valueAtBeat(lane, beat);
-      if (value === null) continue;
-      // FxChainSync dedupes against the value already in the engine, so an unchanged lane
-      // costs nothing per tick.
-      chains.setParam(busId, lane.fxId, lane.parameter, value);
-    }
+    applyAutomation(this.runtime, project, this.getBusId, beat);
   }
 }

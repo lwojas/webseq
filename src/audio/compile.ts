@@ -4,6 +4,7 @@
 // and which bus a voice's output sums into. See webdsp's ARCHITECTURE.md, "How future
 // sequencers can integrate".
 
+import { findLane, valueAtBeat } from "../model/automation";
 import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
 import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
@@ -80,8 +81,11 @@ export function compileNote(
     const slice = Math.round(note.pitch ?? 0);
     if (slice < 0) return null;
     event.region = slice;
-  } else if (note.pitch) {
-    event.pitch = note.pitch;
+  } else {
+    // The note's own pitch plus the track's sample-pitch automation lane (if any), read at the
+    // note's position: lane positions are beats from the pattern start, i.e. note.start.
+    const pitch = (note.pitch ?? 0) + (valueAtBeat(findLane(track.automation, null, "pitch"), note.start) ?? 0);
+    if (pitch) event.pitch = pitch;
   }
   return event;
 }

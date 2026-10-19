@@ -1,4 +1,4 @@
-import type { AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
+import type { AutomationEvent, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
 import type { CopiedNote } from "./notes";
 import type { CopiedTrackConfig } from "./trackConfig";
 import type { Asset } from "./types";
@@ -7,6 +7,7 @@ import * as fx from "./fx";
 import * as instruments from "./instruments";
 import * as eventLfo from "./eventLfo";
 import * as automation from "./automation";
+import { sourceParamDefs } from "./modulation";
 import * as trackConfig from "./trackConfig";
 import * as edit from "./edit";
 
@@ -61,15 +62,28 @@ export type Action =
   | { type: "REMOVE_FROM_QUEUE"; patternId: PatternId }
   | { type: "REMOVE_CHAIN_ENTRY"; entryId: ChainEntryId }
   | { type: "MOVE_CHAIN_ENTRY"; entryId: ChainEntryId; toIndex: number }
+  | { type: "ADD_FX_LFO"; target: FxTarget; fxId: FxId; param: string }
+  | { type: "SET_FX_LFO"; target: FxTarget; fxId: FxId; index: number; patch: Partial<TrackLfo> }
+  | { type: "REMOVE_FX_LFO"; target: FxTarget; fxId: FxId; index: number }
   | { type: "ADD_FX"; target: FxTarget; fxType: FxType }
   | { type: "REMOVE_FX"; target: FxTarget; fxId: FxId }
   | { type: "MOVE_FX"; target: FxTarget; fxId: FxId; index: number }
   | { type: "SET_FX_PARAM"; target: FxTarget; fxId: FxId; paramId: string; value: number }
   | { type: "SET_FX_ENABLED"; target: FxTarget; fxId: FxId; enabled: boolean }
-  | { type: "SET_AUTOMATION_POINT"; target: FxTarget; fxId: FxId; parameter: string; position: number; value: number }
-  | { type: "REMOVE_AUTOMATION_POINT"; target: FxTarget; fxId: FxId; parameter: string; position: number }
-  | { type: "CLEAR_AUTOMATION_LANE"; target: FxTarget; fxId: FxId; parameter: string }
+  // Automation lanes: `fxId` null = the track's source (synth control / sample parameter).
+  | { type: "SET_AUTOMATION_POINT"; target: FxTarget; fxId: FxId | null; parameter: string; position: number; value: number }
+  | { type: "REMOVE_AUTOMATION_POINT"; target: FxTarget; fxId: FxId | null; parameter: string; position: number }
+  | { type: "CLEAR_AUTOMATION_LANE"; target: FxTarget; fxId: FxId | null; parameter: string }
+  | { type: "REPLACE_AUTOMATION_RANGE"; target: FxTarget; fxId: FxId | null; parameter: string; from: number; to: number; events: AutomationEvent[] }
   | { type: "LOAD_PROJECT"; project: Project };
+
+/** After a track's source changes, drops source automation lanes the new source can't honour. */
+function pruneSourceLanes(state: Project, trackId: TrackId): Project {
+  const track = state.tracks.find((t) => t.id === trackId);
+  if (!track) return state;
+  const valid = new Set(sourceParamDefs(track).map((p) => p.id));
+  return automation.pruneSourceLanes(state, trackId, (parameter) => valid.has(parameter));
+}
 
 export function projectReducer(state: Project, action: Action): Project {
   switch (action.type) {
@@ -82,7 +96,7 @@ export function projectReducer(state: Project, action: Action): Project {
     case "ADD_ASSET":
       return project.addAsset(state, action.asset);
     case "ASSIGN_ASSET":
-      return project.assignAsset(state, action.trackId, action.assetId);
+      return pruneSourceLanes(project.assignAsset(state, action.trackId, action.assetId), action.trackId);
     case "RENAME_ASSET":
       return project.renameAsset(state, action.assetId, action.name);
     case "REMOVE_ASSET":
@@ -102,7 +116,7 @@ export function projectReducer(state: Project, action: Action): Project {
     case "SET_TRACK_OUTPUT":
       return project.setTrackOutput(state, action.trackId, action.dest);
     case "SET_TRACK_INSTRUMENT":
-      return instruments.setTrackInstrument(state, action.trackId, action.kind);
+      return pruneSourceLanes(instruments.setTrackInstrument(state, action.trackId, action.kind), action.trackId);
     case "SET_INSTRUMENT_PARAM":
       return instruments.setInstrumentParam(state, action.trackId, action.paramId, action.value);
     case "SET_TRACK_EVENT_LFO":
@@ -187,6 +201,14 @@ export function projectReducer(state: Project, action: Action): Project {
       return fx.setFxParam(state, action.target, action.fxId, action.paramId, action.value);
     case "SET_FX_ENABLED":
       return fx.setFxEnabled(state, action.target, action.fxId, action.enabled);
+    case "ADD_FX_LFO":
+      return fx.addFxLfo(state, action.target, action.fxId, action.param);
+    case "SET_FX_LFO":
+      return fx.setFxLfo(state, action.target, action.fxId, action.index, action.patch);
+    case "REMOVE_FX_LFO":
+      return fx.removeFxLfo(state, action.target, action.fxId, action.index);
+    case "REPLACE_AUTOMATION_RANGE":
+      return automation.replaceAutomationRange(state, action.target, action.fxId, action.parameter, action.from, action.to, action.events);
     case "SET_AUTOMATION_POINT":
       return automation.setAutomationPoint(state, action.target, action.fxId, action.parameter, action.position, action.value);
     case "REMOVE_AUTOMATION_POINT":

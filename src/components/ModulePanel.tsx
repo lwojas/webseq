@@ -1,21 +1,24 @@
 import { FX_DEFS } from "../model/fx";
 import type { FxInstance } from "../model/types";
+import { ModBadge } from "./ModulationSlot";
 
 interface Props {
   fx: FxInstance;
   onSetParam: (paramId: string, value: number) => void;
   onSetEnabled: (enabled: boolean) => void;
-  /** Which parameter (if any) currently has its automation shown below this panel — passed
-   * through so a param row can indicate "this is the one being automated". */
-  automatedParamId: string | null;
-  onSelectAutomatedParam: (paramId: string) => void;
+  /** Which modulation sources each parameter has (see modulationBadges), shown beside its name. */
+  badges: Record<string, { auto: boolean; lfos: number }>;
+  /** Clicking a parameter's name automates it: adds a lane if there is none, else opens it. */
+  onAutomateParam: (paramId: string) => void;
+  /** The modulation card (automation + LFOs) for this FX, rendered below its parameters. */
+  children?: React.ReactNode;
 }
 
 /** Renders any FxInstance generically from FX_DEFS (model/fx.ts) — this component has no idea
  * it's rendering a filter vs. a delay specifically, so a future third FX type needs no new UI
  * code here, only an FX_DEFS entry and an audio/applyFx.ts case. Clicking a parameter's label
  * selects it as the one whose automation is shown in the lane below (see AutomationLane). */
-export function ModulePanel({ fx, onSetParam, onSetEnabled, automatedParamId, onSelectAutomatedParam }: Props) {
+export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomateParam, children }: Props) {
   const def = FX_DEFS[fx.type];
 
   return (
@@ -31,13 +34,9 @@ export function ModulePanel({ fx, onSetParam, onSetEnabled, automatedParamId, on
           const value = fx.params[param.id] ?? param.default;
           return (
             <div className="module-param" key={param.id}>
-              <button
-                className={`param-label ${automatedParamId === param.id ? "automated" : ""}`}
-                onClick={() => onSelectAutomatedParam(param.id)}
-                title="Show/edit automation for this parameter"
-              >
+              <button className="param-label" onClick={() => onAutomateParam(param.id)} title="Automate this parameter">
                 {param.label}
-                {automatedParamId === param.id && <span className="automation-dot" />}
+                <ModBadge badge={badges[param.id]} />
               </button>
               {param.options ? (
                 <div className="enum-toggle">
@@ -71,6 +70,7 @@ export function ModulePanel({ fx, onSetParam, onSetEnabled, automatedParamId, on
           );
         })}
       </div>
+      {children}
     </div>
   );
 }

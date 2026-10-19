@@ -14,6 +14,7 @@
 import type { AudioRuntime, BusId, InstrumentId, InstrumentKind, InstrumentNoteParams } from "webdsp";
 import type { Project, TrackId, TrackLfo } from "../model/types";
 import type { TrackBusMap } from "./buses";
+import { syncLfoSlots } from "./lfoSync";
 
 interface LiveInstrument {
   kindId: string;
@@ -24,6 +25,9 @@ interface LiveInstrument {
   id: InstrumentId;
   /** model param id -> engine param id, resolved once per instance. */
   paramIds: Map<string, number>;
+  /** Last project value pushed by sync(), so sync only reacts to a user edit. */
+  base: Map<string, number>;
+  /** Value currently in the engine (sync or automation). */
   written: Map<string, number>;
 }
 
@@ -65,13 +69,14 @@ export class InstrumentHost {
         }
         const paramIds = new Map<string, number>();
         for (const p of this.runtime.getInstrumentParams(kind)) paramIds.set(p.name, p.id);
-        live = { kindId: inst.kind, kind, bus, id, paramIds, written: new Map(), lfoSent: [] };
+        live = { kindId: inst.kind, kind, bus, id, paramIds, base: new Map(), written: new Map(), lfoSent: [] };
         this.live.set(track.id, live);
       }
 
       for (const [name, value] of Object.entries(inst.params)) {
         const paramId = live.paramIds.get(name);
-        if (paramId === undefined || live.written.get(name) === value) continue;
+        if (paramId === undefined || live.base.get(name) === value) continue;
+        live.base.set(name, value);
         live.written.set(name, value);
         this.runtime.setInstrumentParameter(live.id, paramId, value);
       }
@@ -85,34 +90,43 @@ export class InstrumentHost {
     }
   }
 
-  /** Pushes the track's LFO slots (model TrackLfo -> webdsp setInstrumentLfo). Names are resolved
-   * against the engine's own tables here, at the boundary: a waveform/division/target the engine
-   * does not know (or no longer offers as a modulation target) leaves that slot off. */
+  /** Pushes the track's LFO slots (model TrackLfo -> webdsp setInstrumentLfo); see lfoSync.ts. */
   private syncLfos(live: LiveInstrument, lfos: readonly TrackLfo[]): void {
     const info = this.runtime.getModulationInfo?.();
     if (!info) return;
-    const targets = new Set(this.runtime.getModulationTargets(live.kind).map((p) => p.name));
-    for (let slot = 0; slot < info.maxLfos; slot++) {
-      const lfo = lfos[slot];
-      const waveform = lfo ? info.waveforms.indexOf(lfo.waveform) : -1;
-      const division = lfo ? info.divisions.findIndex((d) => d.name === lfo.division) : -1;
-      const target = lfo ? live.paramIds.get(lfo.target) : undefined;
-      const valid = lfo && waveform >= 0 && target !== undefined && targets.has(lfo.target) && (!lfo.sync || division >= 0);
-      const sig = valid ? JSON.stringify(lfo) : "";
-      if (sig === (live.lfoSent[slot] ?? "")) continue;
-      live.lfoSent[slot] = sig;
-      if (valid) {
-        this.runtime.setInstrumentLfo(live.id, slot, {
-          target: target!,
-          amount: lfo.amount,
-          waveform,
-          sync: lfo.sync,
-          rateHz: lfo.rateHz,
-          division: Math.max(0, division),
-          phase: lfo.phase,
-        });
-      } else {
-        this.runtime.clearInstrumentLfo(live.id, slot);
+    const targets = new Map<string, number>();
+    for (const p of this.runtime.getModulationTargets(live.kind)) targets.set(p.name, p.id);
+    syncLfoSlots(
+      info,
+      lfos,
+      targets,
+      live.lfoSent,
+      (slot, lfo) => this.runtime.setInstrumentLfo(live.id, slot, lfo),
+      (slot) => this.runtime.clearInstrumentLfo(live.id, slot),
+    );
+  }
+
+  /** Writes one (automated) control value straight to the live instrument for `trackId`. Like
+   * FxChainSync.setParam: a no-op if the track has no live synth, the control is unknown, or the
+   * value is already in the engine. While an LFO targets the control the engine treats this as
+   * the base value and adds the LFO on top. */
+  setParam(trackId: TrackId, name: string, value: number): void {
+    const live = this.live.get(trackId);
+    const paramId = live?.paramIds.get(name);
+    if (!live || paramId === undefined || live.written.get(name) === value) return;
+    live.written.set(name, value);
+    this.runtime.setInstrumentParameter(live.id, paramId, value);
+  }
+
+  /** Puts every control that automation moved away from its project value back to it (called when
+   * playback halts, like FxChainSync.restoreBase). */
+  restoreBase(): void {
+    for (const live of this.live.values()) {
+      for (const [name, base] of live.base) {
+        const paramId = live.paramIds.get(name);
+        if (paramId === undefined || live.written.get(name) === base) continue;
+        live.written.set(name, base);
+        this.runtime.setInstrumentParameter(live.id, paramId, base);
       }
     }
   }

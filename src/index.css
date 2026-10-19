@@ -1861,32 +1861,95 @@ select {
 
 /* --- automation lane --- */
 
-.automation-lane-wrap {
-  background: var(--panel-alt);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  padding: 8px 10px;
-  overflow-x: auto;
-  max-width: 640px;
-}
-
-.automation-lane-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-dim);
-  text-transform: uppercase;
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  margin-bottom: 6px;
-}
-
 .automation-lane {
   position: relative;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 3px;
   cursor: crosshair;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+/* Bar boundaries inside a lane: a faint line with the bar number, so the lane's length in bars
+   reads at a glance. */
+.automation-bar-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-strong);
+  pointer-events: none;
+}
+
+.automation-bar-mark span {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+/* The lane as a row of the timeline (AutomationRow): same header column and scroll as the tracks. */
+.automation-row {
+  background: rgba(240, 168, 60, 0.05);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.automation-row-header {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 2px;
+}
+
+.automation-row-title {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-row-kind {
+  color: var(--amber);
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+}
+
+.automation-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.automation-bars,
+.mod-bars {
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
+.automation-row-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+  min-width: 24px;
+  min-height: 24px;
+}
+
+.automation-row-close:hover {
+  color: var(--text);
+}
+
+.automation-row-lane {
+  padding: 3px 0;
 }
 
 .automation-curve {
@@ -2563,6 +2626,11 @@ select {
     padding: 9px 12px;
   }
 
+  .automation-row-close {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
 
   .te-card select,
   .te-remove {
@@ -2652,6 +2720,44 @@ select {
   padding: 8px 0 4px;
 }
 
+.mod-lfo.mod-auto.focused {
+  border-left: 2px solid var(--amber);
+  padding-left: 8px;
+}
+
+.mod-slot-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mod-shape {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* A lane drawn inside the card (timeline not on screen): scrolls on its own, being the only
+   timeline in view. */
+.mod-auto-inline {
+  margin-top: 6px;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* Marker beside a parameter's name: A = automated, L = LFO(s). */
+.mod-badge {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--amber);
+  color: #1a1206;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
 .mod-lfo-head {
   display: flex;
   align-items: center;
@@ -2668,6 +2774,13 @@ select {
 
 .mod-slot .module-param select {
   min-width: 96px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 /* --- Track LFO (Track Editor) --- */

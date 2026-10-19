@@ -19,7 +19,8 @@
 // is only re-sent when it differs). A user edit therefore wins until automation's next poll.
 import { EffectKind, NodeParam, type AudioRuntime, type BusId, type EffectId } from "webdsp";
 import { FX_DEFS } from "../model/fx";
-import type { FxId, FxInstance, FxType } from "../model/types";
+import type { FxId, FxInstance, FxType, TrackLfo } from "../model/types";
+import { syncLfoSlots } from "./lfoSync";
 
 export const FX_KIND: Record<FxType, EffectKind> = {
   filter: EffectKind.Filter,
@@ -30,6 +31,7 @@ export const FX_KIND: Record<FxType, EffectKind> = {
   saturation: EffectKind.Saturation,
   phaser: EffectKind.Phaser,
   bitcrusher: EffectKind.Bitcrusher,
+  utility: EffectKind.Utility,
 };
 
 /** FX param id (model/fx.ts FX_DEFS) -> the engine's NodeParam. */
@@ -73,6 +75,7 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
     mix: NodeParam.PhaserMix,
   },
   bitcrusher: { bits: NodeParam.CrushBits, downsample: NodeParam.CrushDownsample, mix: NodeParam.CrushMix },
+  utility: { gain: NodeParam.UtilityGain },
 };
 
 interface LiveEffect {
@@ -83,6 +86,8 @@ interface LiveEffect {
   base: Map<string, number>;
   /** Value currently in the engine (sync or automation). */
   written: Map<string, number>;
+  /** Last LFO config pushed per slot ("" = empty), so unchanged slots are never resent. */
+  lfoSent: string[];
 }
 
 interface BusChain {
@@ -124,7 +129,7 @@ export class FxChainSync {
         } catch {
           return; // chain full — the model caps at the same limit, so this is a pasted/loaded overflow
         }
-        live = { engineId, type: instance.type, enabled: instance.enabled, base: new Map(), written: new Map() };
+        live = { engineId, type: instance.type, enabled: instance.enabled, base: new Map(), written: new Map(), lfoSent: [] };
         chain!.effects.set(instance.id, live);
         chain!.order.splice(index, 0, instance.id);
       } else if (chain!.order[index] !== instance.id) {
@@ -145,7 +150,26 @@ export class FxChainSync {
         live.written.set(def.id, value);
         this.runtime.setEffectParameter(busId, live.engineId, param, value);
       }
+      this.syncLfos(busId, live, instance.lfos ?? []);
     });
+  }
+
+  /** Pushes the instance's LFO stack (model TrackLfo -> webdsp setEffectLfo); see lfoSync.ts. The
+   * engine adds the LFOs on top of the parameter's base value, which stays whatever sync() or
+   * automation last wrote. */
+  private syncLfos(busId: BusId, live: LiveEffect, lfos: readonly TrackLfo[]): void {
+    const info = this.runtime.getModulationInfo?.();
+    if (!info) return;
+    const targets = new Map<string, number>();
+    for (const p of this.runtime.getEffectModulationTargets?.(FX_KIND[live.type]) ?? []) targets.set(p.name, p.id);
+    syncLfoSlots(
+      info,
+      lfos,
+      targets,
+      live.lfoSent,
+      (slot, lfo) => this.runtime.setEffectLfo(busId, live.engineId, slot, lfo),
+      (slot) => this.runtime.clearEffectLfo(busId, live.engineId, slot),
+    );
   }
 
   /** Writes one (automated) parameter value straight to the engine instance for `fxId`. A
@@ -183,6 +207,7 @@ export class FxChainSync {
       for (const live of chain.effects.values()) {
         live.base.clear();
         live.written.clear();
+        live.lfoSent = [];
       }
     }
   }

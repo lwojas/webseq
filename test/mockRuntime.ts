@@ -20,6 +20,12 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
 };
 // Which mock controls the engine reports as modulation targets (a stand-in for ModDomain tables).
 const MODULATABLE = new Set(["bass.tune", "bass.body", "bass.cutoff", "bass.resonance", "pulse.cutoff", "pulse.pump"]);
+/** EffectKind -> modulatable FX control names (EffectKind.Filter = 0 ... Utility = 8). */
+export const FX_PARAM_NAMES: Record<number, string[]> = {
+  0: ["cutoff", "resonance"],
+  2: ["feedback", "mix"],
+  8: ["gain"],
+};
 export const MODULATION_INFO = {
   maxLfos: 4,
   waveforms: ["sine", "triangle", "square", "saw"],
@@ -64,6 +70,9 @@ export function mockRuntime() {
     setSampleRegions: [] as [number, { start: number; end: number }[]][],
     setInstrumentLfo: [] as [number, number, Record<string, unknown>][],
     clearInstrumentLfo: [] as [number, number][],
+    setEffectLfo: [] as [number, number, number, Record<string, unknown>][],
+    clearEffectLfo: [] as [number, number, number][],
+    setSampleParameter: [] as [number, number, number][],
   };
   const runtime = {
     setNodeParameter: vi.fn(),
@@ -116,6 +125,14 @@ export function mockRuntime() {
     }),
     setInstrumentLfo: vi.fn((id: number, slot: number, lfo: Record<string, unknown>) => calls.setInstrumentLfo.push([id, slot, lfo])),
     clearInstrumentLfo: vi.fn((id: number, slot: number) => calls.clearInstrumentLfo.push([id, slot])),
+    // Stand-in for the engine's FX tables: every named control is a modulation target except the
+    // stepped ones (as in webdsp's fx_params.h), ids are positions.
+    getEffectModulationTargets: vi.fn((kind: number) =>
+      (FX_PARAM_NAMES[kind] ?? []).map((name, i) => ({ id: 100 + i, name, min: 0, max: 1, default: 0, unit: "", modulation: "linear" })),
+    ),
+    setEffectLfo: vi.fn((bus: number, id: number, slot: number, lfo: Record<string, unknown>) => calls.setEffectLfo.push([bus, id, slot, lfo])),
+    clearEffectLfo: vi.fn((bus: number, id: number, slot: number) => calls.clearEffectLfo.push([bus, id, slot])),
+    setSampleParameter: vi.fn((id: number, param: number, value: number) => calls.setSampleParameter.push([id, param, value])),
     createInstrument: vi.fn((kind: number, opts: { bus?: number } = {}) => {
       const id = nextInstrument++;
       calls.createInstrument.push({ kind, ...opts, id });

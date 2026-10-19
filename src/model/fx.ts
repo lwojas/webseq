@@ -15,7 +15,8 @@
 // delay with little feedback reads as chorus, a short delay with feedback dialed up reads as
 // flanger (see webdsp's docs/chorus-flanger-node.md).
 
-import type { FxId, FxInstance, FxTarget, FxType, Project, Track } from "./types";
+import { withLfoAdded, withLfoPatched, withLfoRemoved, MAX_TRACK_LFOS } from "./lfoStack";
+import type { FxId, FxInstance, FxTarget, FxType, Project, Track, TrackLfo } from "./types";
 import { fxOwner } from "./types";
 
 export interface FxParamDef {
@@ -144,6 +145,13 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
+  // A bare gain stage (webdsp Utility FX): the automatable per-track volume. Unity (0 dB) is
+  // neutral; the bottom of the range is silence. Deliberately one parameter.
+  utility: {
+    type: "utility",
+    label: "Utility",
+    params: [{ id: "gain", label: "Gain", min: -60, max: 12, step: 0.1, unit: "dB", default: 0 }],
+  },
 };
 
 /** webdsp's MAX_EFFECTS_PER_BUS — a chain can't hold more than this many instances. */
@@ -226,4 +234,28 @@ export function moveFx(project: Project, target: FxTarget, fxId: FxId, index: nu
     next.splice(to, 0, moved);
     return { ...owner, fx: next };
   });
+}
+
+// --- LFO stack (shared with synths: lfoStack.ts; webdsp docs/modulation.md) ---
+
+function updateFx(project: Project, target: FxTarget, fxId: FxId, update: (f: FxInstance) => FxInstance): Project {
+  return updateOwner(project, target, (owner) => ({ ...owner, fx: owner.fx.map((f) => (f.id === fxId ? update(f) : f)) }));
+}
+
+function withFxLfos(f: FxInstance, lfos: TrackLfo[]): FxInstance {
+  const { lfos: _drop, ...rest } = f;
+  return lfos.length ? { ...rest, lfos } : rest;
+}
+
+/** Adds an LFO (up to MAX_TRACK_LFOS) aimed at FX parameter `param`. */
+export function addFxLfo(project: Project, target: FxTarget, fxId: FxId, param: string): Project {
+  return updateFx(project, target, fxId, (f) => ((f.lfos?.length ?? 0) >= MAX_TRACK_LFOS ? f : withFxLfos(f, withLfoAdded(f.lfos, param))));
+}
+
+export function setFxLfo(project: Project, target: FxTarget, fxId: FxId, index: number, patch: Partial<TrackLfo>): Project {
+  return updateFx(project, target, fxId, (f) => (f.lfos?.[index] ? withFxLfos(f, withLfoPatched(f.lfos, index, patch)) : f));
+}
+
+export function removeFxLfo(project: Project, target: FxTarget, fxId: FxId, index: number): Project {
+  return updateFx(project, target, fxId, (f) => (f.lfos?.[index] ? withFxLfos(f, withLfoRemoved(f.lfos, index)) : f));
 }

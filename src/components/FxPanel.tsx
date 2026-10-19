@@ -1,11 +1,10 @@
 import { FX_DEFS } from "../model/fx";
-import type { AutomationLane as AutomationLaneModel, FxId, FxTarget, FxType, Track, TrackId } from "../model/types";
+import type { FxId, FxTarget, FxType, Track, TrackId, TrackLfo } from "../model/types";
 import { resolvedOutput } from "../model/types";
 import { canRouteTo } from "../model/project";
-import { findLane } from "../model/automation";
 import { FxChainStrip } from "./FxChainStrip";
 import { ModulePanel } from "./ModulePanel";
-import { AutomationLane } from "./AutomationLane";
+import { ModulationSlot, modulationBadges, type AutomationUi, type ModulationUi } from "./ModulationSlot";
 
 interface Props {
   target: FxTarget;
@@ -14,56 +13,50 @@ interface Props {
   tracks: Track[];
   onSetOutput: (trackId: TrackId, dest: TrackId | null) => void;
   fx: import("../model/types").FxInstance[];
-  automation: AutomationLaneModel[];
-  patternTotalBeats: number;
-  /** Current timeline zoom level, in pixels per beat — threaded through to AutomationLane so
-   * it stays pixel-aligned with the main grid (see timelineConstants.ts, ECS-53). */
-  pxPerBeat: number;
   selectedFxId: FxId | null;
-  selectedAutomationParamId: string | null;
   onSelectFx: (id: FxId) => void;
   onAddFx: (type: FxType) => void;
   onRemoveFx: (id: FxId) => void;
   onMoveFx: (id: FxId, index: number) => void;
   onSetFxParam: (fxId: FxId, paramId: string, value: number) => void;
   onSetFxEnabled: (fxId: FxId, enabled: boolean) => void;
-  onSelectAutomationParam: (paramId: string) => void;
-  onSetAutomationPoint: (fxId: FxId, parameter: string, position: number, value: number) => void;
-  onRemoveAutomationPoint: (fxId: FxId, parameter: string, position: number) => void;
-  onClearAutomationLane: (fxId: FxId, parameter: string) => void;
+  /** Automation for one FX of the chain (App binds the selected owner), or undefined. */
+  automationFor: (fxId: FxId) => AutomationUi | undefined;
+  /** The engine's LFO options for an FX type (null before the engine exists). */
+  lfoUiFor: (type: FxType) => ModulationUi | null;
+  onAddFxLfo: (fxId: FxId, param: string) => void;
+  onSetFxLfo: (fxId: FxId, index: number, patch: Partial<TrackLfo>) => void;
+  onRemoveFxLfo: (fxId: FxId, index: number) => void;
 }
 
 /** The bottom module panel, contextual to whatever is currently selected in the timeline — a
  * track or MASTER (see project brief section 12). Replaces the original prototype's single
- * hand-wired master-filter strip: FX chain, per-FX parameters, and that FX's automation are
- * all rendered generically from the model (model/fx.ts's FX_DEFS), so a third FX type needs
- * no new component here. */
+ * hand-wired master-filter strip: FX chain, per-FX parameters, and that FX's modulation
+ * (automation + LFOs, the same card the synth editor uses) are all rendered generically from the
+ * model (model/fx.ts's FX_DEFS), so a new FX type needs no new component here. */
 export function FxPanel({
   target,
   track,
   tracks,
   onSetOutput,
   fx,
-  automation,
-  patternTotalBeats,
-  pxPerBeat,
   selectedFxId,
-  selectedAutomationParamId,
   onSelectFx,
   onAddFx,
   onRemoveFx,
   onMoveFx,
   onSetFxParam,
   onSetFxEnabled,
-  onSelectAutomationParam,
-  onSetAutomationPoint,
-  onRemoveAutomationPoint,
-  onClearAutomationLane,
+  automationFor,
+  lfoUiFor,
+  onAddFxLfo,
+  onSetFxLfo,
+  onRemoveFxLfo,
 }: Props) {
   const selectedFx = fx.find((f) => f.id === selectedFxId) ?? null;
   const title = target === "master" ? "MASTER" : `${track?.name ?? target}`;
-  const paramDef = selectedFx ? FX_DEFS[selectedFx.type].params.find((p) => p.id === selectedAutomationParamId) : undefined;
-  const lane = selectedFx && selectedAutomationParamId ? findLane(automation, selectedFx.id, selectedAutomationParamId) : undefined;
+  const automation = selectedFx ? automationFor(selectedFx.id) : undefined;
+  const def = selectedFx ? FX_DEFS[selectedFx.type] : null;
 
   return (
     <div className="fx-panel">
@@ -71,26 +64,25 @@ export function FxPanel({
       {track && <RoutingRow track={track} tracks={tracks} onSetOutput={onSetOutput} />}
       <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} onMoveFx={onMoveFx} />
 
-      {selectedFx && (
+      {selectedFx && def && (
         <div className="fx-panel-detail">
           <ModulePanel
             fx={selectedFx}
             onSetParam={(paramId, value) => onSetFxParam(selectedFx.id, paramId, value)}
             onSetEnabled={(enabled) => onSetFxEnabled(selectedFx.id, enabled)}
-            automatedParamId={selectedAutomationParamId}
-            onSelectAutomatedParam={onSelectAutomationParam}
-          />
-          {paramDef && (
-            <AutomationLane
-              lane={lane}
-              paramDef={paramDef}
-              totalBeats={patternTotalBeats}
-              pxPerBeat={pxPerBeat}
-              onSetPoint={(position, value) => onSetAutomationPoint(selectedFx.id, paramDef.id, position, value)}
-              onRemovePoint={(position) => onRemoveAutomationPoint(selectedFx.id, paramDef.id, position)}
-              onClear={() => onClearAutomationLane(selectedFx.id, paramDef.id)}
+            badges={modulationBadges(automation?.lanes ?? [], selectedFx.lfos ?? [])}
+            onAutomateParam={(paramId) => automation?.onAdd(paramId)}
+          >
+            <ModulationSlot
+              lfos={selectedFx.lfos ?? []}
+              ui={lfoUiFor(selectedFx.type)}
+              labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
+              onAdd={(param) => onAddFxLfo(selectedFx.id, param)}
+              onChange={(index, patch) => onSetFxLfo(selectedFx.id, index, patch)}
+              onRemove={(index) => onRemoveFxLfo(selectedFx.id, index)}
+              automation={automation}
             />
-          )}
+          </ModulePanel>
         </div>
       )}
       {fx.length === 0 && (

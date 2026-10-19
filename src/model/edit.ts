@@ -114,13 +114,14 @@ export interface FxClip {
 export function copyFx(track: Track): FxClip {
   return {
     fx: track.fx.map((f) => ({ ...f, params: { ...f.params } })),
-    automation: track.automation.map((a) => ({ ...a, events: a.events.map((e) => ({ ...e })) })),
+    // Only FX lanes: a source lane (no fxId) belongs to the track's instrument/sample, not the chain.
+    automation: track.automation.filter((a) => a.fxId != null).map((a) => ({ ...a, events: a.events.map((e) => ({ ...e })) })),
   };
 }
 
 export function pasteFx(project: Project, trackId: TrackId, clip: FxClip): Project {
   const { fx, automation } = cloneFxChain(clip.fx, clip.automation);
-  return updateTrack(project, trackId, (t) => ({ ...t, fx, automation }));
+  return updateTrack(project, trackId, (t) => ({ ...t, fx, automation: [...t.automation.filter((a) => a.fxId == null), ...automation] }));
 }
 
 // --- Modulation: the synth's LFO slots and the track's event LFO.

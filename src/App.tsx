@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { AudioRuntime } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
 import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import { useAutomationEditing } from "./app/useAutomationEditing";
+import { FX_KIND } from "./audio/fxChain";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
@@ -71,14 +73,12 @@ export function App() {
   const [mainView, setMainView] = useState<MainView>("sequencer");
   const [selectedTarget, setSelectedTarget] = useState<FxTarget>("master");
   const [selectedFxId, setSelectedFxId] = useState<FxId | null>(null);
-  const [selectedAutomationParamId, setSelectedAutomationParamId] = useState<string | null>(null);
   // Declared here, ahead of its original call site further down, because useMidiControls (ECS-155) now
   // needs it too -- a device's contextual selection buttons and Master/clear button select through the
   // same function a track row's click already does, never a separate setSelectedTarget call of their own.
   const handleSelectTarget = useCallback((target: FxTarget) => {
     setSelectedTarget(target);
     setSelectedFxId(null);
-    setSelectedAutomationParamId(null);
   }, []);
   const [selectedNoteId, setSelectedNoteId] = useState<NoteId | null>(null);
   // Which bank of 16 tracks the sequencer shows (ECS-84). View state only, not saved with the project.
@@ -162,7 +162,6 @@ export function App() {
     const fx = owner?.fx ?? [];
     if (selectedFxId && !fx.some((f) => f.id === selectedFxId)) {
       setSelectedFxId(null);
-      setSelectedAutomationParamId(null);
     }
   }, [project, selectedTarget, selectedFxId]);
 
@@ -619,18 +618,16 @@ export function App() {
     (fxId: FxId, enabled: boolean) => dispatch({ type: "SET_FX_ENABLED", target: selectedTarget, fxId, enabled }),
     [selectedTarget],
   );
-  const handleSetAutomationPoint = useCallback(
-    (fxId: FxId, parameter: string, position: number, value: number) =>
-      dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, value }),
+  const handleAddFxLfo = useCallback(
+    (fxId: FxId, param: string) => dispatch({ type: "ADD_FX_LFO", target: selectedTarget, fxId, param }),
     [selectedTarget],
   );
-  const handleRemoveAutomationPoint = useCallback(
-    (fxId: FxId, parameter: string, position: number) =>
-      dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position }),
+  const handleSetFxLfo = useCallback(
+    (fxId: FxId, index: number, patch: Partial<TrackLfo>) => dispatch({ type: "SET_FX_LFO", target: selectedTarget, fxId, index, patch }),
     [selectedTarget],
   );
-  const handleClearAutomationLane = useCallback(
-    (fxId: FxId, parameter: string) => dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter }),
+  const handleRemoveFxLfo = useCallback(
+    (fxId: FxId, index: number) => dispatch({ type: "REMOVE_FX_LFO", target: selectedTarget, fxId, index }),
     [selectedTarget],
   );
 
@@ -887,6 +884,31 @@ export function App() {
   // What is showing where is decided by deriveLayout (and rendered by Chrome / Workspace); App only
   // owns the state and the behaviour.
   const derived = deriveLayout(layout, { mobileTab, mainView, takeover, bottomPanelView, trackSubTab, libraryView });
+  // Automation (a base-value curve) and the engine's LFO bank are two kinds of modulation source;
+  // both are edited through the same card. The focused lane is drawn as a row of the timeline.
+  const { automationFor, row: automationRow } = useAutomationEditing({
+    project,
+    dispatch,
+    selectedTarget,
+    pattern: selectedPattern,
+    pxPerBeat,
+    timelineVisible: derived.timelineVisible,
+  });
+  // The engine's LFO options for an FX type (its own modulation targets plus the shared waveform /
+  // division lists), like modulationUi below does for a synth.
+  const fxLfoUi = useCallback(
+    (type: FxType): ModulationUi | null => {
+      if (!runtime?.getModulationInfo || !runtime.getEffectModulationTargets) return null;
+      const info = runtime.getModulationInfo();
+      return {
+        maxLfos: info.maxLfos,
+        waveforms: info.waveforms,
+        divisions: info.divisions.map((d) => d.name),
+        targets: runtime.getEffectModulationTargets(FX_KIND[type]).map((p) => p.name),
+      };
+    },
+    [runtime],
+  );
   const handleSelectDockView = (view: BottomPanelView) => {
     if (layout.isPhone) setTrackSubTab(view as TrackSubTab);
     else setBottomPanelView(view);
@@ -964,6 +986,7 @@ export function App() {
     onSetLfo: handleSetLfo,
     onRemoveLfo: handleRemoveLfo,
     onSetEnvelope: handleSetEnvelope,
+    automation: automationFor(null),
     onSetPlaybackMode: handleSetTrackPlaybackMode,
     onSetVoiceMode: handleSetTrackVoiceMode,
     onSetSampleMode: handleSetSampleMode,
@@ -1083,6 +1106,7 @@ export function App() {
           onTriggerTrack: handleTriggerTrack,
           getPlayheadBeat,
           pxPerBeat,
+          automationRow,
           active: derived.timelineVisible,
           bankPlacement: layout.isPhone ? "row" : "corner",
         }}
@@ -1112,24 +1136,18 @@ export function App() {
             tracks: project.tracks,
             onSetOutput: handleSetTrackOutput,
             fx: fxOwner?.fx ?? [],
-            automation: fxOwner?.automation ?? [],
-            patternTotalBeats: totalBeats(selectedPattern, project.beatsPerBar),
-            pxPerBeat,
             selectedFxId,
-            selectedAutomationParamId,
-            onSelectFx: (id) => {
-              setSelectedFxId(id);
-              setSelectedAutomationParamId(null);
-            },
+            onSelectFx: setSelectedFxId,
             onAddFx: handleAddFx,
             onRemoveFx: handleRemoveFx,
             onMoveFx: handleMoveFx,
             onSetFxParam: handleSetFxParam,
             onSetFxEnabled: handleSetFxEnabled,
-            onSelectAutomationParam: setSelectedAutomationParamId,
-            onSetAutomationPoint: handleSetAutomationPoint,
-            onRemoveAutomationPoint: handleRemoveAutomationPoint,
-            onClearAutomationLane: handleClearAutomationLane,
+            automationFor: (fxId: FxId) => automationFor(fxId),
+            lfoUiFor: fxLfoUi,
+            onAddFxLfo: handleAddFxLfo,
+            onSetFxLfo: handleSetFxLfo,
+            onRemoveFxLfo: handleRemoveFxLfo,
           },
           instrument: instrumentProps,
           editor: {

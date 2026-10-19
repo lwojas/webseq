@@ -47,11 +47,12 @@ export function cloneFxChain(
   const newFx = fx.map((f) => {
     const id = nextId("fx");
     idMap.set(f.id, id);
-    return { ...f, id, params: { ...f.params } };
+    return { ...f, id, params: { ...f.params }, ...(f.lfos ? { lfos: f.lfos.map((l) => ({ ...l })) } : {}) };
   });
+  // Lanes with no fxId automate the track's source, not an FX, so they carry over unchanged.
   const newAutomation = automation
-    .filter((lane) => idMap.has(lane.fxId))
-    .map((lane) => ({ ...lane, fxId: idMap.get(lane.fxId)!, events: lane.events.map((e) => ({ ...e })) }));
+    .filter((lane) => lane.fxId == null || idMap.has(lane.fxId))
+    .map((lane) => ({ ...lane, ...(lane.fxId != null ? { fxId: idMap.get(lane.fxId)! } : {}), events: lane.events.map((e) => ({ ...e })) }));
   return { fx: newFx, automation: newAutomation };
 }
 

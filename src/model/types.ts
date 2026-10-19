@@ -171,7 +171,7 @@ export interface MasterBus {
   automation: AutomationLane[];
 }
 
-export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compressor" | "saturation" | "phaser" | "bitcrusher";
+export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compressor" | "saturation" | "phaser" | "bitcrusher" | "utility";
 
 /** One FX in a track's or master's ordered chain. `params` is a flat, generic key->value map
  * (see fx.ts's FX_DEFS for what keys each `type` defines and their defaults/ranges) rather
@@ -184,6 +184,10 @@ export interface FxInstance {
   type: FxType;
   enabled: boolean;
   params: Record<string, number>;
+  /** LFO modulation stack (webdsp's engine LFO bank, same as a synth's): each LFO moves one of
+   * this FX's parameters on top of its base value (`params`, or its automation lane). Absent /
+   * empty = none. Targets are FX_DEFS param ids that the engine reports as modulatable. */
+  lfos?: TrackLfo[];
 }
 
 /** One point in an automation lane: at `position` (beats, pattern-local — always musical
@@ -194,8 +198,9 @@ export interface AutomationEvent {
   value: number;
 }
 
-/** Automation for exactly one parameter of exactly one FX instance, e.g. "track 2's filter
- * cutoff over the pattern". Deliberately simple: a sparse, sorted list of (position, value)
+/** Automation for exactly one parameter: of one FX instance (`fxId` set), or, when `fxId` is
+ * absent, of the track's source (its synth's control or its sample's envelope/pitch; model/
+ * modulation.ts lists them). E.g. "track 2's filter cutoff over the pattern". Deliberately simple: a sparse, sorted list of (position, value)
  * points with LINEAR interpolation between consecutive points (see automation.ts's
  * valueAtBeat) — no Bezier curves, no envelopes. Before the first point, the lane holds that
  * first point's value; from the last point onward (including when a pattern loops past a
@@ -205,8 +210,8 @@ export interface AutomationEvent {
  * `params` untouched, since a lane only ever *overrides* the current value while at least one
  * event exists at or before the playhead. */
 export interface AutomationLane {
-  fxId: FxId;
-  /** One of the target FX's `params` keys (see FX_DEFS in fx.ts). */
+  fxId?: FxId;
+  /** One of the target FX's `params` keys (FX_DEFS in fx.ts), or a source control id. */
   parameter: string;
   /** Sorted ascending by `position`. */
   events: AutomationEvent[];
