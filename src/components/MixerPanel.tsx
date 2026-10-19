@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { METER_LED_DB, type AudioRuntime, type BusId } from "webdsp";
 import { useMixerMeters } from "../audio/useMixerMeters";
 import { MAX_TRACK_VOLUME, MIN_TRACK_VOLUME } from "../model/project";
@@ -21,6 +21,10 @@ interface Props {
   getBusId: (target: FxTarget) => BusId | undefined;
 }
 
+// Master limiter on/off. Module-level so it survives the panel unmounting (tab switches) and
+// matches the engine, which keeps whatever was last sent; it starts on, like the engine's default.
+let masterLimiterOn = true;
+
 function panLabel(pan: number): string {
   if (Math.abs(pan) < 0.005) return "C";
   return `${pan < 0 ? "L" : "R"}${Math.round(Math.abs(pan) * 100)}`;
@@ -40,6 +44,11 @@ function panLabel(pan: number): string {
 export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted, onSetSoloed, onSetPan, runtime, getBusId }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   useMixerMeters(runtime, rootRef, getBusId, tracks);
+  const [limiterOn, setLimiterOn] = useState(masterLimiterOn);
+  useEffect(() => {
+    masterLimiterOn = limiterOn;
+    runtime?.setMasterLimiter({ enabled: limiterOn });
+  }, [runtime, limiterOn]);
   return (
     <div className="mixer-panel" ref={rootRef}>
       {tracks.map((track, i) => (
@@ -107,7 +116,14 @@ export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted,
             <span key={db} className="mixer-led" data-meter-led title={`${db} dBFS`} style={{ order: METER_LED_DB.length - i }} />
           ))}
         </div>
-        <span className="mixer-strip-value">Limiter</span>
+        <button
+          className={`btn small mixer-limiter ${limiterOn ? "active" : ""}`}
+          onClick={() => setLimiterOn(!limiterOn)}
+          aria-pressed={limiterOn}
+          title={limiterOn ? "Master limiter on (click to turn off)" : "Master limiter off (click to turn on)"}
+        >
+          Limiter
+        </button>
       </div>
     </div>
   );

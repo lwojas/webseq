@@ -2152,6 +2152,12 @@ select {
   color: var(--danger);
 }
 
+.mixer-limiter.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .mixer-meter {
   flex: 1;
   min-height: 0;
