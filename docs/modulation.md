@@ -29,17 +29,28 @@ bank, so they take automation only. Changing a track's source drops source lanes
 
 ## Playback (`audio/automation.ts`)
 
-Polled with the transport tick (~25 ms), against the beat within the sounding chain step. Each lane
-value is written through the owner's writer, which dedupes against the engine:
+Lanes are **scheduled on the audio clock** with webdsp's `scheduleParams` (webdsp
+`docs/scheduled-params.md`): each transport tick schedules the lane events whose time falls in the
+next lookahead window, against the step iterations the transport has compiled (lane positions are
+beats from the start of the sounding chain step, so every pattern instance replays the lane from its
+start). A lane becomes events (`laneEvents`, pure): a step to the first value at the step start if the
+first point is later, one **linear ramp per segment** (`from` the segment's start value, `ramp` its
+length; a step when the two values are equal), and a closing step on the last point. Targets:
 
-* FX → `FxChainSync.setParam` (`setEffectParameter`); bypassed FX are skipped.
-* synth → `InstrumentHost.setParam` (`setInstrumentParameter`; the engine treats it as the base while an LFO targets it).
-* sample envelope → `setSampleParameter`; sample pitch → read in `compileNote`.
+* FX → `FxChainSync.target` (effect + NodeParam); synth → `InstrumentHost.target` (instrument + control id);
+  sample envelope → `{ sample }` + the asset's `SampleParam`; sample pitch is read in `compileNote`.
 
-`sync()` tracks the last project value separately from the last written value, so a project edit
-during playback never knocks an automated value back. Stopping restores every automated parameter
-to its project value (`restoreAutomation`). LFOs are pushed by `audio/lfoSync.ts` (shared by
-instruments and FX): names resolved against the engine's tables, unchanged slots not resent.
+Events apply at the start of the 128-frame block containing their time (about 2.7 ms), before that
+block's notes, and write the **base**: the engine's LFOs ride on top, and project values in the model
+never change. Only the next ~150 ms is ever queued, so **a lane edited while playing takes effect almost
+at once**: the edited lane (detected by object identity) is also *refreshed* at the moment of the change,
+as a step or the rest of the active ramp from the lane's value at that beat, which replaces a ramp the old
+data had running. A user edit of the parameter's own control while a lane drives it wins only until the
+lane's next event. `sync()` tracks the last project value separately from the last scheduled value, so a
+project edit during playback never knocks an automated value back. Stopping cancels what is queued and
+restores every automated parameter to its project value (`restoreAutomation`; the direct writes also end
+any ramp still running). A lane that is deleted while playing simply stops being scheduled (the parameter
+stays where it was until stop). LFOs are pushed by `audio/lfoSync.ts` (shared by instruments and FX).
 
 ## Utility FX
 
@@ -76,11 +87,11 @@ their cycle count with the region's bars.
 ## Contract with webdsp
 
 Needs webdsp with `EffectKind.Utility`, `NodeParam.UtilityGain`, `getEffectModulationTargets`,
-`setEffectLfo` / `clearEffectLfo` and `RuntimeCapabilities.effects`. No webseq concept exists in
-webdsp; webtracker can adopt the same pieces (`audio/lfoSync.ts`, the base-write + engine-LFO split).
+`setEffectLfo` / `clearEffectLfo`, `RuntimeCapabilities.effects` and `scheduleParams`. No webseq concept exists in
+webdsp; webtracker has adopted the same pieces (`audio/lfoSync.ts`, the base-write + engine-LFO split).
 
 ## Known limits
 
-Automation is polled (not sample-accurate); an LFO shape is not shared with the Track LFO (velocity is
+Automation is block-granular (about 2.7 ms; webdsp's optional phase 2 would make instrument per-note parameters exact); an LFO shape is not shared with the Track LFO (velocity is
 event-time); sample tracks have no LFOs; sample envelope automation is per asset; Delay time cannot
 take an LFO.

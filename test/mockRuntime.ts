@@ -73,6 +73,7 @@ export function mockRuntime() {
     setEffectLfo: [] as [number, number, number, Record<string, unknown>][],
     clearEffectLfo: [] as [number, number, number][],
     setSampleParameter: [] as [number, number, number][],
+    scheduleParams: [] as Record<string, unknown>[][],
   };
   const runtime = {
     setNodeParameter: vi.fn(),
@@ -132,6 +133,7 @@ export function mockRuntime() {
     ),
     setEffectLfo: vi.fn((bus: number, id: number, slot: number, lfo: Record<string, unknown>) => calls.setEffectLfo.push([bus, id, slot, lfo])),
     clearEffectLfo: vi.fn((bus: number, id: number, slot: number) => calls.clearEffectLfo.push([bus, id, slot])),
+    scheduleParams: vi.fn((events: Record<string, unknown>[]) => calls.scheduleParams.push(events)),
     setSampleParameter: vi.fn((id: number, param: number, value: number) => calls.setSampleParameter.push([id, param, value])),
     createInstrument: vi.fn((kind: number, opts: { bus?: number } = {}) => {
       const id = nextInstrument++;

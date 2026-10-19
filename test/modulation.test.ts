@@ -2,7 +2,7 @@
 // the Utility FX, and automation templates. Engine-facing parts run against the recording mock.
 import { describe, expect, it } from "vitest";
 import { EffectKind, NodeParam, SampleParam } from "webdsp";
-import { applyAutomation, restoreAutomation } from "../src/audio/automation";
+import { laneEvents, laneStateAt, restoreAutomation, scheduleAutomation, startAutomation } from "../src/audio/automation";
 import { syncBuses } from "../src/audio/busSync";
 import { compileNote } from "../src/audio/compile";
 import { addFx, addFxLfo, FX_DEFS, removeFxLfo, setFxLfo, setFxParam } from "../src/model/fx";
@@ -13,7 +13,7 @@ import { fxParamDefs, laneParamDef, normalizedToValue, scaleFor, sourceParamDefs
 import { projectReducer } from "../src/model/reducer";
 import { addAsset, assignAsset, createInitialProject } from "../src/model/project";
 import { cloneFxChain } from "../src/model/trackConfig";
-import type { Asset, Note, Project } from "../src/model/types";
+import type { Asset, AutomationLane, Note, Project } from "../src/model/types";
 import { mockRuntime } from "./mockRuntime";
 
 const last = <T,>(a: readonly T[]): T => a[a.length - 1];
@@ -163,31 +163,34 @@ describe("automation targets any parameter", () => {
   });
 });
 
-describe("applying automation to the engine", () => {
-  it("synth: writes the base value, dedupes, and LFOs on the same control coexist", () => {
-    const { runtime, calls } = mockRuntime();
-    let p = setTrackInstrument(createInitialProject(), "track-1", "bass");
-    p = addInstrumentLfo(p, "track-1", "cutoff");
-    p = setAutomationPoint(p, "track-1", null, "cutoff", 0, 100);
-    p = setAutomationPoint(p, "track-1", null, "cutoff", 8, 300);
-    syncBuses(runtime, p, buses);
-    expect(calls.setInstrumentLfo).toHaveLength(1); // the LFO, targeting cutoff (id 3)
-    expect(calls.setInstrumentLfo[0][2]).toMatchObject({ target: 3 });
-    calls.setInstrumentParameter.length = 0;
+describe("lane events (pure)", () => {
+  const lane = (...pts: [number, number][]): AutomationLane => ({ parameter: "x", events: pts.map(([position, value]) => ({ position, value })) });
 
-    applyAutomation(runtime, p, getBusId, 4);
-    expect(calls.setInstrumentParameter).toEqual([[1, 3, 200]]);
-    applyAutomation(runtime, p, getBusId, 4);
-    expect(calls.setInstrumentParameter).toHaveLength(1); // unchanged -> not resent
-    // A project edit mid-playback must not knock the automated value back to the model value.
-    syncBuses(runtime, p, buses);
-    expect(calls.setInstrumentParameter).toHaveLength(1);
-
-    restoreAutomation(runtime, p);
-    expect(last(calls.setInstrumentParameter)).toEqual([1, 3, p.tracks[0].instrument!.params.cutoff]);
+  it("holds before the first point, ramps each segment, holds after the last", () => {
+    expect(laneEvents(lane([4, 1], [8, 3]))).toEqual([
+      { pos: 0, value: 1 },
+      { pos: 4, from: 1, value: 3, rampBeats: 4 },
+      { pos: 8, value: 3 },
+    ]);
+    expect(laneEvents(lane([0, 1], [4, 1]))).toEqual([{ pos: 0, value: 1 }, { pos: 4, value: 1 }]); // equal values: steps, no ramp
+    expect(laneEvents(lane([0, 5]))).toEqual([{ pos: 0, value: 5 }]);
+    expect(laneEvents(lane())).toEqual([]);
   });
 
-  it("FX: automation sets the base while the FX's LFOs stay attached; bypassed FX is skipped", () => {
+  it("describes where a lane is at a beat: the value, and the rest of the ramp it is in", () => {
+    const l = lane([0, 0], [8, 8], [12, 8]);
+    expect(laneStateAt(l, 2)).toEqual({ pos: 2, from: 2, value: 8, rampBeats: 6 });
+    expect(laneStateAt(l, 10)).toEqual({ pos: 10, value: 8 }); // flat segment
+    expect(laneStateAt(l, 99)).toEqual({ pos: 99, value: 8 }); // after the last point
+    expect(laneStateAt(lane(), 1)).toBeNull();
+  });
+});
+
+describe("scheduling automation on the audio clock", () => {
+  const SPB = 0.5; // 120 BPM
+  const win = (start: number, beats = 16) => ({ startTime: start, endTime: start + beats * SPB });
+
+  it("FX: a segment is one ramp from its start value, LFOs stay attached, and a later window adds the closing step", () => {
     const { runtime, calls } = mockRuntime();
     let p = addFx(createInitialProject(), "master", "delay");
     const id = p.master.fx[0].id;
@@ -195,36 +198,107 @@ describe("applying automation to the engine", () => {
     p = setAutomationPoint(p, "master", id, "mix", 0, 0.2);
     p = setAutomationPoint(p, "master", id, "mix", 4, 0.6);
     syncBuses(runtime, p, buses);
-    calls.setEffectParameter.length = 0;
-    applyAutomation(runtime, p, getBusId, 2);
-    expect(calls.setEffectParameter).toEqual([[0, calls.addEffect[0].id, NodeParam.DelayMix, 0.4]]);
+    const effect = calls.addEffect[0].id;
+    startAutomation(runtime, 10);
+
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 9.95, 10.1);
+    expect(calls.scheduleParams).toEqual([[{ time: 10, target: { effect: { bus: 0, effect } }, param: NodeParam.DelayMix, value: 0.6, from: 0.2, ramp: 2 }]]);
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 10.05, 10.1);
+    expect(calls.scheduleParams).toHaveLength(1); // the same window is never scheduled twice
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 11.9, 12.1);
+    expect(calls.scheduleParams[1]).toEqual([{ time: 12, target: { effect: { bus: 0, effect } }, param: NodeParam.DelayMix, value: 0.6 }]);
     expect(calls.setEffectLfo).toHaveLength(1);
     expect(calls.clearEffectLfo).toHaveLength(0);
+    expect(calls.setEffectParameter.some((c) => c[3] === 0.6)).toBe(false); // automation never writes directly any more
   });
 
-  it("Utility gain automation (track volume) drives UtilityGain", () => {
+  it("replays the lane from its start in every step iteration", () => {
     const { runtime, calls } = mockRuntime();
     let p = addFx(createInitialProject(), "track-3", "utility");
     const id = p.tracks[2].fx[0].id;
     p = setAutomationPoint(p, "track-3", id, "gain", 0, 0);
     p = setAutomationPoint(p, "track-3", id, "gain", 8, -60);
     syncBuses(runtime, p, buses);
-    calls.setEffectParameter.length = 0;
-    applyAutomation(runtime, p, getBusId, 4);
-    expect(calls.setEffectParameter).toEqual([[3, calls.addEffect[0].id, NodeParam.UtilityGain, -30]]);
+    startAutomation(runtime, 10);
+    scheduleAutomation(runtime, p, getBusId, [win(10, 8), win(14, 8)], SPB, 9.95, 14.1);
+    const times = calls.scheduleParams.flat().map((e) => e.time);
+    expect(times).toEqual([10, 14]); // iteration 2 starts again from its own start
+    expect(calls.scheduleParams[0][0]).toMatchObject({ param: NodeParam.UtilityGain, from: 0, value: -60, ramp: 4, target: { effect: { bus: 3 } } });
   });
 
-  it("sample: envelope lanes write the asset's SampleParams and stopping restores its envelope", () => {
+  it("an edited lane is refreshed at once from the current position, replacing a ramp already running", () => {
+    const { runtime, calls } = mockRuntime();
+    let p = addFx(createInitialProject(), "track-1", "utility");
+    const id = p.tracks[0].fx[0].id;
+    p = setAutomationPoint(p, "track-1", id, "gain", 0, 0);
+    p = setAutomationPoint(p, "track-1", id, "gain", 8, -40);
+    syncBuses(runtime, p, buses);
+    startAutomation(runtime, 10);
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 9.95, 10.1);
+    calls.scheduleParams.length = 0;
+
+    // The user moves the end point 1 s (2 beats) in: the lane (new data) says -20 dB there, ramping on to -80.
+    p = setAutomationPoint(p, "track-1", id, "gain", 8, -80);
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 11, 11.1);
+    const [refresh] = calls.scheduleParams[0];
+    expect(refresh).toMatchObject({ time: 11, from: -20, value: -80, ramp: 3 });
+    // An unedited lane is not refreshed again.
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 11.05, 11.2);
+    expect(calls.scheduleParams).toHaveLength(1);
+  });
+
+  it("synth: schedules against the live instrument's control, LFOs coexist, stopping restores the project value", () => {
+    const { runtime, calls } = mockRuntime();
+    let p = setTrackInstrument(createInitialProject(), "track-1", "bass");
+    p = addInstrumentLfo(p, "track-1", "cutoff");
+    p = setAutomationPoint(p, "track-1", null, "cutoff", 0, 100);
+    p = setAutomationPoint(p, "track-1", null, "cutoff", 8, 300);
+    syncBuses(runtime, p, buses);
+    expect(calls.setInstrumentLfo[0][2]).toMatchObject({ target: 3 }); // the LFO, on cutoff (id 3)
+    startAutomation(runtime, 10);
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 9.95, 10.1);
+    expect(calls.scheduleParams[0]).toEqual([{ time: 10, target: { instrument: 1 }, param: 3, value: 300, from: 100, ramp: 4 }]);
+    calls.setInstrumentParameter.length = 0;
+    syncBuses(runtime, p, buses); // a project edit mid-playback must not knock the automated value back
+    expect(calls.setInstrumentParameter).toHaveLength(0);
+
+    restoreAutomation(runtime, p);
+    expect(last(calls.setInstrumentParameter)).toEqual([1, 3, p.tracks[0].instrument!.params.cutoff]);
+  });
+
+  it("sample: envelope lanes target the asset's SampleParam, and stopping restores its envelope", () => {
     const { runtime, calls } = mockRuntime();
     let p = assignAsset(addAsset(createInitialProject(), sampleAsset(7)), "track-1", 7);
     p = setAutomationPoint(p, "track-1", null, "release", 0, 0.1);
     p = setAutomationPoint(p, "track-1", null, "release", 8, 0.5);
-    applyAutomation(runtime, p, getBusId, 4);
-    expect(calls.setSampleParameter).toEqual([[7, SampleParam.EnvRelease, expect.closeTo(0.3, 6)]]);
-    applyAutomation(runtime, p, getBusId, 4);
-    expect(calls.setSampleParameter).toHaveLength(1);
+    startAutomation(runtime, 10);
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 9.95, 10.1);
+    expect(calls.scheduleParams[0]).toEqual([{ time: 10, target: { sample: 7 }, param: SampleParam.EnvRelease, value: 0.5, from: 0.1, ramp: 4 }]);
     restoreAutomation(runtime, p);
     expect(last(calls.setSampleEnvelope)![0]).toBe(7);
+  });
+
+  it("stopping restores an FX parameter that was only ever scheduled, not written directly", () => {
+    const { runtime, calls } = mockRuntime();
+    let p = addFx(createInitialProject(), "track-1", "utility");
+    const id = p.tracks[0].fx[0].id;
+    p = setFxParam(p, "track-1", id, "gain", -3);
+    p = setAutomationPoint(p, "track-1", id, "gain", 0, 0);
+    syncBuses(runtime, p, buses);
+    startAutomation(runtime, 10);
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 9.95, 10.1);
+    calls.setEffectParameter.length = 0;
+    restoreAutomation(runtime, p);
+    expect(calls.setEffectParameter).toEqual([[1, calls.addEffect[0].id, NodeParam.UtilityGain, -3]]);
+  });
+
+  it("does nothing for lanes whose target is not live yet", () => {
+    const { runtime, calls } = mockRuntime();
+    let p = addFx(createInitialProject(), "track-1", "utility");
+    p = setAutomationPoint(p, "track-1", p.tracks[0].fx[0].id, "gain", 0, 0);
+    startAutomation(runtime, 10); // no syncBuses: no engine effect exists
+    scheduleAutomation(runtime, p, getBusId, [win(10)], SPB, 9.95, 10.1);
+    expect(calls.scheduleParams).toHaveLength(0);
   });
 
   it("sample pitch lane transposes each note by the lane's value at its position", () => {

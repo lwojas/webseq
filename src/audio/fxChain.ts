@@ -13,10 +13,11 @@
 // Bypass uses the engine's own setEffectEnabled (a bit-exact skip that also clears the
 // effect's tail), so no per-kind "transparent value" approximations are needed any more.
 //
-// Automation (Transport.pollAutomation) writes through setParam instead of sync. The two keep
-// separate bookkeeping: `base` is the last project value sync pushed (so sync only reacts to a
-// *user edit*), `written` is whatever is currently in the engine (so a polled automation value
-// is only re-sent when it differs). A user edit therefore wins until automation's next poll.
+// Automation (audio/automation.ts) is scheduled on the audio clock rather than written here: it asks
+// target() for the engine effect and parameter, and markWritten() records that it moved a parameter.
+// The two keep separate bookkeeping: `base` is the last project value sync pushed (so sync only reacts
+// to a *user edit*), `written` is whatever automation last told the engine (so restoreBase() knows
+// what to put back when playback halts). setParam() remains for direct writes.
 import { EffectKind, NodeParam, type AudioRuntime, type BusId, type EffectId } from "webdsp";
 import { FX_DEFS } from "../model/fx";
 import type { FxId, FxInstance, FxType, TrackLfo } from "../model/types";
@@ -181,6 +182,20 @@ export class FxChainSync {
     if (param === undefined || live.written.get(paramId) === value) return;
     live.written.set(paramId, value);
     this.runtime.setEffectParameter(busId, live.engineId, param, value);
+  }
+
+  /** The engine target of one parameter of one live FX instance, for scheduled parameter events
+   * (audio/automation.ts), or undefined if the instance or parameter is not live. */
+  target(busId: BusId, fxId: FxId, paramId: string): { effect: { bus: BusId; effect: EffectId }; param: NodeParam } | undefined {
+    const live = this.chains.get(busId)?.effects.get(fxId);
+    const param = live ? FX_NODE_PARAMS[live.type][paramId] : undefined;
+    return live && param !== undefined ? { effect: { bus: busId, effect: live.engineId }, param } : undefined;
+  }
+
+  /** Records that automation has been told to move `paramId` to `value` (scheduled, not written
+   * directly), so restoreBase() knows to put the project value back when playback halts. */
+  markWritten(busId: BusId, fxId: FxId, paramId: string, value: number): void {
+    this.chains.get(busId)?.effects.get(fxId)?.written.set(paramId, value);
   }
 
   /** Puts every parameter that automation moved away from its project value back to that value.

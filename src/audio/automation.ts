@@ -1,18 +1,28 @@
-// Applies automation lanes to the engine: the playback half of model/automation.ts. A lane is
-// one modulation source of one parameter; here its value at the playhead is written as that
-// parameter's BASE value, and webdsp's LFO bank (which owns the parameter's modulation stack)
-// adds any LFOs on top. The three owners a lane can address share this one path:
+// Applies automation lanes to the engine: the playback half of model/automation.ts. A lane is one
+// modulation source of one parameter; here it becomes webdsp scheduled parameter events (a step, or
+// a linear ramp per segment) on the audio clock, which write the parameter's BASE value. webdsp's
+// LFO bank, which owns the parameter's modulation stack, adds any LFOs on top. The owners a lane
+// can address share this one path:
 //
-//   FX parameter       -> FxChainSync.setParam       -> setEffectParameter
-//   synth control      -> InstrumentHost.setParam    -> setInstrumentParameter
-//   sample envelope    -> setSampleParameter (below; per asset)
+//   FX parameter       -> { effect: { bus, effect } }  via FxChainSync.target
+//   synth control      -> { instrument }               via InstrumentHost.target
+//   sample envelope    -> { sample }                   (per asset)
 //   sample pitch       -> read per note at schedule time (compile.ts), not here
 //
-// Polled by Transport at its ~25 ms tick, against the beat within the sounding chain step. Each
-// writer dedupes against what the engine already has, so an unchanged lane costs nothing.
-import { SampleParam, type AudioRuntime, type BusId } from "webdsp";
+// Scheduling is windowed, like notes but shorter: each transport tick schedules the lane events whose
+// time falls in the window up to now + lookahead, against the step windows Transport already
+// compiled (lane positions are beats from the start of the sounding chain step, so each step
+// iteration replays the lane from its start). Because only the next ~150 ms is ever queued, a lane
+// edited while playing takes effect almost at once: the edited lane is also *refreshed* at the
+// moment of the change (a step or the active ramp from the current value), which replaces a ramp the
+// old data had running. See webdsp docs/scheduled-params.md for the engine semantics (block-granular,
+// last writer per parameter wins, a direct write ends a ramp).
+//
+// A user edit of the parameter's own control (a slider) while a lane drives it wins only until the
+// lane's next event.
+import { SampleParam, type AudioRuntime, type BusId, type ScheduledParam } from "webdsp";
 import { valueAtBeat } from "../model/automation";
-import type { AutomationLane, FxInstance, FxTarget, Project, Track } from "../model/types";
+import type { AutomationLane, FxTarget, Project, Track } from "../model/types";
 import { DEFAULT_ENVELOPE } from "../model/types";
 import { fxChainsFor } from "./fxChain";
 import { instrumentHostFor } from "./instruments";
@@ -24,72 +34,209 @@ const ENVELOPE_PARAMS: Record<string, SampleParam> = {
   release: SampleParam.EnvRelease,
 };
 
-// Per runtime: the last automated value written for each sample-envelope parameter, and which
-// assets automation has touched (so stopping can put their model envelope back).
-interface SampleAutomationState {
-  written: Map<string, number>;
-  touched: Set<number>;
+/** One scheduled write of a lane, relative to the start of the step it plays in. */
+export interface LaneEvent {
+  /** Beats from the step start. */
+  pos: number;
+  /** The value reached: at `pos` for a step, at `pos + rampBeats` for a ramp. */
+  value: number;
+  /** Ramp start value and length (beats); absent for a step. */
+  from?: number;
+  rampBeats?: number;
 }
-const sampleStates = new WeakMap<AudioRuntime, SampleAutomationState>();
 
-function sampleState(runtime: AudioRuntime): SampleAutomationState {
-  let s = sampleStates.get(runtime);
+/** A lane as scheduled events. The lane contract (model/types.ts): hold the first value before the
+ * first point, linear between points, hold the last value after it. So: a step to the first value at
+ * the step start if the first point is later, one ramp per segment (a step if the two values are
+ * equal), and a closing step on the last point. Pure. */
+export function laneEvents(lane: AutomationLane): LaneEvent[] {
+  const pts = lane.events;
+  if (pts.length === 0) return [];
+  const out: LaneEvent[] = [];
+  if (pts[0].position > 0) out.push({ pos: 0, value: pts[0].value });
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (a.value === b.value) out.push({ pos: a.position, value: a.value });
+    else out.push({ pos: a.position, from: a.value, value: b.value, rampBeats: b.position - a.position });
+  }
+  const last = pts[pts.length - 1];
+  out.push({ pos: last.position, value: last.value });
+  return out;
+}
+
+/** What the lane is doing at `beat`, as one event to apply right then: its value, and, inside a
+ * segment, the rest of that ramp. Used to refresh a lane that was just edited, and to start one
+ * mid-step. Pure. */
+export function laneStateAt(lane: AutomationLane, beat: number): LaneEvent | null {
+  const value = valueAtBeat(lane, beat);
+  if (value === null) return null;
+  const pts = lane.events;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (beat >= a.position && beat < b.position && a.value !== b.value) {
+      return { pos: beat, from: value, value: b.value, rampBeats: b.position - beat };
+    }
+  }
+  return { pos: beat, value };
+}
+
+interface StepWindowLike {
+  startTime: number;
+  endTime: number;
+}
+
+interface LaneRef {
+  key: string;
+  lane: AutomationLane;
+  /** Resolves the engine target for this lane, or undefined if it is not live (yet). */
+  target: () => { target: ScheduledParam["target"]; param: number; mark: (value: number) => void } | undefined;
+}
+
+// Per runtime: the lane objects last seen (to detect an edit), and the asset envelopes automation
+// has touched (so stopping can put their model envelope back).
+interface AutomationState {
+  cursor: number;
+  seen: Map<string, AutomationLane>;
+  touchedAssets: Set<number>;
+}
+const states = new WeakMap<AudioRuntime, AutomationState>();
+
+function stateFor(runtime: AudioRuntime): AutomationState {
+  let s = states.get(runtime);
   if (!s) {
-    s = { written: new Map(), touched: new Set() };
-    sampleStates.set(runtime, s);
+    s = { cursor: 0, seen: new Map(), touchedAssets: new Set() };
+    states.set(runtime, s);
   }
   return s;
 }
 
-function applyOwner(
+function lanesOf(
   runtime: AudioRuntime,
-  owner: { fx: FxInstance[]; automation: AutomationLane[] },
+  owner: { fx: { id: string; enabled: boolean }[]; automation: AutomationLane[] },
+  ownerKey: string,
   track: Track | null,
   busId: BusId | undefined,
-  beat: number,
-): void {
+  state: AutomationState,
+): LaneRef[] {
+  const out: LaneRef[] = [];
   const chains = fxChainsFor(runtime);
   for (const lane of owner.automation) {
-    const value = valueAtBeat(lane, beat);
-    if (value === null) continue;
+    const key = `${ownerKey}::${lane.fxId ?? ""}::${lane.parameter}`;
     if (lane.fxId != null) {
-      const instance = owner.fx.find((f) => f.id === lane.fxId);
-      if (!instance || !instance.enabled || busId === undefined) continue;
-      chains.setParam(busId, lane.fxId, lane.parameter, value);
+      const fxId = lane.fxId;
+      if (busId === undefined) continue;
+      out.push({
+        key,
+        lane,
+        target: () => {
+          const t = chains.target(busId, fxId, lane.parameter);
+          return t && { target: { effect: t.effect }, param: t.param, mark: (v) => chains.markWritten(busId, fxId, lane.parameter, v) };
+        },
+      });
     } else if (track?.instrument) {
-      instrumentHostFor(runtime).setParam(track.id, lane.parameter, value);
+      const host = instrumentHostFor(runtime);
+      out.push({
+        key,
+        lane,
+        target: () => {
+          const t = host.target(track.id, lane.parameter);
+          return t && { target: { instrument: t.instrument }, param: t.param, mark: (v) => host.markWritten(track.id, lane.parameter, v) };
+        },
+      });
     } else if (track?.assetId != null && lane.parameter in ENVELOPE_PARAMS) {
-      const state = sampleState(runtime);
-      const key = `${track.assetId}:${lane.parameter}`;
-      if (state.written.get(key) === value) continue;
-      state.written.set(key, value);
-      state.touched.add(track.assetId);
-      runtime.setSampleParameter(track.assetId, ENVELOPE_PARAMS[lane.parameter], value);
+      const assetId = track.assetId;
+      out.push({
+        key,
+        lane,
+        target: () => ({
+          target: { sample: assetId },
+          param: ENVELOPE_PARAMS[lane.parameter],
+          mark: () => state.touchedAssets.add(assetId),
+        }),
+      });
     }
   }
+  return out;
 }
 
-/** Writes every lane's value at `beat` (the master's and each track's). */
-export function applyAutomation(
+/** Starts a playback session of automation scheduling: `from` is the engine time of the first
+ * audible moment. Every lane is treated as freshly changed, so it is refreshed to its state at the
+ * point playback starts from. Call from Transport.play(). */
+export function startAutomation(runtime: AudioRuntime, from: number): void {
+  const s = stateFor(runtime);
+  s.cursor = from;
+  s.seen.clear();
+}
+
+/** Schedules the lane events of the window [cursor, horizon). `windows` are the step iterations the
+ * transport has compiled (start/end engine times); `spb` is seconds per beat. `now` is the engine
+ * time, for refreshing lanes edited since the last call. */
+export function scheduleAutomation(
   runtime: AudioRuntime,
   project: Project,
   getBusId: (target: FxTarget) => BusId | undefined,
-  beat: number,
+  windows: readonly StepWindowLike[],
+  spb: number,
+  now: number,
+  horizon: number,
 ): void {
-  applyOwner(runtime, project.master, null, getBusId("master"), beat);
-  for (const track of project.tracks) applyOwner(runtime, track, track, getBusId(track.id), beat);
+  const state = stateFor(runtime);
+  const lo = state.cursor;
+  if (horizon <= lo) return;
+  state.cursor = horizon;
+
+  const refs: LaneRef[] = [
+    ...lanesOf(runtime, project.master, "master", null, getBusId("master"), state),
+    ...project.tracks.flatMap((track) => lanesOf(runtime, track, track.id, track, getBusId(track.id), state)),
+  ];
+  const events: ScheduledParam[] = [];
+  const current = windows.find((w) => w.startTime <= now && now < w.endTime);
+
+  for (const ref of refs) {
+    const resolved = ref.target();
+    if (!resolved) continue;
+    const emit = (time: number, e: { value: number; from?: number; ramp?: number }) => {
+      events.push({ time, target: resolved.target, param: resolved.param, value: e.value, ...(e.from !== undefined ? { from: e.from, ramp: e.ramp } : {}) });
+      resolved.mark(e.value);
+    };
+    const changed = state.seen.get(ref.key) !== ref.lane;
+    state.seen.set(ref.key, ref.lane);
+    // A refresh stands in for everything up to now, so events at or before it are not repeated.
+    const coveredUntil = changed && current ? now : -Infinity;
+
+    // An edited (or just started) lane: bring the engine to what the lane says *now*.
+    if (changed && current) {
+      const s = laneStateAt(ref.lane, (now - current.startTime) / spb);
+      if (s) emit(now, { value: s.value, from: s.from, ramp: s.rampBeats !== undefined ? s.rampBeats * spb : undefined });
+    }
+    const evs = laneEvents(ref.lane);
+    for (const w of windows) {
+      const a = Math.max(lo, w.startTime);
+      const b = Math.min(horizon, w.endTime);
+      if (a >= b) continue;
+      for (const e of evs) {
+        const t = w.startTime + e.pos * spb;
+        if (t < a || t >= b || t <= coveredUntil) continue;
+        emit(t, { value: e.value, from: e.from, ramp: e.rampBeats !== undefined ? e.rampBeats * spb : undefined });
+      }
+    }
+  }
+  if (events.length > 0) runtime.scheduleParams(events);
 }
 
-/** Puts every automated parameter back to its project value. Called when playback halts, so a
- * stopped transport doesn't leave anything parked at the last automated value. */
+/** Puts every automated parameter back to its project value. Called when playback halts (after
+ * runtime.cancelScheduled()), so a stopped transport doesn't leave anything parked at the last
+ * automated value; the direct writes also end any ramp still running in the engine. */
 export function restoreAutomation(runtime: AudioRuntime, project: Project): void {
   fxChainsFor(runtime).restoreBase();
   instrumentHostFor(runtime).restoreBase();
-  const state = sampleState(runtime);
-  for (const assetId of state.touched) {
+  const state = stateFor(runtime);
+  for (const assetId of state.touchedAssets) {
     const asset = project.assets.find((a) => a.id === assetId);
     if (asset) runtime.setSampleEnvelope(asset.id, asset.envelope ?? DEFAULT_ENVELOPE);
   }
-  state.touched.clear();
-  state.written.clear();
+  state.touchedAssets.clear();
+  state.seen.clear();
 }

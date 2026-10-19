@@ -118,6 +118,20 @@ export class InstrumentHost {
     this.runtime.setInstrumentParameter(live.id, paramId, value);
   }
 
+  /** The engine target of one control of `trackId`'s live synth, for scheduled parameter events
+   * (audio/automation.ts), or undefined if the track has no live synth or the control is unknown. */
+  target(trackId: TrackId, name: string): { instrument: InstrumentId; param: number } | undefined {
+    const live = this.live.get(trackId);
+    const param = live?.paramIds.get(name);
+    return live && param !== undefined ? { instrument: live.id, param } : undefined;
+  }
+
+  /** Records that automation has been told to move `name` to `value` (scheduled), so restoreBase()
+   * puts the project value back when playback halts. */
+  markWritten(trackId: TrackId, name: string, value: number): void {
+    this.live.get(trackId)?.written.set(name, value);
+  }
+
   /** Puts every control that automation moved away from its project value back to it (called when
    * playback halts, like FxChainSync.restoreBase). */
   restoreBase(): void {

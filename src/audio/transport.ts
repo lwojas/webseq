@@ -27,7 +27,7 @@ import type { AudioRuntime, BusId, SampleMetadata, VoiceHandle } from "webdsp";
 import type { ChainEntryId, FxTarget, PatternId, Project } from "../model/types";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
 import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat } from "./compile";
-import { applyAutomation, restoreAutomation } from "./automation";
+import { restoreAutomation, scheduleAutomation, startAutomation } from "./automation";
 import { instrumentHostFor } from "./instruments";
 import type { Playback } from "./playback";
 
@@ -143,6 +143,7 @@ export class Transport {
     this.startPosition = resume;
     this.audibleFrom = now + LEAD_IN_SECONDS;
     this.stepWindows = [];
+    startAutomation(this.runtime, this.audibleFrom);
     this.playback.dropSequencerVoices();
     this.status = "playing";
 
@@ -445,21 +446,17 @@ export class Transport {
     }
 
     this.stepWindows = this.stepWindows.filter((w) => w.endTime > now - 1.0);
-    this.pollAutomation(project);
+    this.scheduleAutomationWindow(project, now, horizon);
   }
 
-  /** Applies each automation lane's current value (FX, synth and sample parameters of every
-   * track, and the master's FX) as ordinary base-value writes — see audio/automation.ts for how
-   * the three owners are reached and how the engine's LFOs combine with them. Polled at the same
-   * ~25ms tick rate as note scheduling rather than sample-accurately ramped (webdsp has no
-   * automation-ramp primitive); an intentional, documented simplification. Automation is
-   * track/master-level (not per-pattern) and is evaluated against the beat offset within
-   * whichever chain step is currently sounding — i.e. it restarts every time a new pattern
-   * instance begins playing on that track, which is what lets one lane apply consistently across
-   * patterns of different lengths without per-pattern duplication. */
-  private pollAutomation(project: Project): void {
+  /** Schedules automation lane events (FX, synth and sample parameters of every track, and the
+   * master's FX) on the audio clock for the next lookahead window — see audio/automation.ts for the
+   * scheduling model, how a lane edited while playing refreshes, and how the engine's LFOs combine
+   * with it. Lane positions are beats from the start of the sounding chain step, so each pattern
+   * instance replays the lane from its start (which is what lets one lane apply consistently across
+   * patterns of different lengths without per-pattern duplication). */
+  private scheduleAutomationWindow(project: Project, now: number, horizon: number): void {
     if (this.status !== "playing") return;
-    const { beat } = this.currentPosition();
-    applyAutomation(this.runtime, project, this.getBusId, beat);
+    scheduleAutomation(this.runtime, project, this.getBusId, this.stepWindows, secondsPerBeat(this.anchorTempo), now, horizon);
   }
 }
