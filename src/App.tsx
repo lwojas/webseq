@@ -1158,6 +1158,8 @@ export function App() {
             onSetMuted: handleSetTrackMuted,
             onSetSoloed: handleSetTrackSoloed,
             onSetPan: handleSetTrackPan,
+            runtime,
+            getBusId,
           },
         }}
       />

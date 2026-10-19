@@ -1,5 +1,8 @@
+import { useRef } from "react";
+import { METER_LED_DB, type AudioRuntime, type BusId } from "webdsp";
+import { useMixerMeters } from "../audio/useMixerMeters";
 import { MAX_TRACK_VOLUME, MIN_TRACK_VOLUME } from "../model/project";
-import type { Track, TrackId } from "../model/types";
+import type { FxTarget, Track, TrackId } from "../model/types";
 import { effectivePan, trackHasSource } from "../model/types";
 
 interface Props {
@@ -13,6 +16,9 @@ interface Props {
   onSetMuted: (trackId: TrackId, muted: boolean) => void;
   onSetSoloed: (trackId: TrackId, soloed: boolean) => void;
   onSetPan: (trackId: TrackId, pan: number) => void;
+  /** Source of peak data for the clip dots and the master meter; absent until audio has started. */
+  runtime: AudioRuntime | null;
+  getBusId: (target: FxTarget) => BusId | undefined;
 }
 
 function panLabel(pan: number): string {
@@ -27,10 +33,15 @@ function panLabel(pan: number): string {
  * once there's nothing but a slider and two buttons on it. Volume changes reach the engine
  * immediately (App.tsx's existing FX-push effect, reused verbatim for NodeParam.BusGain — see
  * src/audio/mixer.ts), not on any sequencer tick. Each strip also has a pan control (the bus's
- * NodeParam.BusPan). VU meters are still absent: webdsp has no metering API. */
-export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted, onSetSoloed, onSetPan }: Props) {
+ * NodeParam.BusPan). Metering is deliberately minimal: a small clip dot per track strip (lights
+ * red while that track's bus peaks at 0 dBFS or above, so you can find the culprit) and a Master
+ * strip, pinned to the right edge while the tracks scroll, holding the one detailed LED meter —
+ * the level feeding webdsp's master limiter. Both come from webdsp's metering (docs/master-limiter.md). */
+export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted, onSetSoloed, onSetPan, runtime, getBusId }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  useMixerMeters(runtime, rootRef, getBusId, tracks);
   return (
-    <div className="mixer-panel">
+    <div className="mixer-panel" ref={rootRef}>
       {tracks.map((track, i) => (
         <div key={track.id} className={`mixer-strip ${track.muted ? "muted" : ""}`}>
           <span className="mixer-strip-num">{String(trackNumberOffset + i + 1).padStart(2, "0")}</span>
@@ -40,6 +51,7 @@ export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted,
           >
             {trackHasSource(track) ? track.name : "—"}
           </span>
+          <span className="mixer-clip" data-clip-track={track.id} title="Lights red when this track clips (peaks at 0 dBFS or above)" />
           <span className="mixer-strip-value">{Math.round(track.volume * 100)}%</span>
           <div className="mixer-fader-wrap">
             <input
@@ -86,6 +98,17 @@ export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted,
           </div>
         </div>
       ))}
+      <div className="mixer-strip mixer-master" data-master-strip>
+        <span className="mixer-strip-num">OUT</span>
+        <span className="mixer-strip-name">Master</span>
+        <div className="mixer-meter" role="img" aria-label="Master level">
+          {/* Highest LED first, so the danger region sits on top like a level meter. */}
+          {METER_LED_DB.map((db, i) => (
+            <span key={db} className="mixer-led" data-meter-led title={`${db} dBFS`} style={{ order: METER_LED_DB.length - i }} />
+          ))}
+        </div>
+        <span className="mixer-strip-value">Limiter</span>
+      </div>
     </div>
   );
 }
