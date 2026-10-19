@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-[#0a0f14]" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>WEBSEQ - Dedicated Pattern Launcher</title>
+<!-- Tailwind CSS CDN with forms and container queries plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Font Setup: Inter & JetBrains Mono for authentic DAW hardware feel -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script data-purpose="tailwind-config">
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            app: {
+              bg: '#0a0f14',
+              surface: '#0d151c',
+              panel: '#101923',
+              border: '#1c2936',
+              cyan: '#14ffc2',
+              'cyan-dim': 'rgba(20, 255, 194, 0.15)',
+              amber: '#ff9f43',
+              'amber-dim': 'rgba(255, 159, 67, 0.18)',
+              crimson: '#ff3b5c',
+              slate: '#8b9bb0',
+              muted: '#405264'
+            }
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'monospace'],
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            display: ['"Chakra Petch"', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+<style data-purpose="custom-hardware-styling">
+    /* Custom DAW scrollbar & hardware tactile styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0a0f14;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1c2b3a;
+      border-radius: 2px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #273b50;
+    }
+
+    /* Glow utility animations for live queuing */
+    @keyframes amber-pulse {
+      0%, 100% {
+        box-shadow: 0 0 14px rgba(255, 159, 67, 0.28), inset 0 0 8px rgba(255, 159, 67, 0.2);
+        border-color: rgba(255, 159, 67, 0.9);
+      }
+      50% {
+        box-shadow: 0 0 4px rgba(255, 159, 67, 0.08), inset 0 0 2px rgba(255, 159, 67, 0.05);
+        border-color: rgba(255, 159, 67, 0.4);
+      }
+    }
+
+    .pulse-amber-glow {
+      animation: amber-pulse 1.3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    @keyframes live-progress {
+      0% { width: 0%; }
+      100% { width: 93.75%; }
+    }
+    .active-bar-meter {
+      animation: live-progress 1.714s linear infinite;
+    }
+
+    /* Range slider custom hardware styling */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: #131e29;
+      height: 5px;
+      border-radius: 2px;
+      border: 1px solid #1f2f40;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 2px;
+      background: #14ffc2;
+      box-shadow: 0 0 8px rgba(20, 255, 194, 0.6);
+      cursor: pointer;
+    }
+    input[type=range].slider-amber::-webkit-slider-thumb {
+      background: #ff9f43;
+      box-shadow: 0 0 8px rgba(255, 159, 67, 0.6);
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden bg-[#0a0f14] text-slate-200 font-sans select-none flex flex-col justify-between antialiased">
+<!-- BEGIN: ApplicationTopBar -->
+<header class="h-10 bg-[#0c1218] border-b border-[#18232f] px-3 flex items-center justify-between shrink-0" data-purpose="top-navigation-strip">
+<!-- Brand and Project File Actions -->
+<div class="flex items-center space-x-3 text-xs">
+<div class="flex items-center space-x-2">
+<span class="font-display font-bold tracking-widest text-[#14ffc2] text-sm pr-1">WEBSEQ</span>
+<span class="text-[#4e657c] font-mono text-[11px] font-semibold">v3.4.1</span>
+</div>
+<div class="h-4 w-[1px] bg-[#1c2937] mx-1"></div>
+<!-- Project Actions conforming to Screenshot -->
+<div class="flex items-center space-x-1">
+<button class="px-2 py-0.5 bg-[#121b24] hover:bg-[#1a2734] border border-[#203042] text-[#93a6ba] text-[11px] font-mono rounded tracking-tight transition-colors">
+          NEW
+        </button>
+<button class="px-2 py-0.5 bg-[#121b24] hover:bg-[#1a2734] border border-[#203042] text-[#93a6ba] text-[11px] font-mono rounded tracking-tight transition-colors">
+          SAVE
+        </button>
+<!-- Project Dropdown -->
+<div class="relative inline-flex items-center">
+<select class="appearance-none bg-[#121c27] border border-[#25374c] text-white text-[11px] font-mono rounded px-2.5 py-0.5 pr-6 cursor-pointer focus:outline-none focus:border-[#14ffc2] tracking-wider font-semibold">
+<option>Techno_Dark_Peak_140.wsq</option>
+<option>Dub_Minimal_Project</option>
+<option>Acid_Modular_Jam</option>
+</select>
+<svg class="w-3 h-3 text-[#4e657c] absolute right-1.5 pointer-events-none" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+</div>
+<button class="px-2 py-0.5 bg-[#121b24] hover:bg-[#1a2734] border border-[#203042] text-[#93a6ba] text-[11px] font-mono rounded tracking-tight transition-colors">
+          LOAD
+        </button>
+<button class="px-2 py-0.5 bg-[#25151a] hover:bg-[#341b23] border border-[#482029] text-[#ff4d6d] text-[11px] font-mono rounded tracking-tight transition-colors">
+          DELETE
+        </button>
+</div>
+</div>
+<!-- View Mode Switcher TABS (Requested: Tracks vs Dedicated Launcher) -->
+<div class="flex items-center bg-[#070b0f] border border-[#1b2735] p-0.5 rounded" data-purpose="primary-view-tabs">
+<a class="px-3 py-0.5 text-[11px] font-mono font-medium rounded text-[#67809a] hover:text-white transition-colors flex items-center space-x-1.5" href="#tracks">
+<svg class="w-3.5 h-3.5 opacity-70" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+</svg>
+<span>TRACKS / SEQUENCER</span>
+</a>
+<a class="px-3 py-0.5 text-[11px] font-mono font-semibold rounded bg-[#15252e] text-[#14ffc2] border border-[#1a3d3a] shadow-[0_0_10px_rgba(20,255,194,0.1)] flex items-center space-x-1.5" href="#launcher">
+<span class="w-1.5 h-1.5 rounded-full bg-[#14ffc2] animate-ping inline-block"></span>
+<span>PATTERN LAUNCHER</span>
+</a>
+</div>
+<!-- Master Timing & Audio Engine Diagnostics -->
+<div class="flex items-center space-x-3 text-xs font-mono">
+<div class="text-[#6d849b] text-[11px] font-medium flex items-center space-x-1.5">
+<span class="w-2 h-2 rounded-full bg-[#14ffc2] shadow-[0_0_6px_#14ffc2]"></span>
+<span>WEB AUDIO : ACTIVE (3.2ms)</span>
+</div>
+<div class="h-3 w-[1px] bg-[#1c2937]"></div>
+<div class="text-white font-semibold tracking-wider text-[11px]">
+        16 beats / 1 bar
+      </div>
+</div>
+</header>
+<!-- END: ApplicationTopBar -->
+<!-- BEGIN: MasterTransportStrip -->
+<section class="h-12 bg-[#0e151c] border-b border-[#1b2837] px-3.5 flex items-center justify-between shrink-0" data-purpose="master-transport">
+<!-- Playback buttons -->
+<div class="flex items-center space-x-2">
+<button class="px-3.5 py-1.5 bg-[#102923] hover:bg-[#13372f] border border-[#185e4e] text-[#14ffc2] text-xs font-mono font-bold rounded flex items-center space-x-1.5 shadow-[0_0_12px_rgba(20,255,194,0.18)] active:translate-y-0.5 transition-all">
+<span>▶</span>
+<span>PLAY</span>
+</button>
+<button class="px-3 py-1.5 bg-[#131c26] hover:bg-[#1b2633] border border-[#213245] text-[#8e9faf] text-xs font-mono font-medium rounded flex items-center space-x-1.5 transition-colors">
+<span>❚❚</span>
+<span>PAUSE</span>
+</button>
+<button class="px-3 py-1.5 bg-[#261318] hover:bg-[#341b21] border border-[#52212d] text-[#ff4d6d] text-xs font-mono font-medium rounded flex items-center space-x-1.5 transition-colors">
+<span>■</span>
+<span>STOP</span>
+</button>
+<div class="h-5 w-[1px] bg-[#1b2837] mx-1"></div>
+<!-- BPM Slider -->
+<div class="flex items-center space-x-2 bg-[#090e13] px-2.5 py-1 rounded border border-[#18232e]">
+<span class="text-[10px] font-mono text-[#6c8297] tracking-wider">BPM</span>
+<input class="w-16 accent-[#14ffc2] cursor-pointer" max="180" min="60" type="range" value="140"/>
+<span class="font-mono text-xs font-bold text-[#14ffc2] w-7 text-right">140</span>
+</div>
+<!-- SWING Slider -->
+<div class="flex items-center space-x-2 bg-[#090e13] px-2.5 py-1 rounded border border-[#18232e]">
+<span class="text-[10px] font-mono text-[#6c8297] tracking-wider">SWING</span>
+<input class="w-14 slider-amber cursor-pointer" max="100" min="0" type="range" value="50"/>
+<span class="font-mono text-xs font-medium text-slate-300 w-8 text-right">50%</span>
+</div>
+<!-- GRID selector -->
+<div class="flex items-center space-x-1.5 text-xs font-mono bg-[#090e13] px-2 py-1 rounded border border-[#18232e]">
+<span class="text-[10px] text-[#6c8297]">GRID</span>
+<select class="bg-transparent text-[11px] font-mono text-slate-200 outline-none cursor-pointer">
+<option>1/16</option>
+<option>1/8</option>
+<option>1/32</option>
+<option>1/4 (BAR)</option>
+</select>
+</div>
+<!-- ZOOM controls conforming to Screenshot -->
+<div class="flex items-center space-x-1 text-xs font-mono bg-[#090e13] px-2 py-1 rounded border border-[#18232e] text-[#71889e]">
+<span class="text-[10px]">ZOOM</span>
+<button class="hover:text-white px-1 font-bold">-</button>
+<span class="text-white text-[11px] font-semibold">100%</span>
+<button class="hover:text-white px-1 font-bold">+</button>
+</div>
+</div>
+<!-- Center/Right Playhead HUD readout -->
+<div class="flex items-center space-x-3">
+<!-- Live Transport Telemetry Display -->
+<div class="bg-[#070b0f] border border-[#1c2e3e] px-3.5 py-1 rounded font-mono text-xs flex items-center space-x-3">
+<div class="flex items-center space-x-1.5">
+<span class="text-[#597289] text-[10px] font-bold">PLAYING:</span>
+<span class="text-[#14ffc2] font-bold bg-[#14ffc2]/10 px-1.5 py-0.5 rounded text-[11px]">
+            PTRN B [Verse]
+          </span>
+</div>
+<span class="text-[#526a80]">➔</span>
+<div class="flex items-center space-x-1.5">
+<span class="text-[#ff9f43] text-[10px] font-bold">QUEUED:</span>
+<span class="text-[#ff9f43] font-bold bg-[#ff9f43]/15 px-1.5 py-0.5 rounded text-[11px] border border-[#ff9f43]/40">
+            PTRN C [Chorus]
+          </span>
+</div>
+<div class="h-3 w-[1px] bg-[#1e2a37]"></div>
+<div class="text-[#7f99b2] text-[11px]">
+          BAR <span class="text-white font-bold">04</span> / BEAT <span class="text-[#14ffc2] font-bold">15</span>
+</div>
+</div>
+<button class="px-2.5 py-1.5 bg-[#121c26] hover:bg-[#1a2837] border border-[#233549] text-[#7d93a8] hover:text-white text-xs font-mono rounded tracking-tight transition-colors">
+        RESAMPLE
+      </button>
+</div>
+</section>
+<!-- END: MasterTransportStrip -->
+<!-- BEGIN: LauncherStatusHUD -->
+<!-- Contextual status bar dedicated to pattern quantization and triggering timing -->
+<section class="h-9 bg-[#0b1016] border-b border-[#182330] px-4 flex items-center justify-between text-xs font-mono shrink-0" data-purpose="launcher-telemetry-hud">
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2 text-[11px]">
+<span class="text-[#52697e] font-semibold">LAUNCH QUANTIZE:</span>
+<span class="px-2 py-0.5 bg-[#13222e] text-[#14ffc2] border border-[#1a3f3b] rounded text-[10px] font-bold">
+          1 BAR (16 BEATS)
+        </span>
+<span class="text-[#43576a] text-[10px]">NEXT SYNC IN: 1 BEAT (62ms)</span>
+</div>
+<div class="h-3 w-[1px] bg-[#1b2838]"></div>
+<div class="flex items-center space-x-1.5 text-[11px]">
+<span class="text-[#52697e]">TRIGGER MODE:</span>
+<span class="text-slate-300 font-semibold">SEAMLESS QUEUE (LEGATO AUDIO CLOCK)</span>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<!-- Quick Override Actions -->
+<button class="px-2 py-0.5 bg-[#2a1b18] hover:bg-[#3d2420] text-[#ff9f43] border border-[#5d3224] text-[10px] font-bold rounded tracking-wide transition-colors">
+        DISARM NEXT QUEUE
+      </button>
+<button class="px-2 py-0.5 bg-[#16252c] hover:bg-[#1c373d] text-[#14ffc2] border border-[#1f4e48] text-[10px] font-bold rounded tracking-wide transition-colors">
+        INSTANT LAUNCH (NO QUANTIZE)
+      </button>
+</div>
+</section>
+<!-- END: LauncherStatusHUD -->
+<!-- BEGIN: PatternLauncherMainMatrix -->
+<!-- Main dedicated view replacing the heavy timeline with high-performance triggering matrix -->
+<main class="flex-1 overflow-hidden bg-[#090d12] flex flex-col p-3.5 space-y-3" data-purpose="pattern-launcher-canvas">
+<!-- Pattern Table Header Strip -->
+<div class="grid grid-cols-12 gap-3 px-3 py-1.5 bg-[#0e1620] border border-[#182534] rounded text-[10px] font-mono text-[#5b738c] uppercase tracking-wider items-center shrink-0">
+<div class="col-span-1">Slot &amp; ID</div>
+<div class="col-span-3">Pattern Name &amp; Structure</div>
+<div class="col-span-2">Bar Length / Tempo</div>
+<div class="col-span-3">Live Playback Status &amp; Progress</div>
+<div class="col-span-3 text-right pr-2">Launch Controls &amp; Sequencer Nav</div>
+</div>
+<!-- Scrollable Patterns Container (Clean hardware-rack card rows) -->
+<div class="flex-1 overflow-y-auto pr-1 space-y-2" data-purpose="pattern-rows-list">
+<!-- ROW 1: Pattern 01 (INTRO) - IDLE -->
+<div class="grid grid-cols-12 gap-3 px-3 py-2.5 bg-[#0d141d] hover:bg-[#111a26] border border-[#192736] rounded-md items-center transition-colors group">
+<!-- Slot ID -->
+<div class="col-span-1 flex items-center space-x-2 font-mono">
+<span class="text-xs font-bold text-[#4e6479]">#01</span>
+<span class="px-1.5 py-0.5 bg-[#131d27] border border-[#213346] text-[#869ab1] text-[10px] font-bold rounded">A</span>
+</div>
+<!-- Pattern Name & Info -->
+<div class="col-span-3 flex flex-col">
+<div class="flex items-center space-x-2">
+<span class="font-bold text-sm text-slate-100 group-hover:text-white">Intro (Ambient Hook)</span>
+<span class="text-[10px] font-mono text-[#526b83] bg-[#111b25] px-1.5 py-0.2 rounded border border-[#1b2b3b]">4 TRACKS</span>
+</div>
+<span class="text-[11px] text-[#556d85] font-mono truncate">TKNVLT_FREE_HT_R, TKNVLT_FREE_HT_S</span>
+</div>
+<!-- Length & Beats -->
+<div class="col-span-2 font-mono text-xs">
+<span class="text-slate-300 font-semibold">16 BEATS</span>
+<span class="text-[#516b84] text-[11px] block">1 Bar (4/4 time)</span>
+</div>
+<!-- Status -->
+<div class="col-span-3 flex items-center space-x-3">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-[#273849]"></span>
+<span class="font-mono text-xs text-[#526b84] font-medium tracking-wide">IDLE (STANDBY)</span>
+</div>
+</div>
+<!-- Controls -->
+<div class="col-span-3 flex items-center justify-end space-x-2">
+<!-- Live Queue Trigger Button -->
+<button class="px-3 py-1.5 bg-[#122329] hover:bg-[#173838] border border-[#1a4a45] text-[#14ffc2] hover:text-[#52ffd2] text-xs font-mono font-bold rounded transition-colors flex items-center space-x-1 shadow-sm">
+<span>▶</span>
+<span>QUEUE NEXT</span>
+</button>
+<!-- Edit in Timeline Sequencer Button -->
+<button class="px-2.5 py-1.5 bg-[#131b24] hover:bg-[#1c2937] border border-[#203244] text-[#8ea2b8] hover:text-white text-xs font-mono rounded flex items-center space-x-1 transition-colors" title="Jump to Sequencer timeline to edit notes">
+<span>✎</span>
+<span>EDIT</span>
+</button>
+<!-- Duplicate Pattern -->
+<button class="px-2 py-1.5 bg-[#131b24] hover:bg-[#1c2937] border border-[#203244] text-[#6d849b] hover:text-white text-xs font-mono rounded transition-colors" title="Duplicate pattern">
+            DUP
+          </button>
+</div>
+</div>
+<!-- ROW 2: Pattern 02 (VERSE) - CURRENTLY PLAYING -->
+<div class="grid grid-cols-12 gap-3 px-3 py-2.5 bg-[#0f1b21] border border-[#1b4b44] rounded-md items-center shadow-[0_0_15px_rgba(20,255,194,0.06)] relative overflow-hidden group">
+<!-- Live Playhead Progress Underlay -->
+<div class="absolute left-0 bottom-0 top-0 bg-[#14ffc2]/5 pointer-events-none active-bar-meter"></div>
+<div class="absolute left-0 bottom-0 h-[2px] bg-[#14ffc2] shadow-[0_0_8px_#14ffc2] active-bar-meter"></div>
+<!-- Slot ID -->
+<div class="col-span-1 flex items-center space-x-2 font-mono relative z-10">
+<span class="text-xs font-bold text-[#14ffc2]">#02</span>
+<span class="px-1.5 py-0.5 bg-[#14ffc2] text-[#071313] text-[10px] font-extrabold rounded shadow-[0_0_8px_rgba(20,255,194,0.4)]">B</span>
+</div>
+<!-- Pattern Name & Info -->
+<div class="col-span-3 flex flex-col relative z-10">
+<div class="flex items-center space-x-2">
+<span class="font-bold text-sm text-[#14ffc2]">Verse (Full Groove)</span>
+<span class="text-[10px] font-mono text-[#14ffc2] bg-[#14ffc2]/15 px-1.5 py-0.2 rounded border border-[#14ffc2]/30 font-bold">5 TRACKS ACTIVE</span>
+</div>
+<span class="text-[11px] text-[#71a39d] font-mono truncate">KICK + SUB + CLOSED_HAT + RIM_SHOT</span>
+</div>
+<!-- Length & Beats -->
+<div class="col-span-2 font-mono text-xs relative z-10">
+<span class="text-white font-bold">16 BEATS</span>
+<span class="text-[#14ffc2] text-[11px] block font-mono">1 Bar (Looping)</span>
+</div>
+<!-- Status with dynamic live meters -->
+<div class="col-span-3 flex flex-col justify-center relative z-10">
+<div class="flex items-center space-x-2 mb-1">
+<span class="w-2.5 h-2.5 rounded-full bg-[#14ffc2] shadow-[0_0_8px_#14ffc2] animate-pulse"></span>
+<span class="font-mono text-xs text-[#14ffc2] font-bold tracking-wider">NOW PLAYING</span>
+<span class="font-mono text-[10px] text-[#6d9690]">(15 / 16 beats)</span>
+</div>
+<!-- Progress bar -->
+<div class="w-full bg-[#0d2222] h-1.5 rounded-full overflow-hidden border border-[#15463f]">
+<div class="h-full bg-[#14ffc2] active-bar-meter"></div>
+</div>
+</div>
+<!-- Controls -->
+<div class="col-span-3 flex items-center justify-end space-x-2 relative z-10">
+<button class="px-3.5 py-1.5 bg-[#133732] border border-[#17ffc2] text-[#14ffc2] text-xs font-mono font-bold rounded cursor-default shadow-[0_0_10px_rgba(20,255,194,0.2)]">
+            ● PLAYING NOW
+          </button>
+<button class="px-2.5 py-1.5 bg-[#131f28] hover:bg-[#1a2d3b] border border-[#203c4f] text-[#8ea2b8] hover:text-[#14ffc2] text-xs font-mono rounded flex items-center space-x-1 transition-colors" title="Edit pattern in sequencer">
+<span>✎</span>
+<span>EDIT</span>
+</button>
+<button class="px-2 py-1.5 bg-[#131f28] hover:bg-[#1a2d3b] border border-[#203c4f] text-[#6d849b] hover:text-white text-xs font-mono rounded transition-colors" title="Duplicate pattern">
+            DUP
+          </button>
+</div>
+</div>
+<!-- ROW 3: Pattern 03 (CHORUS) - QUEUED NEXT (Amber Glow) -->
+<div class="grid grid-cols-12 gap-3 px-3 py-2.5 bg-[#1a1410] border border-[#ff9f43]/70 pulse-amber-glow rounded-md items-center relative group">
+<!-- Slot ID -->
+<div class="col-span-1 flex items-center space-x-2 font-mono">
+<span class="text-xs font-bold text-[#ff9f43]">#03</span>
+<span class="px-1.5 py-0.5 bg-[#ff9f43] text-[#221005] text-[10px] font-extrabold rounded shadow-[0_0_8px_rgba(255,159,67,0.5)]">C</span>
+</div>
+<!-- Pattern Name & Info -->
+<div class="col-span-3 flex flex-col">
+<div class="flex items-center space-x-2">
+<span class="font-bold text-sm text-[#ffb066]">Chorus (High Energy Peak)</span>
+<span class="text-[10px] font-mono text-[#ff9f43] bg-[#ff9f43]/20 px-1.5 py-0.2 rounded border border-[#ff9f43]/40 font-bold">8 TRACKS FULL</span>
+</div>
+<span class="text-[11px] text-[#aa7a50] font-mono truncate">LEAD SYNTH + BASS 303 + CLAP + OPEN_HAT</span>
+</div>
+<!-- Length & Beats -->
+<div class="col-span-2 font-mono text-xs">
+<span class="text-[#ffe0c2] font-bold">32 BEATS</span>
+<span class="text-[#aa7a50] text-[11px] block">2 Bars (Extended)</span>
+</div>
+<!-- Status: QUEUED NEXT -->
+<div class="col-span-3 flex flex-col justify-center">
+<div class="flex items-center space-x-2">
+<span class="w-2.5 h-2.5 rounded-full bg-[#ff9f43] animate-ping"></span>
+<span class="font-mono text-xs text-[#ff9f43] font-bold tracking-wider">⏳ QUEUED NEXT</span>
+</div>
+<span class="text-[10px] font-mono text-[#d68a48] mt-0.5">LAUNCHES AT BAR 5 • BEAT 1 (IN 1 BEAT)</span>
+</div>
+<!-- Controls -->
+<div class="col-span-3 flex items-center justify-end space-x-2">
+<!-- Disarm Button -->
+<button class="px-3 py-1.5 bg-[#311b11] hover:bg-[#462415] border border-[#a65624] text-[#ff9f43] text-xs font-mono font-bold rounded transition-colors shadow-sm flex items-center space-x-1">
+<span>✕</span>
+<span>CANCEL QUEUE</span>
+</button>
+<button class="px-2.5 py-1.5 bg-[#1c1815] hover:bg-[#2c221b] border border-[#3e2e22] text-[#c49a7a] hover:text-white text-xs font-mono rounded flex items-center space-x-1 transition-colors" title="Edit pattern in sequencer">
+<span>✎</span>
+<span>EDIT</span>
+</button>
+<button class="px-2 py-1.5 bg-[#1c1815] hover:bg-[#2c221b] border border-[#3e2e22] text-[#8c6f59] hover:text-white text-xs font-mono rounded transition-colors" title="Duplicate pattern">
+            DUP
+          </button>
+</div>
+</div>
+<!-- ROW 4: Pattern 04 (BREAKDOWN) - IDLE -->
+<div class="grid grid-cols-12 gap-3 px-3 py-2.5 bg-[#0d141d] hover:bg-[#111a26] border border-[#192736] rounded-md items-center transition-colors group">
+<!-- Slot ID -->
+<div class="col-span-1 flex items-center space-x-2 font-mono">
+<span class="text-xs font-bold text-[#4e6479]">#04</span>
+<span class="px-1.5 py-0.5 bg-[#131d27] border border-[#213346] text-[#869ab1] text-[10px] font-bold rounded">D</span>
+</div>
+<!-- Pattern Name & Info -->
+<div class="col-span-3 flex flex-col">
+<div class="flex items-center space-x-2">
+<span class="font-bold text-sm text-slate-100 group-hover:text-white">Breakdown (Filter Sweep)</span>
+<span class="text-[10px] font-mono text-[#526b83] bg-[#111b25] px-1.5 py-0.2 rounded border border-[#1b2b3b]">3 TRACKS</span>
+</div>
+<span class="text-[11px] text-[#556d85] font-mono truncate">ATMOS_PAD + MODULAR_CLICK</span>
+</div>
+<!-- Length & Beats -->
+<div class="col-span-2 font-mono text-xs">
+<span class="text-slate-300 font-semibold">16 BEATS</span>
+<span class="text-[#516b84] text-[11px] block">1 Bar</span>
+</div>
+<!-- Status -->
+<div class="col-span-3 flex items-center space-x-3">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-[#273849]"></span>
+<span class="font-mono text-xs text-[#526b84] font-medium tracking-wide">IDLE (STANDBY)</span>
+</div>
+</div>
+<!-- Controls -->
+<div class="col-span-3 flex items-center justify-end space-x-2">
+<!-- Queue Override button -->
+<button class="px-3 py-1.5 bg-[#122329] hover:bg-[#173838] border border-[#1a4a45] text-[#14ffc2] hover:text-[#52ffd2] text-xs font-mono font-bold rounded transition-colors flex items-center space-x-1 shadow-sm">
+<span>▶</span>
+<span>QUEUE NEXT</span>
+</button>
+<button class="px-2.5 py-1.5 bg-[#131b24] hover:bg-[#1c2937] border border-[#203244] text-[#8ea2b8] hover:text-white text-xs font-mono rounded flex items-center space-x-1 transition-colors" title="Jump to Sequencer">
+<span>✎</span>
+<span>EDIT</span>
+</button>
+<button class="px-2 py-1.5 bg-[#131b24] hover:bg-[#1c2937] border border-[#203244] text-[#6d849b] hover:text-white text-xs font-mono rounded transition-colors" title="Duplicate pattern">
+            DUP
+          </button>
+</div>
+</div>
+<!-- ROW 5: Pattern 05 (OUTRO) - IDLE -->
+<div class="grid grid-cols-12 gap-3 px-3 py-2.5 bg-[#0d141d] hover:bg-[#111a26] border border-[#192736] rounded-md items-center transition-colors group">
+<!-- Slot ID -->
+<div class="col-span-1 flex items-center space-x-2 font-mono">
+<span class="text-xs font-bold text-[#4e6479]">#05</span>
+<span class="px-1.5 py-0.5 bg-[#131d27] border border-[#213346] text-[#869ab1] text-[10px] font-bold rounded">E</span>
+</div>
+<!-- Pattern Name & Info -->
+<div class="col-span-3 flex flex-col">
+<div class="flex items-center space-x-2">
+<span class="font-bold text-sm text-slate-100 group-hover:text-white">Outro (Tape Decay)</span>
+<span class="text-[10px] font-mono text-[#526b83] bg-[#111b25] px-1.5 py-0.2 rounded border border-[#1b2b3b]">2 TRACKS</span>
+</div>
+<span class="text-[11px] text-[#556d85] font-mono truncate">TKNVLT_KICK + SUB_DECAY</span>
+</div>
+<!-- Length & Beats -->
+<div class="col-span-2 font-mono text-xs">
+<span class="text-slate-300 font-semibold">16 BEATS</span>
+<span class="text-[#516b84] text-[11px] block">1 Bar</span>
+</div>
+<!-- Status -->
+<div class="col-span-3 flex items-center space-x-3">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-[#273849]"></span>
+<span class="font-mono text-xs text-[#526b84] font-medium tracking-wide">IDLE (STANDBY)</span>
+</div>
+</div>
+<!-- Controls -->
+<div class="col-span-3 flex items-center justify-end space-x-2">
+<button class="px-3 py-1.5 bg-[#122329] hover:bg-[#173838] border border-[#1a4a45] text-[#14ffc2] hover:text-[#52ffd2] text-xs font-mono font-bold rounded transition-colors flex items-center space-x-1 shadow-sm">
+<span>▶</span>
+<span>QUEUE NEXT</span>
+</button>
+<button class="px-2.5 py-1.5 bg-[#131b24] hover:bg-[#1c2937] border border-[#203244] text-[#8ea2b8] hover:text-white text-xs font-mono rounded flex items-center space-x-1 transition-colors" title="Jump to Sequencer">
+<span>✎</span>
+<span>EDIT</span>
+</button>
+<button class="px-2 py-1.5 bg-[#131b24] hover:bg-[#1c2937] border border-[#203244] text-[#6d849b] hover:text-white text-xs font-mono rounded transition-colors" title="Duplicate pattern">
+            DUP
+          </button>
+</div>
+</div>
+<!-- Add New Pattern Slot Button -->
+<button class="w-full py-2.5 border border-dashed border-[#1f2e3d] hover:border-[#14ffc2] rounded-md bg-[#0a1017] hover:bg-[#0f1722] text-[#647c94] hover:text-[#14ffc2] font-mono text-xs font-semibold flex items-center justify-center space-x-2 transition-all">
+<span class="text-base leading-none font-bold">+</span>
+<span>CREATE NEW PATTERN SLOT (PATTERN 06 [F])</span>
+</button>
+</div>
+</main>
+<!-- END: PatternLauncherMainMatrix -->
+<!-- BEGIN: BottomMasterMixerFaderStrip -->
+<!-- Strictly replicating the channel fader mixer strip shown in the screenshot at the bottom -->
+<footer class="h-44 bg-[#090e13] border-t border-[#182330] px-3 pt-2 pb-1.5 shrink-0 flex flex-col justify-between" data-purpose="bottom-groovebox-mixer">
+<!-- Header of bottom rack -->
+<div class="flex items-center justify-between pb-1 px-1 border-b border-[#141d27]">
+<div class="flex items-center space-x-2">
+<span class="px-2 py-0.5 bg-[#13222e] text-[#14ffc2] border border-[#1b3e3c] rounded text-[10px] font-mono font-bold tracking-wider">
+          MIXER CONSOLE
+        </span>
+<span class="text-[10px] font-mono text-[#5b738c]">ACTIVE ENGINE: 16 CHANNELS STEREO</span>
+</div>
+<div class="flex items-center space-x-3 text-[10px] font-mono text-[#5b738c]">
+<span>PEAK: -1.2 dBFS</span>
+<div class="w-24 bg-[#101820] h-2 rounded-sm overflow-hidden flex">
+<div class="w-[78%] bg-[#14ffc2]"></div>
+<div class="w-[10%] bg-[#ff9f43]"></div>
+</div>
+<span class="text-[#14ffc2] font-bold">MASTER OUT</span>
+</div>
+</div>
+<!-- 16 Channel Strips (Compact replicas matching bottom of Image 12) -->
+<div class="grid grid-cols-16 gap-1.5 flex-1 pt-2 items-end overflow-hidden" data-purpose="channel-faders-matrix" style="grid-template-columns: repeat(16, minmax(0, 1fr));">
+<!-- CH 01 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">01</span>
+<span class="text-[9px] font-mono text-[#ff9f43] font-bold">105%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 70%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 68%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 02 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">02</span>
+<span class="text-[9px] font-mono text-[#ff9f43] font-bold">105%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 70%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 68%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 03 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">03</span>
+<span class="text-[9px] font-mono text-[#ff9f43] font-bold">105%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 70%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 68%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 04 (Muted Example) -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">04</span>
+<span class="text-[9px] font-mono text-[#ff9f43] font-bold">105%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2]/40 rounded" style="height: 70%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2]/60 rounded-[1px] cursor-pointer" style="bottom: 68%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#ff3b5c] text-white font-bold rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 05 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">05</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">72%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 48%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 46%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 06 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">06</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">100%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 65%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 63%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 07 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">07</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">100%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 65%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 63%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 08 (Zeroed) -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">08</span>
+<span class="text-[9px] font-mono text-[#4a5f74]">0%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#253749] rounded" style="height: 0%;"></div>
+<div class="absolute w-3 h-2 bg-[#2e4256] rounded-[1px] cursor-pointer" style="bottom: 0%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 09 (Zeroed) -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">09</span>
+<span class="text-[9px] font-mono text-[#4a5f74]">0%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#253749] rounded" style="height: 0%;"></div>
+<div class="absolute w-3 h-2 bg-[#2e4256] rounded-[1px] cursor-pointer" style="bottom: 0%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 10 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">10</span>
+<span class="text-[9px] font-mono text-[#ff9f43] font-bold">105%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 70%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 68%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 11 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">11</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">83%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 55%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 53%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 12 (Zeroed) -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">12</span>
+<span class="text-[9px] font-mono text-[#4a5f74]">0%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#253749] rounded" style="height: 0%;"></div>
+<div class="absolute w-3 h-2 bg-[#2e4256] rounded-[1px] cursor-pointer" style="bottom: 0%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 13 (Zeroed) -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">13</span>
+<span class="text-[9px] font-mono text-[#4a5f74]">0%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#253749] rounded" style="height: 0%;"></div>
+<div class="absolute w-3 h-2 bg-[#2e4256] rounded-[1px] cursor-pointer" style="bottom: 0%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#4f6478] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 14 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">14</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">100%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 65%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 63%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 15 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">15</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">100%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 65%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 63%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+<!-- CH 16 -->
+<div class="flex flex-col items-center h-full justify-between py-0.5">
+<span class="text-[9px] font-mono text-[#6c859d] truncate w-full text-center">16</span>
+<span class="text-[9px] font-mono text-slate-300 font-bold">100%</span>
+<div class="h-16 w-1 bg-[#141d26] rounded relative flex justify-center">
+<div class="absolute bottom-0 w-1 bg-[#14ffc2] rounded" style="height: 65%;"></div>
+<div class="absolute w-3 h-2 bg-[#14ffc2] rounded-[1px] shadow-[0_0_6px_#14ffc2] cursor-pointer" style="bottom: 63%;"></div>
+</div>
+<div class="flex space-x-0.5 text-[8px] font-mono mt-1">
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">M</span>
+<span class="px-1 bg-[#141f2a] text-[#7f97af] rounded-[1px]">S</span>
+</div>
+</div>
+</div>
+</footer>
+<!-- END: BottomMasterMixerFaderStrip -->
+<!-- Interactivity Script simulating live pattern queue trigger switching -->
+<script data-purpose="pattern-launcher-interactivity">
+    document.addEventListener('DOMContentLoaded', () => {
+      // Small simulated interaction for Queue and Disarm buttons
+      const queueButtons = document.querySelectorAll('button:has(span:contains("QUEUE NEXT")), button');
+      queueButtons.forEach(btn => {
+        if (btn.innerText.includes('QUEUE NEXT')) {
+          btn.addEventListener('click', () => {
+            const row = btn.closest('.grid');
+            if (row) {
+              btn.innerHTML = '<span>⏳ QUEUED</span>';
+              btn.className = 'px-3 py-1.5 bg-[#311b11] border border-[#a65624] text-[#ff9f43] text-xs font-mono font-bold rounded transition-colors';
+            }
+          });
+        }
+      });
+    });
+  </script>
+</body></html>

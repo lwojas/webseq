@@ -91,6 +91,12 @@ export interface Track {
    * exactly as before. Belongs to the track, not a pattern, so its phase runs on across pattern
    * changes. */
   eventLfo?: TrackEventLfo;
+  /** Where this track's audio goes after its own FX chain: absent/null = the master (default,
+   * and what every older project does), else another track's id — which then processes the
+   * combined audio of everything routed to it through its own FX chain (and still plays its own
+   * source). Pushed to the engine as the track bus's NodeParam.BusOutput (audio/busSync.ts).
+   * Read through resolvedOutput, which also guards against a dangling or cyclic id. */
+  outputTrack?: TrackId | null;
 }
 
 /** What a Track LFO modulates. Only the note's velocity for now; the type is the seam for other
@@ -385,8 +391,42 @@ export function fxOwner(project: Project, target: FxTarget): { fx: FxInstance[];
 export function effectiveTrackGain(project: Project, track: Track): number {
   if (track.muted) return 0;
   const anySoloed = project.tracks.some((t) => t.soloed);
-  if (anySoloed && !track.soloed) return 0;
+  if (anySoloed && !track.soloed && !isDownstreamOfSoloed(project, track)) return 0;
   return track.volume;
+}
+
+/** Where `track` actually sends its audio: the id of another track, or "master". Anything that
+ * can't be honoured — no destination, a destination that no longer exists, a self-route, or a
+ * route that loops back to `track` — falls back to "master", so a hand-edited or stale project
+ * can never produce an invalid audio graph. The model's setTrackOutput never stores such a
+ * value; this is the read-side guard. */
+export function resolvedOutput(project: Project, track: Pick<Track, "id" | "outputTrack">): TrackId | "master" {
+  const dest = track.outputTrack;
+  if (dest == null) return "master";
+  let cursor: TrackId | null | undefined = dest;
+  for (let hops = 0; cursor != null && hops <= project.tracks.length; hops++) {
+    if (cursor === track.id) return "master";
+    const next: Track | undefined = trackById(project, cursor);
+    if (!next) return "master";
+    cursor = next.outputTrack;
+  }
+  return cursor == null ? dest : "master";
+}
+
+/** True when a soloed track routes (directly or through other tracks) into `track`: the FX track
+ * receiving a soloed source must stay audible, or soloing a drum would silence its own bus. */
+function isDownstreamOfSoloed(project: Project, track: Track): boolean {
+  return project.tracks.some((src) => {
+    if (!src.soloed || src.muted) return false;
+    let dest = resolvedOutput(project, src);
+    for (let hops = 0; dest !== "master" && hops <= project.tracks.length; hops++) {
+      if (dest === track.id) return true;
+      const next = trackById(project, dest);
+      if (!next) return false;
+      dest = resolvedOutput(project, next);
+    }
+    return false;
+  });
 }
 
 /** `track.playbackMode`, defaulted for a track that predates the field (see its doc comment) —

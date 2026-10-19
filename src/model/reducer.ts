@@ -24,6 +24,7 @@ export type Action =
   | { type: "SET_TRACK_PLAYBACK_MODE"; trackId: TrackId; playbackMode: PlaybackMode }
   | { type: "SET_TRACK_VOICE_MODE"; trackId: TrackId; voiceMode: VoiceMode }
   | { type: "SET_TRACK_PAN"; trackId: TrackId; pan: number }
+  | { type: "SET_TRACK_OUTPUT"; trackId: TrackId; dest: TrackId | null }
   | { type: "SET_TRACK_INSTRUMENT"; trackId: TrackId; kind: InstrumentKindId | null }
   | { type: "SET_INSTRUMENT_PARAM"; trackId: TrackId; paramId: string; value: number }
   | { type: "SET_TRACK_EVENT_LFO"; trackId: TrackId; patch: Partial<TrackEventLfo> }
@@ -98,6 +99,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setTrackVoiceMode(state, action.trackId, action.voiceMode);
     case "SET_TRACK_PAN":
       return project.setTrackPan(state, action.trackId, action.pan);
+    case "SET_TRACK_OUTPUT":
+      return project.setTrackOutput(state, action.trackId, action.dest);
     case "SET_TRACK_INSTRUMENT":
       return instruments.setTrackInstrument(state, action.trackId, action.kind);
     case "SET_INSTRUMENT_PARAM":

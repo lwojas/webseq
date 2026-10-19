@@ -238,6 +238,32 @@ export function setTrackPan(project: Project, trackId: TrackId, pan: number): Pr
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, pan: clampPan(pan) } : t)) };
 }
 
+/** True when `trackId` may send its audio to `destId`: a different, existing track whose own
+ * route doesn't (transitively) lead back to `trackId`. */
+export function canRouteTo(project: Project, trackId: TrackId, destId: TrackId): boolean {
+  if (destId === trackId || !project.tracks.some((t) => t.id === destId)) return false;
+  for (let cursor: TrackId | null | undefined = destId, hops = 0; cursor != null && hops <= project.tracks.length; hops++) {
+    if (cursor === trackId) return false;
+    cursor = project.tracks.find((t) => t.id === cursor)?.outputTrack;
+  }
+  return true;
+}
+
+/** Routes a track's output to another track, or to the master with `null`. An invalid target
+ * (self, unknown, or one that would close a loop) leaves the project unchanged. Master is stored
+ * as an absent field, so a default project serialises exactly as it did before routing existed. */
+export function setTrackOutput(project: Project, trackId: TrackId, dest: TrackId | null): Project {
+  if (dest != null && !canRouteTo(project, trackId, dest)) return project;
+  return {
+    ...project,
+    tracks: project.tracks.map((t) => {
+      if (t.id !== trackId) return t;
+      const { outputTrack: _old, ...rest } = t;
+      return dest == null ? rest : { ...rest, outputTrack: dest };
+    }),
+  };
+}
+
 export function setTrackMuted(project: Project, trackId: TrackId, muted: boolean): Project {
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, muted } : t)) };
 }

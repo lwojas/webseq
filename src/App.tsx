@@ -648,6 +648,11 @@ export function App() {
     [],
   );
 
+  const handleSetTrackOutput = useCallback(
+    (trackId: TrackId, dest: TrackId | null) => dispatch({ type: "SET_TRACK_OUTPUT", trackId, dest }),
+    [],
+  );
+
   const handleSetTrackPan = useCallback(
     (trackId: TrackId, pan: number) => dispatch({ type: "SET_TRACK_PAN", trackId, pan }),
     [],
@@ -1104,6 +1109,8 @@ export function App() {
           fx: {
             target: selectedTarget,
             track: selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null),
+            tracks: project.tracks,
+            onSetOutput: handleSetTrackOutput,
             fx: fxOwner?.fx ?? [],
             automation: fxOwner?.automation ?? [],
             patternTotalBeats: totalBeats(selectedPattern, project.beatsPerBar),

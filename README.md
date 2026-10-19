@@ -141,6 +141,23 @@ chain may contain at most one of each type, and the engine always applies filter
 regardless of this array's stored order (reordering the two isn't implemented — see that
 file's doc comment).
 
+### Track-to-track routing
+
+A track's audio goes to the master by default, or to another track: `Track.outputTrack` (absent =
+master) is set from the **Output** select at the top of the FX panel. The destination is an
+ordinary track — it keeps its own sample/instrument, and everything routed to it is summed at its
+bus *before* its FX chain, so `Kick FX -> Drum FX track (compressor) -> master`. Chains of tracks
+work; the destination list omits the track itself and anything that would loop, `setTrackOutput`
+refuses such a route, and `resolvedOutput` falls back to master for a dangling or cyclic id in a
+loaded file, so an old or hand-edited project can't build an invalid graph. Soloing a source keeps
+the track it feeds audible. Routing is stored as the track id (saved and loaded with the project;
+absent in older projects = master) and pushed to the engine by `audio/busSync.ts` as
+`NodeParam.BusOutput`, parking changed routes on master first so swapping routes can't trip the
+engine's loop check. Copy/paste of track config deliberately leaves routing out. Tracks can't be
+added, removed or reordered today; if that changes, `resolvedOutput` already degrades a deleted
+destination to master. The engine side is documented in `webdsp`'s ARCHITECTURE.md,
+"Buses / mixing".
+
 ## FX automation
 
 `AutomationLane` (`model/types.ts`) holds sparse `{ position, value }` points for one
