@@ -8,6 +8,7 @@ import { createInitialProject, assignAsset, addAsset, addNote, setNotePitch } fr
 import { INSTRUMENT_DEFS, MAX_TRACK_LFOS, addInstrumentLfo, removeInstrumentLfo, rootMidiNote, setInstrumentLfo, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
 import { pasteTrackConfig, copyTrackConfig } from "../src/model/trackConfig";
 import { mockRuntime } from "./mockRuntime";
+import type { InstrumentKindId } from "../src/model/types";
 
 const buses = Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`track-${i + 1}`, i + 1]));
 
@@ -117,7 +118,7 @@ describe("InstrumentHost", () => {
 });
 
 describe("compileInstrumentNotes", () => {
-  function projectWithNotes(kind: "kick" | "bass" | "pulse" | "pad" | "fm" | "hypersaw" | "pwmbeast") {
+  function projectWithNotes(kind: InstrumentKindId) {
     let project = setTrackInstrument(createInitialProject(), "track-1", kind);
     const patternId = project.patterns[0].id;
     project = addNote(project, patternId, "track-1", 4);
@@ -160,7 +161,7 @@ describe("compileInstrumentNotes", () => {
   });
 
   it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
-    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast"] as const) {
+    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos"] as const) {
       expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
     }
   });
@@ -199,6 +200,26 @@ describe("compileInstrumentNotes", () => {
       resonance: 0.45, envamt: 0.7, sub: 0.25, attack: 0.003, decay: 0.3, sustain: 0.6, release: 0.12,
     });
     expect(rootMidiNote(pb.tracks[0])).toBeCloseTo(33);
+  });
+
+  it("lists the Digital Machines with tune/decay/depth first, one-shots unsustained and Tone/Chaos sustained", () => {
+    const dm = ["dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos"] as const;
+    for (const kind of dm) {
+      expect(INSTRUMENT_DEFS[kind].params.slice(0, 2).map((p) => p.id)).toEqual(["tune", "decay"]);
+      for (const p of INSTRUMENT_DEFS[kind].params) {
+        expect(p.default).toBeGreaterThanOrEqual(p.min);
+        expect(p.default).toBeLessThanOrEqual(p.max);
+      }
+    }
+    expect(dm.map((k) => INSTRUMENT_DEFS[k].sustained)).toEqual([false, false, true, false, true]);
+    expect(INSTRUMENT_DEFS.dm_tone.params.find((p) => p.id === "structure")?.options?.map((o) => o.label))
+      .toEqual(["Stack", "Twin", "Fan", "Major", "Minor", "Sus"]);
+    const tone = projectWithNotes("dm_tone");
+    const [t] = compileInstrumentNotes(tone.patterns[0], tone.tracks, 120, 10);
+    expect(t.params.duration).toBeGreaterThan(0);
+    const thump = projectWithNotes("dm_thump");
+    expect(compileInstrumentNotes(thump.patterns[0], thump.tracks, 120, 10)[0].params.duration).toBeUndefined();
+    expect(rootMidiNote(tone.tracks[0])).toBeCloseTo(45);
   });
 
   it("yields nothing for sample-only projects", () => {

@@ -10,6 +10,11 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   pad: ["tune", "tone", "movement", "detune", "space", "attack", "release"],
   hypersaw: ["tune", "detune", "spread", "density", "cutoff", "attack", "decay", "sustain", "release"],
   pwmbeast: ["tune", "width", "pwm", "rate", "shape", "harmonics", "drive", "cutoff", "resonance", "envamt", "sub", "attack", "decay", "sustain", "release"],
+  dm_thump: ["tune", "decay", "fm", "sweep", "punch", "ratio", "body", "drive"],
+  dm_metal: ["tune", "decay", "fm", "spread", "tone", "noise", "chick", "drive"],
+  dm_tone: ["tune", "decay", "fm", "structure", "ratio", "damp", "attack", "hold", "drive"],
+  dm_crack: ["tune", "decay", "fm", "body", "noise", "burst", "tone", "drive"],
+  dm_chaos: ["tune", "decay", "chaos", "ratio", "fold", "noise", "sweep", "hold"],
   fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide"],
 };
@@ -33,6 +38,11 @@ const KIND_IDS: [string, InstrumentKind][] = [
   ["fm", InstrumentKind.Fm],
   ["hypersaw", InstrumentKind.Hypersaw],
   ["pwmbeast", InstrumentKind.PwmBeast],
+  ["dm_thump", InstrumentKind.DmThump],
+  ["dm_metal", InstrumentKind.DmMetal],
+  ["dm_tone", InstrumentKind.DmTone],
+  ["dm_crack", InstrumentKind.DmCrack],
+  ["dm_chaos", InstrumentKind.DmChaos],
 ];
 
 export function mockRuntime() {

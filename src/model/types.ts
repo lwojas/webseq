@@ -111,7 +111,7 @@ export interface TrackEventLfo {
 }
 
 /** A track's synth source: which engine instrument kind (by webdsp's stable string id —
- * "kick", "snare", "clap", "tom", "hihat", "bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast" — never its display name) and its current
+ * "kick", "snare", "clap", "tom", "hihat", "bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos" — never its display name) and its current
  * control values, keyed by the parameter ids in model/instruments.ts's INSTRUMENT_DEFS. */
 export interface TrackInstrument {
   kind: InstrumentKindId;
@@ -139,7 +139,7 @@ export interface TrackLfo {
   target: string;
 }
 
-export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "bass" | "pulse" | "pad" | "fm" | "hypersaw" | "pwmbeast";
+export type InstrumentKindId = "kick" | "snare" | "clap" | "tom" | "hihat" | "bass" | "pulse" | "pad" | "fm" | "hypersaw" | "pwmbeast" | "dm_thump" | "dm_metal" | "dm_tone" | "dm_crack" | "dm_chaos";
 
 /** One-shot: plays through once, bounded by its triggering note's length (today's only
  * behavior). Loop: the same, but the asset tiles/repeats to fill that note's full length
