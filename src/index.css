@@ -2129,8 +2129,14 @@ select {
    background. Its meter takes the place of the fader. */
 .mixer-master {
   position: sticky;
-  right: 0;
-  margin-left: auto;
+  /* Bleeds through the panel's own padding on the top, bottom and right so the card fills the
+     panel's full height and reaches its edge: it reads as a fixed end-cap, not another strip.
+     Sticky insets are measured from the panel's content box (12px in from the edge), so a -12px
+     inset puts the card's outer edge exactly on the panel edge. */
+  right: -12px;
+  margin: -10px -12px -10px auto;
+  padding-top: 10px;
+  padding-bottom: 10px;
   z-index: 1;
   border-left: 1px solid var(--border-strong);
   border-right: none;
