@@ -205,11 +205,11 @@ describe("arpTrackNotes (webseq adapter)", () => {
     expect(out[0].duration).toBeCloseTo(0.8, 9);
   });
 
-  it("keeps bars independent and clips runs at the bar line", () => {
-    const out = arpTrackNotes([note("a", 14, 6, 0), note("b", 16, 2, 7)], arp({ rate: "1/16" }), 16, 32);
-    expect(out.map((n) => n.start)).toEqual([14, 15, 16, 17]);
-    // bar 0's pool is only {0}; bar 1's only {7}
-    expect(out.map((n) => n.pitch ?? 0)).toEqual([0, 0, 7, 7]);
+  it("keeps bars independent and carries a note across the bar line", () => {
+    const out = arpTrackNotes([note("a", 14, 6, 0), note("b", 20, 2, 7)], arp({ rate: "1/16" }), 16, 32);
+    expect(out.map((n) => n.start)).toEqual([14, 15, 16, 17, 18, 19, 20, 21]);
+    // bar 0's pool is only {0}; bar 1's is {0, 7} (the carried piece plus b), counting afresh
+    expect(out.map((n) => n.pitch ?? 0)).toEqual([0, 0, 0, 7, 0, 7, 0, 7]);
   });
 
   it("clips at the pattern end, carries lfo participation, and clamps pitch", () => {
@@ -272,6 +272,14 @@ describe("arp in the compile path", () => {
     const on = compileInstrumentNotes(project.patterns[0], project.tracks, 120, 0, 0.5, undefined, 16);
     expect(on.length).toBe(4);
     expect(on.map((n) => n.params.pitch ?? 0)).toEqual([0, 5, 0, 5]);
+  });
+});
+
+describe("arpTrackNotes long notes", () => {
+  it("keeps arpeggiating through every bar a long note covers", () => {
+    const out = arpTrackNotes([note("a", 0, 40, 0)], arp({ rate: "1/4" }), 16, 48);
+    expect(out.map((n) => n.start)).toEqual([0, 4, 8, 12, 16, 20, 24, 28, 32, 36]);
+    expect(new Set(out.map((n) => n.id)).size).toBe(out.length);
   });
 });
 

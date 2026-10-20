@@ -35,7 +35,8 @@ automation and the track LFO therefore all see ordinary notes.
 **How notes are read.** Track notes cannot overlap, so there is no stored chord. Per *bar*:
 the pitches of the track's notes are the chord pool, and each note is a gate window: the arp plays
 inside `[start, start+duration)`, first step on the note's start, then every `rate`. Placement keeps
-its rhythm and rests; the arp chooses what sounds. Runs are clipped at bar lines and the pattern end,
+its rhythm and rests; the arp chooses what sounds. Runs are split at bar lines and clipped at the pattern end; a note longer than a bar
+continues in each later bar as a run starting on the bar line (its pitch joins that bar's pool),
 and each bar is independent (fresh pool, step counter, random sequence), so loops, queued/changed
 patterns and different pattern lengths are deterministic with no state between iterations.
 
@@ -51,4 +52,4 @@ patterns and different pattern lengths are deterministic with no state between i
   source notes.
 
 Limits: generated notes are not shown in the grid/timeline (the stored steps are); generated notes
-past ±48 semitones are clamped; an arp never crosses a bar line. MIDI-control contract is not extended.
+past ±48 semitones are clamped; an arp's pool and step counter never cross a bar line (a long note restarts them each bar). MIDI-control contract is not extended.

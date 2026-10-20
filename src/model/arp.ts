@@ -289,27 +289,41 @@ export function expandArpGroup(arp: TrackArp, runs: ArpRun[], groupIndex = 0): A
  * stable between compiles. The input is untouched. */
 export function arpTrackNotes(notes: Note[], arp: TrackArp, beatsPerBar: number, totalBeats: number): Note[] {
   if (notes.length === 0 || beatsPerBar <= 0) return [];
-  const groups = new Map<number, Note[]>();
+  // A note longer than a bar is a run in every bar it sounds in: the part after its own bar
+  // enters the later bars' groups as a run starting on that bar line (a carried piece).
+  interface Piece { src: Note; start: number; end: number; carried: boolean }
+  const groups = new Map<number, Piece[]>();
   for (const note of notes) {
-    const bar = Math.floor(note.start / beatsPerBar);
-    const list = groups.get(bar);
-    if (list) list.push(note);
-    else groups.set(bar, [note]);
+    const first = Math.floor(note.start / beatsPerBar);
+    const end = Math.min(note.start + note.duration, totalBeats);
+    const last = Math.max(first, Math.ceil(end / beatsPerBar - 1e-9) - 1);
+    for (let bar = first; bar <= last; bar++) {
+      const barStart = bar * beatsPerBar;
+      const piece: Piece = {
+        src: note,
+        start: Math.max(note.start, barStart),
+        end: Math.min(end, barStart + beatsPerBar),
+        carried: bar > first,
+      };
+      if (bar > first && piece.end <= piece.start) continue;
+      const list = groups.get(bar);
+      if (list) list.push(piece);
+      else groups.set(bar, [piece]);
+    }
   }
   const out: Note[] = [];
   for (const bar of [...groups.keys()].sort((a, b) => a - b)) {
-    const sources = groups.get(bar)!.sort((a, b) => a.start - b.start);
-    const barEnd = Math.min((bar + 1) * beatsPerBar, totalBeats);
-    const runs: ArpRun[] = sources.map((n) => ({
-      start: n.start,
-      length: Math.max(0, Math.min(n.duration, barEnd - n.start)),
-      pitch: n.pitch ?? 0,
-      velocity: n.velocity,
+    const pieces = groups.get(bar)!.sort((a, b) => a.start - b.start);
+    const runs: ArpRun[] = pieces.map((p) => ({
+      start: p.start,
+      length: Math.max(0, p.end - p.start),
+      pitch: p.src.pitch ?? 0,
+      velocity: p.src.velocity,
     }));
     for (const step of expandArpGroup(arp, runs, bar)) {
-      const src = sources[step.run];
+      const { src, carried } = pieces[step.run];
       const note: Note = {
-        id: `${src.id}~${step.index}`,
+        id: carried ? `${src.id}~b${bar}~${step.index}` : `${src.id}~${step.index}`,
         trackId: src.trackId,
         start: step.start,
         duration: step.length,
