@@ -130,7 +130,8 @@ select {
 .transport {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px 16px;
+  flex-wrap: wrap;
   padding: 8px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
@@ -3044,6 +3045,7 @@ select {
 
 .transport.transport-settings {
   flex-direction: column;
+  flex-wrap: nowrap;
   align-items: stretch;
   gap: 14px;
   padding: 0;
@@ -3252,5 +3254,166 @@ select {
   .chop-pad {
     min-width: 40px;
     padding: 10px 8px;
+  }
+}
+
+/* --- Scale control (transport) and scale-aware pitch --- */
+
+.scale-control {
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.scale-control .btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+/* A note outside the project's key: still fully editable, just visually secondary. */
+.te-note-label.out-of-scale {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+option.out-of-scale {
+  color: var(--text-dim);
+}
+
+/* --- Arp (Track Editor) --- */
+
+.arp-panel {
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.arp-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.arp-head .enum-toggle,
+.arp-panel .module-param .enum-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.arp-head .enum-toggle button,
+.arp-panel .module-param .enum-toggle button {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.arp-head .enum-toggle button.active,
+.arp-panel .module-param .enum-toggle button.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+.arp-hint {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.arp-params + .arp-params {
+  margin-top: 8px;
+}
+
+.arp-params select {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 3px 6px;
+  color: var(--text);
+}
+
+.arp-steps {
+  display: flex;
+  gap: 3px;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+
+.arp-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 26px;
+}
+
+.arp-step-bar {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.arp-step-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--accent-dim);
+  border-top: 2px solid var(--accent);
+}
+
+.arp-step-value {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.arp-steps-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+@media (pointer: coarse) {
+  .arp-head .enum-toggle button,
+  .arp-panel .module-param .enum-toggle button {
+    padding: 8px 12px;
+  }
+  .scale-control select,
+  .arp-params select {
+    padding: 8px 6px;
+  }
+  .arp-step {
+    width: 32px;
+  }
+  .arp-step-bar {
+    height: 56px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 16 velocity steps must not blow out a phone-width panel: shrink them and scroll if needed. */
+  .arp-steps {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .arp-step {
+    width: 22px;
+  }
+  .arp-steps-param {
+    min-width: 0;
   }
 }

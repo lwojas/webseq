@@ -31,6 +31,8 @@ import { PatternsView } from "./app/PatternsView";
 import { MobileTabBar } from "./app/MobileTabBar";
 import { deriveLayout, effectiveSideView, useLayout, type BottomPanelView, type LibraryView, type MainView, type MobileTab, type SidePanelView, type Takeover, type TrackSubTab } from "./app/layout";
 import { useMidiControls } from "./midi/useMidiControls";
+import { scaleOf, type ProjectScale } from "./model/scale";
+import type { ArpVelocity, TrackArp } from "./model/arp";
 
 /** Frees every sample the engine holds. New and Load replace the whole project, so the previous
  * project's decoded audio would otherwise stay resident for the rest of the session (ECS-84).
@@ -260,6 +262,10 @@ export function App() {
     // Live BPM changes only take audible effect once the transport re-anchors its schedule —
     // see Transport.retime()'s doc comment for why that's required for a click-free change.
     transportRef.current?.retime();
+  }, []);
+
+  const handleScaleChange = useCallback((patch: Partial<ProjectScale>) => {
+    dispatch({ type: "SET_PROJECT_SCALE", patch });
   }, []);
 
   const handleSwingChange = useCallback((swing: number) => {
@@ -695,6 +701,10 @@ export function App() {
     (trackId: TrackId, patch: Partial<TrackEventLfo>) => dispatch({ type: "SET_TRACK_EVENT_LFO", trackId, patch }),
     [],
   );
+  const handleSetTrackArp = useCallback(
+    (trackId: TrackId, patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> }) => dispatch({ type: "SET_TRACK_ARP", trackId, patch }),
+    [],
+  );
   const handleSetNoteLfo = useCallback(
     (noteId: NoteId, amount: number) => dispatch({ type: "SET_NOTE_LFO", patternId: selectedPatternId, noteId, amount }),
     [selectedPatternId],
@@ -941,6 +951,9 @@ export function App() {
       ? "MASTER"
       : "—";
 
+  // Stable identity until the project's scale changes, so the memoised Track Editor isn't re-rendered
+  // by every unrelated project edit.
+  const projectScale = useMemo(() => scaleOf(project), [project.scale]); // eslint-disable-line react-hooks/exhaustive-deps
   const projectBarProps = {
     saveStatus,
     saveError,
@@ -957,6 +970,8 @@ export function App() {
     bpm: project.bpm,
     swing: project.swing,
     gridResolution,
+    scale: projectScale,
+    onScaleChange: handleScaleChange,
     onPlay: handlePlay,
     onPause: handlePause,
     onStop: handleStop,
@@ -1164,6 +1179,8 @@ export function App() {
             onSetNoteVelocity: handleSetNoteVelocity,
             onSetNoteDuration: handleSetNoteDuration,
             chopAsset: selectedTrackAsset,
+            scale: projectScale,
+            onSetTrackArp: handleSetTrackArp,
             onSetTrackEventLfo: handleSetTrackEventLfo,
             onSetNoteLfo: handleSetNoteLfo,
             onSetTrackNotesLfo: handleSetTrackNotesLfo,

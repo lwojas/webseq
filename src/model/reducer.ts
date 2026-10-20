@@ -10,11 +10,16 @@ import * as automation from "./automation";
 import { sourceParamDefs } from "./modulation";
 import * as trackConfig from "./trackConfig";
 import * as edit from "./edit";
+import { setTrackArp, type ArpVelocity, type TrackArp } from "./arp";
+import { snapAddedNoteToScale } from "./scaleEntry";
+import { setProjectScale, type ProjectScale } from "./scale";
 
 export type Action =
   | { type: "SET_BPM"; bpm: number }
   | { type: "SET_SWING"; swing: number }
   | { type: "SET_PROJECT_NAME"; name: string }
+  | { type: "SET_PROJECT_SCALE"; patch: Partial<ProjectScale> }
+  | { type: "SET_TRACK_ARP"; trackId: TrackId; patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> } }
   | { type: "ADD_ASSET"; asset: Asset }
   | { type: "ASSIGN_ASSET"; trackId: TrackId; assetId: AssetId }
   | { type: "RENAME_ASSET"; assetId: AssetId; name: string }
@@ -91,6 +96,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setBpm(state, action.bpm);
     case "SET_SWING":
       return project.setSwing(state, action.swing);
+    case "SET_PROJECT_SCALE":
+      return setProjectScale(state, action.patch);
+    case "SET_TRACK_ARP":
+      return setTrackArp(state, action.trackId, action.patch);
     case "SET_PROJECT_NAME":
       return project.renameProject(state, action.name);
     case "ADD_ASSET":
@@ -142,7 +151,7 @@ export function projectReducer(state: Project, action: Action): Project {
     case "SET_NOTE_VELOCITY":
       return project.setNoteVelocity(state, action.patternId, action.noteId, action.velocity);
     case "ADD_NOTE":
-      return project.addNote(state, action.patternId, action.trackId, action.start);
+      return snapAddedNoteToScale(state, project.addNote(state, action.patternId, action.trackId, action.start), action.patternId, action.trackId);
     case "REMOVE_NOTE":
       return project.removeNote(state, action.patternId, action.noteId);
     case "CLEAR_TRACK_NOTES":

@@ -8,6 +8,9 @@
 // makes chaining patterns together musically deterministic (see ARCHITECTURE notes in
 // README.md).
 
+import type { TrackArp } from "./arp";
+import type { ProjectScale } from "./scale";
+
 export type TrackId = string;
 export type PatternId = string;
 export type NoteId = string;
@@ -97,6 +100,10 @@ export interface Track {
    * source). Pushed to the engine as the track bus's NodeParam.BusOutput (audio/busSync.ts).
    * Read through resolvedOutput, which also guards against a dangling or cyclic id. */
   outputTrack?: TrackId | null;
+  /** Per-track arpeggiator (model/arp.ts): generates this track's notes from the stored ones at
+   * compile time (audio/compile.ts). Absent or `enabled: false` = the notes play exactly as stored,
+   * so older projects are untouched. */
+  arp?: TrackArp;
 }
 
 /** What a Track LFO modulates. Only the note's velocity for now; the type is the seam for other
@@ -342,6 +349,9 @@ export interface Project {
   master: MasterBus;
   /** The project-level Asset Bin — see the Asset doc comment. */
   assets: Asset[];
+  /** The project's key (model/scale.ts): a context for note entry, never applied to stored notes
+   * or to playback. Absent = chromatic (every note in scale), so older projects are unchanged. */
+  scale?: ProjectScale;
 }
 
 export function totalBeats(pattern: Pick<Pattern, "bars">, beatsPerBar: number): number {

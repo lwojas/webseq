@@ -2,6 +2,9 @@ import { memo, useMemo } from "react";
 import type { Asset, Note, NoteId, Pattern, Track, TrackEventLfo, TrackId } from "../model/types";
 import { eventLfoOf } from "../model/eventLfo";
 import { TrackLfoPanel } from "./TrackLfoPanel";
+import { ArpPanel } from "./ArpPanel";
+import { arpOf, type ArpVelocity, type TrackArp } from "../model/arp";
+import { getScaleDegree, isChromatic, isOffsetInScale, referenceMidi, type ProjectScale } from "../model/scale";
 import { notesForTrack, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
 import { effectiveSampleMode, sliceCount } from "../model/chop";
@@ -25,6 +28,9 @@ interface Props {
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
   /** The sample the selected track plays, for chop slice count. */
   chopAsset?: Asset | null;
+  /** The project's key: emphasises scale pitches in the menu and, with Snap, lists only those. */
+  scale: ProjectScale;
+  onSetTrackArp: (trackId: TrackId, patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> }) => void;
   onSetTrackEventLfo: (trackId: TrackId, patch: Partial<TrackEventLfo>) => void;
   onSetNoteLfo: (noteId: NoteId, amount: number) => void;
   onSetTrackNotesLfo: (trackId: TrackId, amount: number) => void;
@@ -52,14 +58,26 @@ function formatPitch(pitch: number, root: number | null, chop = false): string {
 
 /** Offsets to offer: all of them for a sample, only the audible span for a synth root, always
  * including the note's current value. */
-function pitchOptions(root: number | null, current: number, slices: number | null): number[] {
+function pitchOptions(root: number | null, current: number, slices: number | null, scale: ProjectScale): number[] {
   // Chop track: one option per slice (at least one), plus the current value so a stale step shows.
   if (slices !== null) return PITCH_OFFSETS.filter((p) => p >= 0 && (p < Math.max(1, slices) || p === current)).reverse();
-  if (root === null) return PITCH_OFFSETS;
+  // With Snap on only the key's notes are offered (the note's current value always stays, so an
+  // existing off-scale note is never hidden or silently changed).
+  const keep = (p: number) => p === current || !scale.snap || isOffsetInScale(scale, root, p);
+  if (root === null) return PITCH_OFFSETS.filter(keep);
   return PITCH_OFFSETS.filter((p) => {
     const hz = 440 * Math.pow(2, (root + p - 69) / 12);
-    return p === current || (hz >= MIN_AUDIBLE_HZ && hz <= MAX_AUDIBLE_HZ);
+    return keep(p) && (p === current || (hz >= MIN_AUDIBLE_HZ && hz <= MAX_AUDIBLE_HZ));
   });
+}
+
+/** Menu text for a pitch: in-scale notes get a bullet and their scale degree, so the key is
+ * visible at a glance; off-scale notes stay plain. Chromatic (the default) adds nothing. */
+function pitchLabel(pitch: number, root: number | null, slices: number | null, scale: ProjectScale): string {
+  const base = formatPitch(pitch, root, slices !== null);
+  if (slices !== null || isChromatic(scale)) return base;
+  const degree = getScaleDegree(scale, referenceMidi(scale, root) + pitch);
+  return degree === null ? base : `● ${base}  ${degree}`;
 }
 
 function formatLength(beats: number): string {
@@ -80,6 +98,7 @@ interface CardProps {
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
   /** Chop track: how many slices its sample has (pitch picks one). null = chromatic. */
   slices: number | null;
+  scale: ProjectScale;
   /** Shown only while the track's LFO is on. */
   lfoOn: boolean;
   onSetNoteLfo: (noteId: NoteId, amount: number) => void;
@@ -91,6 +110,7 @@ const NoteCard = memo(function NoteCard({
   note,
   root,
   slices,
+  scale,
   selected,
   onSelectNote,
   onRemoveNote,
@@ -118,9 +138,9 @@ const NoteCard = memo(function NoteCard({
           aria-label="Pitch"
           title={slices !== null ? "Which slice of the sample this step plays" : root === null ? "Semitones relative to the sample's original pitch" : "Note, from the instrument's Root plus the offset"}
         >
-          {pitchOptions(root, pitch, slices).map((p) => (
-            <option key={p} value={p}>
-              {formatPitch(p, root, slices !== null)}
+          {pitchOptions(root, pitch, slices, scale).map((p) => (
+            <option key={p} value={p} className={slices === null && !isChromatic(scale) && !isOffsetInScale(scale, root, p) ? "out-of-scale" : undefined}>
+              {pitchLabel(p, root, slices, scale)}
             </option>
           ))}
         </select>
@@ -193,6 +213,8 @@ export const TrackEditor = memo(function TrackEditor({
   onSetNoteVelocity,
   onSetNoteDuration,
   chopAsset,
+  scale,
+  onSetTrackArp,
   onSetTrackEventLfo,
   onSetNoteLfo,
   onSetTrackNotesLfo,
@@ -222,6 +244,7 @@ export const TrackEditor = memo(function TrackEditor({
       <div className="fx-panel-title">
         {trackHasSource(track) ? track.name : "— empty —"} — TRACK EDITOR
       </div>
+      <ArpPanel arp={arpOf(track)} noteCount={notes.length} onChange={(patch) => onSetTrackArp(track.id, patch)} />
       <TrackLfoPanel
         lfo={lfo}
         participating={participating}
@@ -256,7 +279,9 @@ export const TrackEditor = memo(function TrackEditor({
               onRemove={() => onRemoveNote(note.id)}
               lfo={lfo.enabled ? note.lfo : undefined}
             >
-              <span className="te-note-label">{formatPitch(note.pitch ?? 0, root, slices !== null)}</span>
+              <span className={`te-note-label${slices === null && !isChromatic(scale) && !isOffsetInScale(scale, root, note.pitch ?? 0) ? " out-of-scale" : ""}`}>
+                {formatPitch(note.pitch ?? 0, root, slices !== null)}
+              </span>
             </NoteBlock>
           ))}
         </div>
@@ -267,6 +292,7 @@ export const TrackEditor = memo(function TrackEditor({
               note={note}
               root={root}
               slices={slices}
+              scale={scale}
               selected={note.id === selectedNoteId}
               onSelectNote={onSelectNote}
               onRemoveNote={onRemoveNote}

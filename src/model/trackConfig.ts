@@ -5,6 +5,7 @@
 
 import type { Asset, AssetId, AutomationLane, FxId, FxInstance, PlaybackMode, Project, Track, TrackEventLfo, TrackId, TrackInstrument, VoiceMode } from "./types";
 import { INSTRUMENT_DEFS } from "./instruments";
+import type { TrackArp } from "./arp";
 import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, effectivePan, effectivePlaybackMode, effectiveVoiceMode } from "./types";
 
 /** By-value copy of a synth source, including its LFO slots. */
@@ -12,6 +13,10 @@ export function cloneInstrument(i: TrackInstrument): TrackInstrument {
   const copy: TrackInstrument = { ...i, params: { ...i.params } };
   if (i.lfos) copy.lfos = i.lfos.map((l) => ({ ...l }));
   return copy;
+}
+
+function cloneArp(a: TrackArp): TrackArp {
+  return { ...a, velocity: { ...a.velocity, steps: [...a.velocity.steps] } };
 }
 
 /** The reusable-configuration boundary (ECS-124's field-by-field decision): asset reference,
@@ -29,6 +34,8 @@ export interface CopiedTrackConfig {
   pan?: number;
   /** The track's event LFO (by value). */
   eventLfo?: TrackEventLfo;
+  /** The track's arpeggiator (by value). */
+  arp?: TrackArp;
 }
 
 let idCounter = 0;
@@ -74,6 +81,7 @@ export function hasTrackConfig(track: Track): boolean {
     track.fx.length > 0 ||
     track.automation.length > 0 ||
     track.eventLfo?.enabled === true ||
+    track.arp?.enabled === true ||
     effectivePlaybackMode(track) !== DEFAULT_PLAYBACK_MODE ||
     effectiveVoiceMode(track) !== DEFAULT_VOICE_MODE
   );
@@ -93,6 +101,7 @@ export function copyTrackConfig(track: Track): CopiedTrackConfig {
     instrument: track.instrument ? cloneInstrument(track.instrument) : null,
     pan: track.pan,
     eventLfo: track.eventLfo ? { ...track.eventLfo } : undefined,
+    arp: track.arp ? cloneArp(track.arp) : undefined,
   };
 }
 
@@ -130,6 +139,7 @@ export function pasteTrackConfig(project: Project, trackId: TrackId, config: Cop
             instrument,
             pan: config.pan,
             eventLfo: config.eventLfo ? { ...config.eventLfo } : undefined,
+            arp: config.arp ? cloneArp(config.arp) : undefined,
             name: asset ? asset.name : instrument ? (INSTRUMENT_DEFS[instrument.kind]?.label ?? t.name) : t.name,
             fx,
             automation,

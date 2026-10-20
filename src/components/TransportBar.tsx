@@ -3,6 +3,8 @@ import { MAX_BPM, MAX_SWING, MIN_BPM, MIN_SWING } from "../model/project";
 import { GRID_RESOLUTIONS, type GridResolution } from "../model/notes";
 import type { PlaybackStatus, ResampleStatus } from "../audio/transport";
 import { useRafText } from "../hooks/useRafText";
+import type { ProjectScale } from "../model/scale";
+import { ScaleControl } from "./ScaleControl";
 
 export type ResamplePhase = "idle" | "pending" | "processing" | "complete" | "error";
 
@@ -16,6 +18,8 @@ interface Props {
   bpm: number;
   swing: number;
   gridResolution: GridResolution;
+  scale: ProjectScale;
+  onScaleChange: (patch: Partial<ProjectScale>) => void;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -49,6 +53,8 @@ export function TransportBar({
   bpm,
   swing,
   gridResolution,
+  scale,
+  onScaleChange,
   onPlay,
   onPause,
   onStop,
@@ -137,6 +143,8 @@ export function TransportBar({
           ))}
         </select>
       </div>
+
+      <ScaleControl scale={scale} onChange={onScaleChange} />
 
       <div className="field zoom-control">
         <span>Zoom</span>
