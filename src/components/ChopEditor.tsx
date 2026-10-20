@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addCue, evenCues, MAX_SLICES, moveCue, removeCue } from "../model/chop";
+import { addCue, evenCues, MAX_SLICES, moveChopStart, moveCue, removeCue } from "../model/chop";
 import { loadPeaks } from "../audio/peaks";
 import type { Asset } from "../model/types";
 
@@ -8,6 +8,7 @@ interface Props {
   /** The asset's original bytes, for drawing the waveform (undefined if unavailable). */
   getAssetBytes: (assetId: number) => ArrayBuffer | undefined;
   onSetCues: (assetId: number, cues: number[]) => void;
+  onSetChopStart: (assetId: number, start: number) => void;
   onAuditionSlice: (assetId: number, slice: number) => void;
 }
 
@@ -17,16 +18,21 @@ const NUDGE = 0.005;
 /** Waveform with draggable cue points. Slices are contiguous: N cues make N+1 slices, numbered
  * 1..N+1 — a chop track's note pitch 0 plays slice 1, pitch 1 slice 2, and so on. Tap empty
  * waveform to add a cue, drag a cue to move it, select one and press Remove (or Delete) to drop
- * it. Drags preview locally and commit once on release, so the engine is updated once. */
-export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }: Props) {
+ * it. The start marker (left handle) sets where slice 1 begins, to skip leading silence. Drags
+ * preview locally and commit once on release, so the engine is updated once. */
+export function ChopEditor({ asset, getAssetBytes, onSetCues, onSetChopStart, onAuditionSlice }: Props) {
   const cues = asset.cues ?? [];
+  const start = asset.chopStart ?? 0;
   const [draft, setDraft] = useState<number[] | null>(null);
+  const [startDraft, setStartDraft] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [peaks, setPeaks] = useState<Float32Array | null | undefined>(undefined);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{ index: number; moved: boolean } | null>(null);
+  const startDragRef = useRef(false);
   const shown = draft ?? cues;
+  const shownStart = startDraft ?? start;
 
   useEffect(() => {
     let live = true;
@@ -84,7 +90,7 @@ export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }:
     const drag = dragRef.current;
     if (!drag) return;
     drag.moved = true;
-    setDraft(moveCue(draft ?? cues, drag.index, fractionAt(e.clientX)));
+    setDraft(moveCue(draft ?? cues, drag.index, fractionAt(e.clientX), start));
   };
   const onCuePointerUp = () => {
     const drag = dragRef.current;
@@ -95,21 +101,43 @@ export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }:
   const onCueKeyDown = (index: number) => (e: React.KeyboardEvent) => {
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      onSetCues(asset.id, moveCue(cues, index, cues[index] + (e.key === "ArrowLeft" ? -NUDGE : NUDGE)));
+      onSetCues(asset.id, moveCue(cues, index, cues[index] + (e.key === "ArrowLeft" ? -NUDGE : NUDGE), start));
     } else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
       onSetCues(asset.id, removeCue(cues, index));
       setSelected(null);
     }
   };
+  const onStartPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    startDragRef.current = false;
+    setStartDraft(start);
+  };
+  const onStartPointerMove = (e: React.PointerEvent) => {
+    if (startDraft === null) return;
+    startDragRef.current = true;
+    setStartDraft(moveChopStart(cues, fractionAt(e.clientX)));
+  };
+  const onStartPointerUp = () => {
+    if (startDraft !== null && startDragRef.current) onSetChopStart(asset.id, startDraft);
+    startDragRef.current = false;
+    setStartDraft(null);
+  };
+  const onStartKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      onSetChopStart(asset.id, moveChopStart(cues, start + (e.key === "ArrowLeft" ? -NUDGE : NUDGE)));
+    }
+  };
   const onWaveformPointerDown = (e: React.PointerEvent) => {
-    const next = addCue(cues, fractionAt(e.clientX));
+    const next = addCue(cues, fractionAt(e.clientX), start);
     if (next.length === cues.length) return;
     onSetCues(asset.id, next);
     setSelected(next.findIndex((c) => !cues.includes(c)));
   };
 
-  const sliceBounds = [0, ...shown, 1];
+  const sliceBounds = [shownStart, ...shown, 1];
   const atMax = shown.length + 1 >= MAX_SLICES;
 
   return (
@@ -118,7 +146,7 @@ export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }:
         <span className="track-mode-label">Slices</span>
         <div className="track-mode-toggle">
           {EVEN_SPLITS.map((n) => (
-            <button key={n} className={cues.length + 1 === n ? "active" : ""} onClick={() => onSetCues(asset.id, evenCues(n))} title={`Split evenly into ${n} slices`}>
+            <button key={n} className={cues.length + 1 === n ? "active" : ""} onClick={() => onSetCues(asset.id, evenCues(n, start))} title={`Split evenly into ${n} slices`}>
               {n}
             </button>
           ))}
@@ -138,15 +166,35 @@ export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }:
         <button className="btn small" disabled={cues.length === 0} onClick={() => onSetCues(asset.id, [])} title="Remove all cue points">
           Clear
         </button>
+        <button className="btn small" disabled={start === 0} onClick={() => onSetChopStart(asset.id, 0)} title="Move the start marker back to the beginning of the sample">
+          Reset start
+        </button>
       </div>
       <div ref={wrapRef} className="chop-wave" onPointerDown={atMax ? undefined : onWaveformPointerDown}>
         <canvas ref={canvasRef} />
+        {shownStart > 0 && <span className="chop-skipped" style={{ width: `${shownStart * 100}%` }} />}
         {peaks === null && <span className="chop-wave-empty">Waveform unavailable</span>}
         {sliceBounds.slice(0, -1).map((from, i) => (
           <span key={i} className="chop-slice-label" style={{ left: `${from * 100}%`, width: `${(sliceBounds[i + 1] - from) * 100}%` }}>
             {i + 1}
           </span>
         ))}
+        <div
+          className="chop-start"
+          style={{ left: `${shownStart * 100}%` }}
+          role="slider"
+          tabIndex={0}
+          aria-label="Chop start"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(shownStart * 100)}
+          title="Start of slice 1 — drag to skip leading silence"
+          onPointerDown={onStartPointerDown}
+          onPointerMove={onStartPointerMove}
+          onPointerUp={onStartPointerUp}
+          onPointerCancel={onStartPointerUp}
+          onKeyDown={onStartKeyDown}
+        />
         {shown.map((cue, i) => (
           <div
             key={i}
@@ -178,7 +226,7 @@ export function ChopEditor({ asset, getAssetBytes, onSetCues, onAuditionSlice }:
       </div>
       <div className="instrument-hint">
         {cues.length === 0
-          ? "Tap the waveform to add cue points, or pick an even split."
+          ? "Tap the waveform to add cue points, or pick an even split. Drag the start marker to skip leading silence."
           : `${cues.length + 1} slices. In a chop track a step's pitch picks the slice: 0 = slice 1, +1 = slice 2, ...`}
       </div>
     </div>

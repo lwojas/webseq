@@ -3211,6 +3211,55 @@ select {
   outline: none;
 }
 
+/* Chop start marker: a handle hanging to the right of its line (so it stays grabbable at 0), with
+   the skipped region before it dimmed. */
+.chop-start {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.chop-start::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--accent);
+}
+
+.chop-start::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 2px;
+  border: 7px solid transparent;
+  border-top-color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.chop-start:focus {
+  outline: none;
+}
+
+.chop-start:focus-visible::before {
+  background: var(--danger);
+}
+
+.chop-skipped {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
 @media (pointer: coarse) {
   .chop-wave {
     height: 120px;
@@ -3223,6 +3272,10 @@ select {
 
   .chop-cue::before {
     left: 15px;
+  }
+
+  .chop-start {
+    width: 32px;
   }
 }
 

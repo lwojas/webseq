@@ -47,11 +47,11 @@ function syncSampleRegions(runtime: AudioRuntime, project: Project): void {
     pushedRegions.set(runtime, pushed);
   }
   for (const asset of project.assets) {
-    const key = JSON.stringify(asset.cues ?? []);
-    if ((pushed.get(asset.id) ?? "[]") === key) continue;
+    const key = JSON.stringify([asset.chopStart ?? 0, asset.cues ?? []]);
+    if ((pushed.get(asset.id) ?? "[0,[]]") === key) continue;
     pushed.set(asset.id, key);
     const cues = asset.cues ?? [];
-    runtime.setSampleRegions(asset.id, cues.length > 0 ? cueRegions(cues, assetLengthFrames(asset)) : []);
+    runtime.setSampleRegions(asset.id, cues.length > 0 ? cueRegions(cues, assetLengthFrames(asset), asset.chopStart ?? 0) : []);
   }
 }
 

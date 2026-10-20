@@ -4,7 +4,7 @@
 // callers never need to manually locate-and-replace a pattern in project.patterns.
 
 import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, Track, TrackId, VoiceMode } from "./types";
-import { normalizeCues } from "./chop";
+import { normalizeChopStart, normalizeCues } from "./chop";
 import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE } from "./types";
 import * as notes from "./notes";
 
@@ -287,15 +287,28 @@ export function setTrackSampleMode(project: Project, trackId: TrackId, sampleMod
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, sampleMode } : t)) };
 }
 
-/** Sets an asset's cue points (normalised; an empty result removes the field). */
+/** Sets an asset's cue points (normalised against its chop start; an empty result removes the field). */
 export function setAssetCues(project: Project, assetId: AssetId, cues: number[]): Project {
-  const next = normalizeCues(cues);
   return {
     ...project,
     assets: project.assets.map((a) => {
       if (a.id !== assetId) return a;
+      const next = normalizeCues(cues, a.chopStart ?? 0);
       const { cues: _old, ...rest } = a;
       return next.length > 0 ? { ...rest, cues: next } : rest;
+    }),
+  };
+}
+
+/** Sets an asset's chop start marker (clamped before its first cue; 0 removes the field). */
+export function setAssetChopStart(project: Project, assetId: AssetId, start: number): Project {
+  return {
+    ...project,
+    assets: project.assets.map((a) => {
+      if (a.id !== assetId) return a;
+      const next = normalizeChopStart(start, a.cues ?? []);
+      const { chopStart: _old, ...rest } = a;
+      return next > 0 ? { ...rest, chopStart: next } : rest;
     }),
   };
 }

@@ -41,6 +41,7 @@ export type Action =
   | { type: "REMOVE_INSTRUMENT_LFO"; trackId: TrackId; index: number }
   | { type: "SET_TRACK_SAMPLE_MODE"; trackId: TrackId; sampleMode: SampleMode }
   | { type: "SET_ASSET_CUES"; assetId: AssetId; cues: number[] }
+  | { type: "SET_ASSET_CHOP_START"; assetId: AssetId; start: number }
   | { type: "SET_ASSET_ENVELOPE"; assetId: AssetId; envelope: Partial<SampleEnvelope> }
   | { type: "SET_NOTE_PITCH"; patternId: PatternId; noteId: NoteId; pitch: number }
   | { type: "SET_NOTE_VELOCITY"; patternId: PatternId; noteId: NoteId; velocity: number }
@@ -144,6 +145,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setTrackSampleMode(state, action.trackId, action.sampleMode);
     case "SET_ASSET_CUES":
       return project.setAssetCues(state, action.assetId, action.cues);
+    case "SET_ASSET_CHOP_START":
+      return project.setAssetChopStart(state, action.assetId, action.start);
     case "SET_ASSET_ENVELOPE":
       return project.setAssetEnvelope(state, action.assetId, action.envelope);
     case "SET_NOTE_PITCH":

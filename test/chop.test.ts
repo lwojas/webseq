@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { syncBuses } from "../src/audio/busSync";
 import { compileNote } from "../src/audio/compile";
-import { addCue, assetLengthFrames, cueRegions, evenCues, moveCue, normalizeCues, removeCue, MIN_SLICE } from "../src/model/chop";
-import { addAsset, createInitialProject, setAssetCues, setTrackSampleMode } from "../src/model/project";
+import { addCue, assetLengthFrames, cueRegions, evenCues, moveCue, normalizeChopStart, normalizeCues, removeCue, MIN_SLICE } from "../src/model/chop";
+import { addAsset, createInitialProject, setAssetChopStart, setAssetCues, setTrackSampleMode } from "../src/model/project";
 import type { Asset, Note, Track } from "../src/model/types";
 import { mockRuntime } from "./mockRuntime";
 
@@ -65,5 +65,27 @@ describe("project actions and engine sync", () => {
     p = setAssetCues(p, 7, []);
     syncBuses(runtime, p, buses);
     expect(calls.setSampleRegions[1]).toEqual([7, []]);
+  });
+});
+
+describe("chop start marker", () => {
+  it("starts slice 1 at the marker and keeps cues after it", () => {
+    expect(cueRegions([0.5], 100, 0.2)).toEqual([{ start: 20, end: 50 }, { start: 50, end: 100 }]);
+    expect(evenCues(2, 0.5)).toEqual([0.75]);
+    expect(addCue([0.8], 0.1, 0.2)).toEqual([0.8]);
+    expect(moveCue([0.5, 0.8], 0, 0.0, 0.2)[0]).toBeCloseTo(0.2 + MIN_SLICE, 6);
+    expect(normalizeChopStart(0.9, [0.5])).toBeCloseTo(0.5 - MIN_SLICE, 6);
+    expect(normalizeChopStart(-1, [])).toBe(0);
+  });
+  it("stores the start on the asset, clamped before the first cue, and drops it at 0", () => {
+    let p = addAsset(createInitialProject(), asset);
+    const id = p.assets[0].id;
+    p = setAssetCues(p, id, [0.5]);
+    p = setAssetChopStart(p, id, 0.9);
+    expect(p.assets[0].chopStart).toBeCloseTo(0.5 - MIN_SLICE, 6);
+    p = setAssetCues(p, id, [0.1, 0.5]);
+    expect(p.assets[0].cues).toEqual([0.5]);
+    p = setAssetChopStart(p, id, 0);
+    expect(p.assets[0].chopStart).toBeUndefined();
   });
 });

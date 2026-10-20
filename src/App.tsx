@@ -728,6 +728,7 @@ export function App() {
     [],
   );
   const handleSetCues = useCallback((assetId: AssetId, cues: number[]) => dispatch({ type: "SET_ASSET_CUES", assetId, cues }), []);
+  const handleSetChopStart = useCallback((assetId: AssetId, start: number) => dispatch({ type: "SET_ASSET_CHOP_START", assetId, start }), []);
   const getAssetBytes = useCallback((assetId: AssetId) => assetDataRef.current.get(assetId), []);
   const handleSetTrackVoiceMode = useCallback(
     (trackId: TrackId, voiceMode: VoiceMode) => dispatch({ type: "SET_TRACK_VOICE_MODE", trackId, voiceMode }),
@@ -1006,6 +1007,7 @@ export function App() {
     onSetVoiceMode: handleSetTrackVoiceMode,
     onSetSampleMode: handleSetSampleMode,
     onSetCues: handleSetCues,
+    onSetChopStart: handleSetChopStart,
     onAuditionSlice: handleAuditionSlice,
     getAssetBytes,
   };

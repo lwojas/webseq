@@ -32,6 +32,7 @@ interface Props {
   /** Chromatic (pitch transposes) vs chop (pitch picks a slice) for a sample track. */
   onSetSampleMode: (trackId: string, mode: SampleMode) => void;
   onSetCues: (assetId: number, cues: number[]) => void;
+  onSetChopStart: (assetId: number, start: number) => void;
   /** Plays one slice of the asset, independent of the sequence. */
   onAuditionSlice: (assetId: number, slice: number) => void;
   getAssetBytes: (assetId: number) => ArrayBuffer | undefined;
@@ -106,6 +107,7 @@ export function InstrumentPanel({
   onSetVoiceMode,
   onSetSampleMode,
   onSetCues,
+  onSetChopStart,
   onAuditionSlice,
   getAssetBytes,
 }: Props) {
@@ -294,7 +296,7 @@ export function InstrumentPanel({
             <div className="module-panel-header">
               <span className="name">{asset.name} — Slices</span>
             </div>
-            <ChopEditor asset={asset} getAssetBytes={getAssetBytes} onSetCues={onSetCues} onAuditionSlice={onAuditionSlice} />
+            <ChopEditor asset={asset} getAssetBytes={getAssetBytes} onSetCues={onSetCues} onSetChopStart={onSetChopStart} onAuditionSlice={onAuditionSlice} />
             {assetUseCount > 1 && <div className="instrument-hint">Cue points belong to the sample, so they apply on all {assetUseCount} tracks that play it.</div>}
           </div>
         )}

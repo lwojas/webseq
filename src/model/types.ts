@@ -312,6 +312,9 @@ export interface Asset {
    * lives on the Asset like webdsp's regions; whether a track uses it is Track.sampleMode.
    * Absent/empty = no slices. */
   cues?: number[];
+  /** Chop start marker: fraction (0..1) of the sample where slice 1 begins, so leading silence can
+   * be skipped. Absent = 0. Always before the first cue. */
+  chopStart?: number;
   /** Only set when origin === "resample": which pattern this was captured from. Historical
    * metadata only — the pattern may since have been edited, renamed, or deleted. */
   sourcePatternId?: PatternId;
