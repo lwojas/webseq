@@ -7,7 +7,7 @@ import { Playback } from "../src/audio/playback";
 import { createInitialProject, assignAsset, addAsset, addNote, setNotePitch } from "../src/model/project";
 import { INSTRUMENT_DEFS, MAX_TRACK_LFOS, addInstrumentLfo, removeInstrumentLfo, rootMidiNote, setInstrumentLfo, setInstrumentParam, setTrackInstrument } from "../src/model/instruments";
 import { pasteTrackConfig, copyTrackConfig } from "../src/model/trackConfig";
-import { mockRuntime } from "./mockRuntime";
+import { INSTRUMENT_PARAM_NAMES, mockRuntime } from "./mockRuntime";
 import type { InstrumentKindId } from "../src/model/types";
 
 const buses = Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`track-${i + 1}`, i + 1]));
@@ -161,7 +161,7 @@ describe("compileInstrumentNotes", () => {
   });
 
   it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
-    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos"] as const) {
+    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth"] as const) {
       expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
     }
   });
@@ -200,6 +200,20 @@ describe("compileInstrumentNotes", () => {
       resonance: 0.45, envamt: 0.7, sub: 0.25, attack: 0.003, decay: 0.3, sustain: 0.6, release: 0.12,
     });
     expect(rootMidiNote(pb.tracks[0])).toBeCloseTo(33);
+  });
+
+  it("lists the Percussion Synth as a one-shot with the engine's own param names, no sustain/release", () => {
+    const def = INSTRUMENT_DEFS.percsynth;
+    expect(def.sustained).toBe(false);
+    expect(def.params.map((p) => p.id)).toEqual(INSTRUMENT_PARAM_NAMES.percsynth.filter((n) => n !== "sustain" && n !== "release"));
+    expect(new Set(def.params.map((p) => p.id)).size).toBe(def.params.length);
+    for (const p of def.params) {
+      expect(p.default).toBeGreaterThanOrEqual(p.min);
+      expect(p.default).toBeLessThanOrEqual(p.max);
+    }
+    expect(def.params.find((p) => p.id === "filtertype")?.options?.map((o) => o.label)).toEqual(["Low-pass", "High-pass"]);
+    const proj = projectWithNotes("percsynth");
+    expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeUndefined();
   });
 
   it("lists the Digital Machines with tune/decay/depth first, one-shots unsustained and Tone/Chaos sustained", () => {

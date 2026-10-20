@@ -350,6 +350,48 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "hold", label: "Hold", min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
+  // Percussion Synth (webdsp docs/percussion-synth.md): two oscillators + noise, one shared pitch sweep, FM,
+  // a resonant LP/HP and a drive stage. Ids are the engine's own (lowercase) names. Registered as a
+  // one-shot like the drums: `sustain` and `release` are not exposed, so the engine keeps sustain 0 and a hit
+  // ends itself (no `duration` is sent); a long Decay is the route to bass/drone hits.
+  percsynth: {
+    kind: "percsynth",
+    label: "Perc Synth",
+    category: "synth",
+    sustained: false,
+    params: [
+      { id: "tune", label: "Tune", min: 25, max: 800, step: 0.5, unit: "Hz", default: 55 },
+      {
+        id: "osc1wave", label: "Osc 1", min: 0, max: 2, step: 1, default: 0,
+        options: ["Sine/Tri", "Saw", "Square"].map((label, value) => ({ value, label })),
+      },
+      { id: "osc1level", label: "Osc 1 Level", min: 0, max: 1, step: 0.01, default: 0.9 },
+      {
+        id: "osc2wave", label: "Osc 2", min: 0, max: 2, step: 1, default: 1,
+        options: ["Sine/Tri", "Saw", "Square"].map((label, value) => ({ value, label })),
+      },
+      { id: "osc2pitch", label: "Osc 2 Pitch", min: -24, max: 48, step: 0.1, unit: "st", default: 12 },
+      { id: "osc2level", label: "Osc 2 Level", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "osc2fm", label: "FM", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "pitchenv", label: "Sweep", min: 0, max: 6, step: 0.05, unit: "oct", default: 2.5 },
+      { id: "pitchdecay", label: "Sweep Time", min: 0.005, max: 2, step: 0.005, unit: "s", default: 0.07 },
+      { id: "osc2env", label: "Osc 2 Sweep", min: 0, max: 2, step: 0.01, default: 1 },
+      { id: "noise", label: "Noise", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "noisetone", label: "Noise Tone", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "noisedecay", label: "Noise Decay", min: 0.003, max: 2, step: 0.001, unit: "s", default: 0.04 },
+      {
+        id: "filtertype", label: "Filter", min: 0, max: 1, step: 1, default: 0,
+        options: ["Low-pass", "High-pass"].map((label, value) => ({ value, label })),
+      },
+      { id: "cutoff", label: "Cutoff", min: 40, max: 16000, step: 1, unit: "Hz", default: 5000 },
+      { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.15 },
+      { id: "filterenv", label: "Filter Env", min: -1, max: 1, step: 0.01, default: 0 },
+      { id: "filterdecay", label: "Filter Decay", min: 0.01, max: 2, step: 0.01, unit: "s", default: 0.15 },
+      { id: "attack", label: "Attack", min: 0.0005, max: 0.25, step: 0.0005, unit: "s", default: 0.001 },
+      { id: "decay", label: "Decay", min: 0.02, max: 4, step: 0.01, unit: "s", default: 0.35 },
+      { id: "drive", label: "Drive", min: 0, max: 1, step: 0.01, default: 0.2 },
+    ],
+  },
 };
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];
