@@ -7,8 +7,8 @@ webtracker carries a line-for-line JS port of `src/model/scale.ts` and `src/mode
 ## Scale (`model/scale.ts`, `Project.scale`)
 
 A *context*, never a constraint: `{ root 0..11, scale id, snap, preset }`. Absent = chromatic (every
-note in scale), so old projects are unchanged. Changing it **never rewrites a note** and playback
-never reads it. Intervals are a table (`SCALES`); `SCALE_PRESETS` are subjective starting points
+note in scale), so old projects are unchanged. Changing it **never rewrites a note**. Playback reads it
+only to resolve *chord* notes (see `musical-guide.md`); plain notes and all other playback ignore it. Intervals are a table (`SCALES`); `SCALE_PRESETS` are subjective starting points
 (root + scale + suggested octave) shown separately in the UI as "Musical presets (inspiration)".
 
 API: `getScaleNotes`, `isNoteInScale`, `getScaleDegree`, `getNearestScaleNote` (ties go down),
@@ -32,7 +32,8 @@ stored notes are compiled untouched (identical path to before); on, they are rep
 `arpTrackNotes(...)` before `compileNote`/`compileInstrumentNote`. Sample, synth, swing, mono,
 automation and the track LFO therefore all see ordinary notes.
 
-**How notes are read.** Track notes cannot overlap, so there is no stored chord. Per *bar*:
+**How notes are read.** Track notes cannot overlap, so a stored chord is one note that *expands* to several
+at compile time (`musical-guide.md`); the arp sees those expanded tones as its pool. Per *bar*:
 the pitches of the track's notes are the chord pool, and each note is a gate window: the arp plays
 inside `[start, start+duration)`, first step on the note's start, then every `rate`. Placement keeps
 its rhythm and rests; the arp chooses what sounds. Runs are split at bar lines and clipped at the pattern end; a note longer than a bar

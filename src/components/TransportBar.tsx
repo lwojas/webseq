@@ -20,6 +20,7 @@ interface Props {
   gridResolution: GridResolution;
   scale: ProjectScale;
   onScaleChange: (patch: Partial<ProjectScale>) => void;
+  onOpenGuide: () => void;
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
@@ -55,6 +56,7 @@ export function TransportBar({
   gridResolution,
   scale,
   onScaleChange,
+  onOpenGuide,
   onPlay,
   onPause,
   onStop,
@@ -144,7 +146,7 @@ export function TransportBar({
         </select>
       </div>
 
-      <ScaleControl scale={scale} onChange={onScaleChange} />
+      <ScaleControl scale={scale} onChange={onScaleChange} onOpenGuide={onOpenGuide} />
 
       <div className="field zoom-control">
         <span>Zoom</span>

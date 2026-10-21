@@ -417,6 +417,7 @@ export class Transport {
         project.swing,
         this.lfoAnchorTime,
         project.beatsPerBar,
+        project.scale,
       );
       if (compiled.length > 0) {
         // Sort by time before handing events to the engine. Compiling per track leaves them out
@@ -435,8 +436,8 @@ export class Transport {
       // Synth tracks: one instrumentNoteOn per note, each carrying its absolute start time so the
       // engine fires it sample-accurately (runtime.cancelScheduled() drops any still pending).
       const instrumentHost = instrumentHostFor(this.runtime);
-      for (const { trackId, params } of compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar)) {
-        instrumentHost.noteOn(trackId, params);
+      for (const { trackId, params, voice } of compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale)) {
+        instrumentHost.noteOn(trackId, params, voice);
       }
       const stepEndTime = stepStartTime + beats * spb;
       this.stepWindows.push({

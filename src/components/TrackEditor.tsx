@@ -4,6 +4,8 @@ import { eventLfoOf } from "../model/eventLfo";
 import { TrackLfoPanel } from "./TrackLfoPanel";
 import { ArpPanel } from "./ArpPanel";
 import { arpOf, type ArpVelocity, type TrackArp } from "../model/arp";
+import { chordMidis, chordRootOptions, midiNoteName, CHORD_SHAPES, shapeIdOf, type NoteChord } from "../model/chord";
+import { degreeOfIndex } from "../model/scaleDegrees";
 import { getScaleDegree, isChromatic, isOffsetInScale, referenceMidi, type ProjectScale } from "../model/scale";
 import { notesForTrack, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
@@ -26,6 +28,8 @@ interface Props {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
+  onSetNoteMode: (noteId: NoteId, mode: "note" | "chord") => void;
+  onSetNoteChord: (noteId: NoteId, patch: Partial<NoteChord>) => void;
   /** The sample the selected track plays, for chop slice count. */
   chopAsset?: Asset | null;
   /** The project's key: emphasises scale pitches in the menu and, with Snap, lists only those. */
@@ -80,6 +84,12 @@ function pitchLabel(pitch: number, root: number | null, slices: number | null, s
   return degree === null ? base : `● ${base}  ${degree}`;
 }
 
+/** Lane label of a chord note: its root, e.g. "A1+2" (root plus the number of added tones). */
+function chordLabel(chord: NoteChord, trackRoot: number | null, scale: ProjectScale): string {
+  const [rootMidi] = chordMidis(scale, trackRoot, chord);
+  return `${midiNoteName(rootMidi)}+${chord.degrees.length - 1}`;
+}
+
 function formatLength(beats: number): string {
   if (Number.isInteger(beats)) return `${beats}/16`;
   const denominator = 16 / beats;
@@ -99,9 +109,70 @@ interface CardProps {
   /** Chop track: how many slices its sample has (pitch picks one). null = chromatic. */
   slices: number | null;
   scale: ProjectScale;
+  onSetNoteMode: (noteId: NoteId, mode: "note" | "chord") => void;
+  onSetNoteChord: (noteId: NoteId, patch: Partial<NoteChord>) => void;
   /** Shown only while the track's LFO is on. */
   lfoOn: boolean;
   onSetNoteLfo: (noteId: NoteId, amount: number) => void;
+}
+
+interface ChordFieldsProps {
+  note: Note;
+  chord: NoteChord;
+  /** The track's root as a MIDI note (see rootMidiNote); null for a sample. */
+  root: number | null;
+  scale: ProjectScale;
+  onSetNoteChord: (noteId: NoteId, patch: Partial<NoteChord>) => void;
+  onRemoveNote: (noteId: NoteId) => void;
+}
+
+/** Chord mode's fields, in the same card as Note mode: the root (scale notes only — a chord is
+ * built from the key), how many scale steps it stacks, and what that resolves to right now. */
+function ChordFields({ note, chord, root, scale, onSetNoteChord, onRemoveNote }: ChordFieldsProps) {
+  const roots = chordRootOptions(scale, root);
+  const rootsWithCurrent = roots.some((r) => r.index === chord.root) ? roots : [...roots, { index: chord.root, midi: chordMidis(scale, root, { root: chord.root, degrees: [0] })[0] }].sort((a, b) => a.index - b.index);
+  const shapeId = shapeIdOf(chord.degrees);
+  const tones = chordMidis(scale, root, chord).map(midiNoteName);
+  return (
+    <>
+      <div className="te-card-head">
+        <select
+          value={chord.root}
+          onChange={(e) => onSetNoteChord(note.id, { root: Number(e.target.value) })}
+          aria-label="Chord root"
+          title="Chord root — a note of the project scale. The chord stacks scale notes upward from it."
+        >
+          {rootsWithCurrent.map((r) => (
+            <option key={r.index} value={r.index}>
+              ● {midiNoteName(r.midi)}  {degreeOfIndex(scale, r.index)}
+            </option>
+          ))}
+        </select>
+        <button className="te-remove" onClick={() => onRemoveNote(note.id)} aria-label="Remove note" title="Remove note">
+          ×
+        </button>
+      </div>
+      <select
+        value={shapeId ?? "custom"}
+        onChange={(e) => {
+          const shape = CHORD_SHAPES.find((s) => s.id === e.target.value);
+          if (shape) onSetNoteChord(note.id, { degrees: shape.degrees });
+        }}
+        aria-label="Chord size"
+        title="How many scale notes the chord stacks: every second note of the scale from the root"
+      >
+        {CHORD_SHAPES.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.label}
+          </option>
+        ))}
+        {shapeId === null && <option value="custom">Custom</option>}
+      </select>
+      <div className="te-chord-tones" title="What this chord plays in the current scale">
+        {tones.join(" ")}
+      </div>
+    </>
+  );
 }
 
 /** The contextual editor under one step. Memoised on the note object itself (the model only
@@ -117,6 +188,8 @@ const NoteCard = memo(function NoteCard({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteDuration,
+  onSetNoteMode,
+  onSetNoteChord,
   lfoOn,
   onSetNoteLfo,
 }: CardProps) {
@@ -131,6 +204,19 @@ const NoteCard = memo(function NoteCard({
       style={{ gridColumn: Math.floor(note.start) + 1 }}
       onPointerDown={() => onSelectNote(note.id)}
     >
+      {slices === null && (
+        <div className="te-mode" role="group" aria-label="Note or chord">
+          <button className={`te-mode-btn ${note.chord ? "" : "active"}`} aria-pressed={!note.chord} onClick={() => onSetNoteMode(note.id, "note")}>
+            Note
+          </button>
+          <button className={`te-mode-btn ${note.chord ? "active" : ""}`} aria-pressed={!!note.chord} onClick={() => onSetNoteMode(note.id, "chord")}>
+            Chord
+          </button>
+        </div>
+      )}
+      {note.chord ? (
+        <ChordFields note={note} chord={note.chord} root={root} scale={scale} onSetNoteChord={onSetNoteChord} onRemoveNote={onRemoveNote} />
+      ) : (
       <div className="te-card-head">
         <select
           value={pitch}
@@ -148,6 +234,7 @@ const NoteCard = memo(function NoteCard({
           ×
         </button>
       </div>
+      )}
       <div className="module-param">
         <span className="param-label static">
           Vel <span className="te-value">{note.velocity.toFixed(2)}</span>
@@ -212,6 +299,8 @@ export const TrackEditor = memo(function TrackEditor({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteDuration,
+  onSetNoteMode,
+  onSetNoteChord,
   chopAsset,
   scale,
   onSetTrackArp,
@@ -279,8 +368,8 @@ export const TrackEditor = memo(function TrackEditor({
               onRemove={() => onRemoveNote(note.id)}
               lfo={lfo.enabled ? note.lfo : undefined}
             >
-              <span className={`te-note-label${slices === null && !isChromatic(scale) && !isOffsetInScale(scale, root, note.pitch ?? 0) ? " out-of-scale" : ""}`}>
-                {formatPitch(note.pitch ?? 0, root, slices !== null)}
+              <span className={`te-note-label${!note.chord && slices === null && !isChromatic(scale) && !isOffsetInScale(scale, root, note.pitch ?? 0) ? " out-of-scale" : ""}`}>
+                {note.chord && slices === null ? chordLabel(note.chord, root, scale) : formatPitch(note.pitch ?? 0, root, slices !== null)}
               </span>
             </NoteBlock>
           ))}
@@ -293,6 +382,8 @@ export const TrackEditor = memo(function TrackEditor({
               root={root}
               slices={slices}
               scale={scale}
+              onSetNoteMode={onSetNoteMode}
+              onSetNoteChord={onSetNoteChord}
               selected={note.id === selectedNoteId}
               onSelectNote={onSelectNote}
               onRemoveNote={onRemoveNote}

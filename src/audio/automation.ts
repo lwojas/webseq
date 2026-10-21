@@ -91,7 +91,7 @@ interface LaneRef {
   key: string;
   lane: AutomationLane;
   /** Resolves the engine target for this lane, or undefined if it is not live (yet). */
-  target: () => { target: ScheduledParam["target"]; param: number; mark: (value: number) => void } | undefined;
+  target: () => { targets: { target: ScheduledParam["target"]; param: number }[]; mark: (value: number) => void } | undefined;
 }
 
 // Per runtime: the lane objects last seen (to detect an edit), and the asset envelopes automation
@@ -132,7 +132,7 @@ function lanesOf(
         lane,
         target: () => {
           const t = chains.target(busId, fxId, lane.parameter);
-          return t && { target: { effect: t.effect }, param: t.param, mark: (v) => chains.markWritten(busId, fxId, lane.parameter, v) };
+          return t && { targets: [{ target: { effect: t.effect }, param: t.param }], mark: (v) => chains.markWritten(busId, fxId, lane.parameter, v) };
         },
       });
     } else if (track?.instrument) {
@@ -141,8 +141,9 @@ function lanesOf(
         key,
         lane,
         target: () => {
-          const t = host.target(track.id, lane.parameter);
-          return t && { target: { instrument: t.instrument }, param: t.param, mark: (v) => host.markWritten(track.id, lane.parameter, v) };
+          // A chord track has several instances; the lane moves the control on all of them.
+          const t = host.targets(track.id, lane.parameter);
+          return t.length > 0 ? { targets: t.map((x) => ({ target: { instrument: x.instrument }, param: x.param })), mark: (v) => host.markWritten(track.id, lane.parameter, v) } : undefined;
         },
       });
     } else if (track?.assetId != null && lane.parameter in ENVELOPE_PARAMS) {
@@ -151,8 +152,7 @@ function lanesOf(
         key,
         lane,
         target: () => ({
-          target: { sample: assetId },
-          param: ENVELOPE_PARAMS[lane.parameter],
+          targets: [{ target: { sample: assetId }, param: ENVELOPE_PARAMS[lane.parameter] }],
           mark: () => state.touchedAssets.add(assetId),
         }),
       });
@@ -198,7 +198,9 @@ export function scheduleAutomation(
     const resolved = ref.target();
     if (!resolved) continue;
     const emit = (time: number, e: { value: number; from?: number; ramp?: number }) => {
-      events.push({ time, target: resolved.target, param: resolved.param, value: e.value, ...(e.from !== undefined ? { from: e.from, ramp: e.ramp } : {}) });
+      for (const t of resolved.targets) {
+        events.push({ time, target: t.target, param: t.param, value: e.value, ...(e.from !== undefined ? { from: e.from, ramp: e.ramp } : {}) });
+      }
       resolved.mark(e.value);
     };
     const changed = state.seen.get(ref.key) !== ref.lane;

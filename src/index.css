@@ -2722,7 +2722,8 @@ select {
   }
 
   .te-card select,
-  .te-remove {
+  .te-remove,
+  .te-mode-btn {
     padding: 8px 6px;
   }
 
@@ -3555,5 +3556,260 @@ option.out-of-scale {
   }
   .arp-steps-param {
     min-width: 0;
+  }
+}
+
+/* --- Chord mode (Track Editor note card) --- */
+
+.te-mode {
+  display: flex;
+  gap: 2px;
+}
+
+.te-mode-btn {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 4px;
+  text-transform: uppercase;
+}
+
+.te-mode-btn.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+.te-chord-tones {
+  color: var(--accent);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* --- Musical Guide (components/MusicalGuide.tsx) --- */
+
+.guide-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(10, 13, 18, 0.92);
+}
+
+.guide {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: 100%;
+  background: var(--panel);
+  border: 1px solid var(--accent-dim);
+  border-radius: 3px;
+  outline: none;
+}
+
+.guide-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.guide-title {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.guide-sub {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.guide-body {
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+}
+
+.guide-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.guide-section:last-child {
+  border-bottom: 0;
+}
+
+.guide-heading,
+.guide-category-title {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.guide-scale-name {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.guide-text {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.guide-hint {
+  color: var(--amber);
+}
+
+.guide-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.guide-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 44px;
+  padding: 6px 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.guide-note.home {
+  border-color: var(--amber);
+}
+
+.guide-note.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+.guide-note-name {
+  font-size: 13px;
+}
+
+.guide-note-degree {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.guide-idea {
+  color: var(--accent);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.guide-category {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.guide-recipes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 6px;
+}
+
+.guide-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.guide-recipe-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.guide-recipe-name {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.guide-recipe-bars {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.guide-recipe-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.guide .btn.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: #eafffa;
+}
+
+.guide-result {
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.guide-result.error {
+  color: var(--danger);
+}
+
+@media (pointer: coarse), (max-width: 768px) {
+  .guide-note {
+    min-width: 48px;
+    min-height: 48px;
+  }
+
+  .guide .btn {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 768px) {
+  .guide-overlay {
+    padding: 0;
+  }
+
+  .guide {
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  .guide-recipes {
+    grid-template-columns: 1fr;
   }
 }

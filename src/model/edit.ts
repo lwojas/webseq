@@ -36,7 +36,7 @@ function copyNotes(project: Project, patternId: PatternId, trackId: TrackId): Co
   return Object.values(pattern.notes)
     .filter((n) => n.trackId === trackId)
     .sort((a, b) => a.start - b.start)
-    .map((n) => ({ start: n.start, duration: n.duration, velocity: n.velocity, pitch: n.pitch, lfo: n.lfo }));
+    .map((n) => ({ start: n.start, duration: n.duration, velocity: n.velocity, pitch: n.pitch, chord: n.chord, lfo: n.lfo }));
 }
 
 /** Replaces `trackId`'s notes in one pattern with `notes` (notes that don't fit a shorter

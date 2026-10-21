@@ -22,6 +22,7 @@ import { syncBuses } from "./audio/busSync";
 import { encodeWav } from "./audio/wav";
 import { saveProject, loadProject, listProjects, deleteProject } from "./persistence/projectStore";
 import { remapAssetIds } from "./model/project";
+import type { NoteChord } from "./model/chord";
 import { createRecoveryScheduler, timeAgo, type RecoveryRecord } from "./persistence/recovery";
 import { putRecovery, getRecovery, getRecoveryAssets, clearRecovery, resetRecoveryAssetCache } from "./persistence/recoveryStore";
 import type { ResamplePhase } from "./components/TransportBar";
@@ -29,6 +30,10 @@ import type { ImportBatchResult } from "./components/AssetsPanel";
 import type { ModulationUi } from "./components/ModulationSlot";
 import type { BarTool, ClipboardRow } from "./components/EditPanel";
 import { Chrome } from "./app/Chrome";
+import { MusicalGuide } from "./components/MusicalGuide";
+import { INSTRUMENT_KINDS } from "./model/instruments";
+import type { Recipe } from "./guide/recipes";
+import { blockWhileGuideOpen, pauseForGuide } from "./guide/session";
 import { Workspace } from "./app/Workspace";
 import { PatternsView } from "./app/PatternsView";
 import { MobileTabBar } from "./app/MobileTabBar";
@@ -48,7 +53,7 @@ function releaseEngineSamples(rt: AudioRuntime): void {
 const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[] } = { clipboardRows: [], barTools: [] };
 
 export function App() {
-  const { runtime, error, init } = useAudioRuntime();
+  const { runtime, capabilities, error, init } = useAudioRuntime();
   const [project, dispatch] = useReducer(projectReducer, undefined, () => createInitialProject());
 
   // Transport (and the FX-push effect below) read project state through this ref rather than
@@ -238,11 +243,19 @@ export function App() {
     return `bar ${bar} / ${pattern.bars}`;
   }, []);
 
+  // Musical Guide open state — declared ahead of the MIDI hookup because that must ignore input
+  // while the guide is open (see the Musical Guide section below).
+  const [guideOpen, setGuideOpen] = useState(false);
+  const guideOpenRef = useRef(false);
+  guideOpenRef.current = guideOpen;
+  // Input that bypasses the inert DOM subtree is ignored while the guide is open.
+  const guardedDispatch = useMemo(() => blockWhileGuideOpen(() => guideOpenRef.current, dispatch), []);
+
   const midi = useMidiControls(
     project,
-    dispatch,
+    guardedDispatch,
     {
-      play: () => void handlePlay(),
+      play: blockWhileGuideOpen(() => guideOpenRef.current, () => void handlePlay()),
       stop: handleStop,
       pause: handlePause,
       // ECS-131: the same Transport.getPlayheadInfo()/getStatus() the on-screen playhead already reads.
@@ -333,6 +346,7 @@ export function App() {
         duration: n.duration,
         velocity: n.velocity,
         pitch: n.pitch,
+        chord: n.chord,
         lfo: n.lfo,
       }));
       if (copied.length === 0) return;
@@ -504,6 +518,7 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (guideOpenRef.current) return; // the Musical Guide owns the keyboard while it is open
       if (e.key === "Escape") {
         setTakeover("none");
         return;
@@ -716,6 +731,14 @@ export function App() {
     (trackId: TrackId, amount: number) => dispatch({ type: "SET_TRACK_NOTES_LFO", patternId: selectedPatternId, trackId, amount }),
     [selectedPatternId],
   );
+  const handleSetNoteMode = useCallback(
+    (noteId: NoteId, mode: "note" | "chord") => dispatch({ type: "SET_NOTE_MODE", patternId: selectedPatternId, noteId, mode }),
+    [selectedPatternId],
+  );
+  const handleSetNoteChord = useCallback(
+    (noteId: NoteId, patch: Partial<NoteChord>) => dispatch({ type: "SET_NOTE_CHORD", patternId: selectedPatternId, noteId, patch }),
+    [selectedPatternId],
+  );
   const handleSetNoteVelocity = useCallback(
     (noteId: NoteId, velocity: number) => dispatch({ type: "SET_NOTE_VELOCITY", patternId: selectedPatternId, noteId, velocity }),
     [selectedPatternId],
@@ -747,6 +770,30 @@ export function App() {
     setLibraryView(view);
     if (view !== "patterns") setSidePanelView(view);
   }, []);
+
+  // --- Musical Guide ---
+  // A modal over the sequencer. Opening pauses playback and makes everything behind it inert
+  // (focus, clicks, keys); the guard ref also covers the window key handler and MIDI input,
+  // which are not part of the inert subtree. Closing just removes the overlay: it never resumes
+  // playback and never touches the project (only "Try this" does, via APPLY_RECIPE).
+  const appRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    appRef.current?.toggleAttribute("inert", guideOpen);
+  }, [guideOpen]);
+  const handleOpenGuide = useCallback(() => {
+    if (pauseForGuide(transportRef.current)) setStatus(transportRef.current?.getStatus() ?? "stopped");
+    setGuideOpen(true);
+  }, []);
+  const handleCloseGuide = useCallback(() => setGuideOpen(false), []);
+  const getGuideRuntime = useCallback(async (): Promise<AudioRuntime | null> => runtime ?? (await init()), [runtime, init]);
+  const unavailableKinds = useMemo(() => {
+    const provided = capabilities?.instruments;
+    return provided ? INSTRUMENT_KINDS.filter((k) => !provided.some((i) => i.id === k)) : [];
+  }, [capabilities]);
+  const handleApplyRecipe = useCallback(
+    (recipe: Recipe) => dispatch({ type: "APPLY_RECIPE", recipe, patternId: selectedPatternId, trackId: selectedTarget === "master" ? null : selectedTarget, unavailableKinds }),
+    [selectedPatternId, selectedTarget, unavailableKinds],
+  );
 
   // --- persistence ---
   const recoveryScheduler = useMemo(
@@ -1065,6 +1112,7 @@ export function App() {
     gridResolution,
     scale: projectScale,
     onScaleChange: handleScaleChange,
+    onOpenGuide: handleOpenGuide,
     onPlay: handlePlay,
     onPause: handlePause,
     onStop: handleStop,
@@ -1122,7 +1170,8 @@ export function App() {
   const renamePattern = (id: PatternId, name: string) => dispatch({ type: "RENAME_PATTERN", patternId: id, name });
 
   return (
-    <div className="app" data-mobile-tab={mobileTab} data-main-view={mainView} data-takeover={derived.takeover} data-library-view={libraryView}>
+    <>
+    <div className="app" ref={appRef} data-mobile-tab={mobileTab} data-main-view={mainView} data-takeover={derived.takeover} data-library-view={libraryView}>
       {recoveryPrompt && (
         <div className="recovery-banner" role="alert">
           <span>
@@ -1288,6 +1337,8 @@ export function App() {
             onSetNotePitch: handleSetNotePitch,
             onSetNoteVelocity: handleSetNoteVelocity,
             onSetNoteDuration: handleSetNoteDuration,
+            onSetNoteMode: handleSetNoteMode,
+            onSetNoteChord: handleSetNoteChord,
             chopAsset: selectedTrackAsset,
             scale: projectScale,
             onSetTrackArp: handleSetTrackArp,
@@ -1355,5 +1406,17 @@ export function App() {
         </div>
       )}
     </div>
+    {guideOpen && (
+      <MusicalGuide
+        project={project}
+        selectedPatternId={selectedPatternId}
+        selectedTrackId={selectedTarget === "master" ? null : selectedTarget}
+        getRuntime={getGuideRuntime}
+        unavailableKinds={unavailableKinds}
+        onApplyRecipe={handleApplyRecipe}
+        onClose={handleCloseGuide}
+      />
+    )}
+    </>
   );
 }

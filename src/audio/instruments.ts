@@ -10,11 +10,17 @@
 // param ids, so there is no second id table to keep in sync.
 //
 // One instance is one monophonic machine, so a track playing a synth is inherently mono: a new
-// note retriggers it. That is the engine's rule, not the track's voiceMode.
+// note retriggers it. That is the engine's rule, not the track's voiceMode. Chords are the one
+// exception webseq makes: a track whose notes include a chord (model/chord.ts) gets one instance
+// per chord tone — "chords/layers = more instances" is webdsp's documented contract — and tone i
+// of every chord always plays on instance i. Every control, LFO and automation lane is applied
+// to all of a track's instances, so they sound as one instrument. Tracks without chords keep
+// exactly one instance, as before.
 import type { AudioRuntime, BusId, InstrumentId, InstrumentKind, InstrumentNoteParams } from "webdsp";
 import type { Project, TrackId, TrackLfo } from "../model/types";
 import type { TrackBusMap } from "./buses";
 import { syncLfoSlots } from "./lfoSync";
+import { chordVoicesNeeded } from "../model/chord";
 
 interface LiveInstrument {
   kindId: string;
@@ -22,7 +28,8 @@ interface LiveInstrument {
   /** Last LFO config pushed per slot ("" = slot empty), so unchanged slots are never resent. */
   lfoSent: string[];
   bus: BusId;
-  id: InstrumentId;
+  /** One engine instance per chord tone the track needs (at least one); ids[0] is the primary. */
+  ids: InstrumentId[];
   /** model param id -> engine param id, resolved once per instance. */
   paramIds: Map<string, number>;
   /** Last project value pushed by sync(), so sync only reacts to a user edit. */
@@ -46,6 +53,7 @@ export class InstrumentHost {
    * provide, simply has no live instance (silent) until it does. */
   sync(project: Project, buses: TrackBusMap): void {
     const wanted = new Set<TrackId>();
+    const voicesNeeded = chordVoicesNeeded(project);
     for (const track of project.tracks) {
       const inst = track.instrument;
       const bus = buses[track.id];
@@ -54,7 +62,7 @@ export class InstrumentHost {
 
       let live = this.live.get(track.id);
       if (live && (live.kindId !== inst.kind || live.bus !== bus)) {
-        this.runtime.removeInstrument(live.id);
+        for (const id of live.ids) this.runtime.removeInstrument(id);
         this.live.delete(track.id);
         live = undefined;
       }
@@ -69,8 +77,24 @@ export class InstrumentHost {
         }
         const paramIds = new Map<string, number>();
         for (const p of this.runtime.getInstrumentParams(kind)) paramIds.set(p.name, p.id);
-        live = { kindId: inst.kind, kind, bus, id, paramIds, base: new Map(), written: new Map(), lfoSent: [] };
+        live = { kindId: inst.kind, kind, bus, ids: [id], paramIds, base: new Map(), written: new Map(), lfoSent: [] };
         this.live.set(track.id, live);
+      }
+
+      const wantedVoices = voicesNeeded.get(track.id) ?? 1;
+      while (live.ids.length > wantedVoices) this.runtime.removeInstrument(live.ids.pop()!);
+      while (live.ids.length < wantedVoices) {
+        let extra: InstrumentId;
+        try {
+          extra = this.runtime.createInstrument(live.kind, { bus });
+        } catch {
+          break; // out of instances: extra chord tones fall back to the last one that exists
+        }
+        live.ids.push(extra);
+        // A new instance has the engine defaults: resend every control and LFO to it.
+        live.base.clear();
+        live.written.clear();
+        live.lfoSent = [];
       }
 
       for (const [name, value] of Object.entries(inst.params)) {
@@ -78,14 +102,14 @@ export class InstrumentHost {
         if (paramId === undefined || live.base.get(name) === value) continue;
         live.base.set(name, value);
         live.written.set(name, value);
-        this.runtime.setInstrumentParameter(live.id, paramId, value);
+        for (const id of live.ids) this.runtime.setInstrumentParameter(id, paramId, value);
       }
       this.syncLfos(live, inst.lfos ?? []);
     }
 
     for (const [trackId, live] of this.live) {
       if (wanted.has(trackId)) continue;
-      this.runtime.removeInstrument(live.id);
+      for (const id of live.ids) this.runtime.removeInstrument(id);
       this.live.delete(trackId);
     }
   }
@@ -101,8 +125,8 @@ export class InstrumentHost {
       lfos,
       targets,
       live.lfoSent,
-      (slot, lfo) => this.runtime.setInstrumentLfo(live.id, slot, lfo),
-      (slot) => this.runtime.clearInstrumentLfo(live.id, slot),
+      (slot, lfo) => live.ids.forEach((id) => this.runtime.setInstrumentLfo(id, slot, lfo)),
+      (slot) => live.ids.forEach((id) => this.runtime.clearInstrumentLfo(id, slot)),
     );
   }
 
@@ -115,15 +139,16 @@ export class InstrumentHost {
     const paramId = live?.paramIds.get(name);
     if (!live || paramId === undefined || live.written.get(name) === value) return;
     live.written.set(name, value);
-    this.runtime.setInstrumentParameter(live.id, paramId, value);
+    for (const id of live.ids) this.runtime.setInstrumentParameter(id, paramId, value);
   }
 
-  /** The engine target of one control of `trackId`'s live synth, for scheduled parameter events
-   * (audio/automation.ts), or undefined if the track has no live synth or the control is unknown. */
-  target(trackId: TrackId, name: string): { instrument: InstrumentId; param: number } | undefined {
+  /** The engine targets of one control of `trackId`'s live synth (one per instance), for scheduled
+   * parameter events (audio/automation.ts); empty if the track has no live synth or the control is
+   * unknown. */
+  targets(trackId: TrackId, name: string): { instrument: InstrumentId; param: number }[] {
     const live = this.live.get(trackId);
     const param = live?.paramIds.get(name);
-    return live && param !== undefined ? { instrument: live.id, param } : undefined;
+    return live && param !== undefined ? live.ids.map((instrument) => ({ instrument, param })) : [];
   }
 
   /** Records that automation has been told to move `name` to `value` (scheduled), so restoreBase()
@@ -140,23 +165,24 @@ export class InstrumentHost {
         const paramId = live.paramIds.get(name);
         if (paramId === undefined || live.written.get(name) === base) continue;
         live.written.set(name, base);
-        this.runtime.setInstrumentParameter(live.id, paramId, base);
+        for (const id of live.ids) this.runtime.setInstrumentParameter(id, paramId, base);
       }
     }
   }
 
-  /** Plays a note on `trackId`'s instrument. Returns false if the track has none live. */
-  noteOn(trackId: TrackId, params: InstrumentNoteParams): boolean {
+  /** Plays a note on `trackId`'s instrument; `voice` is the chord tone (0 for an ordinary note),
+   * which picks the instance. Returns false if the track has none live. */
+  noteOn(trackId: TrackId, params: InstrumentNoteParams, voice = 0): boolean {
     const live = this.live.get(trackId);
     if (!live) return false;
-    this.runtime.instrumentNoteOn(live.id, params);
+    this.runtime.instrumentNoteOn(live.ids[Math.min(voice, live.ids.length - 1)], params);
     return true;
   }
 
   /** Note-off for every live instrument — for Stop/Pause, so a held bass note doesn't ring on.
    * Pending (scheduled) notes are dropped separately by runtime.cancelScheduled(). */
   stopAll(): void {
-    for (const live of this.live.values()) this.runtime.instrumentNoteOff(live.id);
+    for (const live of this.live.values()) for (const id of live.ids) this.runtime.instrumentNoteOff(id);
   }
 }
 

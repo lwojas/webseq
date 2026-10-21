@@ -1,6 +1,7 @@
 // Project-level musical scale: a *context*, not a constraint. It tells the note-entry UI which
 // pitches belong to the key (to emphasise them and optionally snap new entries to them) and
-// nothing else — changing it never rewrites a note, and playback never reads it. Defined by
+// nothing else — changing it never rewrites a note, and playback reads it only to resolve chord
+// notes (model/chord.ts); plain notes are untouched. Defined by
 // semitone intervals so adding a scale is one table row. Pure data + functions: no React, no
 // webdsp. webtracker carries a line-for-line port (src/model/scale.js) with the same test
 // vectors, because the two apps share no package.

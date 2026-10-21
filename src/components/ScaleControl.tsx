@@ -3,12 +3,14 @@ import { ROOT_NAMES, SCALES, SCALE_PRESETS, formatScale, type ProjectScale } fro
 interface Props {
   scale: ProjectScale;
   onChange: (patch: Partial<ProjectScale>) => void;
+  /** Opens the Musical Guide (pauses the sequencer and blocks the editor behind it). */
+  onOpenGuide: () => void;
 }
 
 /** The project's key: root + scale, a separate list of subjective musical presets, and Snap.
  * Changing any of it only changes how notes are shown and entered, never the notes themselves
  * (model/scale.ts). */
-export function ScaleControl({ scale, onChange }: Props) {
+export function ScaleControl({ scale, onChange, onOpenGuide }: Props) {
   return (
     <div className="field scale-control" title={`Key: ${formatScale(scale)}. Changing it never rewrites existing notes.`}>
       <span>Scale</span>
@@ -48,6 +50,9 @@ export function ScaleControl({ scale, onChange }: Props) {
         title="Snap: new notes land on the nearest scale note and the pitch menu lists scale notes only. Turn off to enter any semitone."
       >
         Snap
+      </button>
+      <button className="btn small guide-open" onClick={onOpenGuide} title="Musical Guide: hear your scale and try simple starting points. Pauses the sequencer.">
+        Musical Guide
       </button>
     </div>
   );

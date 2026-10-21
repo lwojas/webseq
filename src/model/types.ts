@@ -9,6 +9,7 @@
 // README.md).
 
 import type { TrackArp } from "./arp";
+import type { NoteChord } from "./chord";
 import type { ProjectScale } from "./scale";
 
 export type TrackId = string;
@@ -239,6 +240,10 @@ export interface Note {
   /** Semitones above the track's own pitch (a synth's Tune, or a sample's original pitch).
    * Optional — absent means 0. Set from the Instrument panel's note inspector. */
   pitch?: number;
+  /** Chord mode (model/chord.ts): instead of one `pitch`, the note sounds a scale-relative chord
+   * resolved against the project scale at playback. Mutually exclusive with `pitch`. Absent = an
+   * ordinary note, so older projects are byte-identical. */
+  chord?: NoteChord;
   /** How much this step takes part in the track's event LFO, 0..1 (0 / absent = it plays at its
    * own velocity). Authored, like velocity; the effective velocity is computed at playback and
    * never stored. */

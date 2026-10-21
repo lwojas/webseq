@@ -12,6 +12,8 @@ import { effectiveSampleMode } from "../model/chop";
 import { instrumentDefFor } from "../model/instruments";
 import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
 import { arpOf, arpTrackNotes, isArpActive } from "../model/arp";
+import { expandChordNotes, type PlayedNote } from "../model/chord";
+import type { ProjectScale } from "../model/scale";
 import { DEFAULT_BEATS_PER_BAR } from "../model/project";
 
 /** Seconds per grid beat (a sixteenth note in 4/4) at a given BPM. Deliberately independent
@@ -127,15 +129,16 @@ export function compileInstrumentNotes(
   swing = 0.5,
   lfoAnchorTime?: number,
   beatsPerBar = DEFAULT_BEATS_PER_BAR,
-): { trackId: TrackId; params: InstrumentNoteParams }[] {
-  const results: { trackId: TrackId; params: InstrumentNoteParams }[] = [];
+  scale?: Partial<ProjectScale> | null,
+): { trackId: TrackId; params: InstrumentNoteParams; voice: number }[] {
+  const results: { trackId: TrackId; params: InstrumentNoteParams; voice: number }[] = [];
   const synthTracks = tracks.filter((t) => t.instrument != null);
   if (synthTracks.length === 0) return results;
   const byTrack = groupNotesByTrack(pattern);
   for (const track of synthTracks) {
-    for (const note of playedNotes(track, byTrack.get(track.id) ?? [], pattern, beatsPerBar)) {
+    for (const note of playedNotes(track, byTrack.get(track.id) ?? [], pattern, beatsPerBar, scale)) {
       const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime);
-      if (params) results.push({ trackId: track.id, params });
+      if (params) results.push({ trackId: track.id, params, voice: note.voice ?? 0 });
     }
   }
   return results;
@@ -155,8 +158,9 @@ export function compilePatternIteration(
   swing = 0.5,
   lfoAnchorTime?: number,
   beatsPerBar = DEFAULT_BEATS_PER_BAR,
+  scale?: Partial<ProjectScale> | null,
 ): ScheduledEvent[] {
-  return compilePatternIterationTracked(pattern, tracks, bpm, stepStartTime, busIdFor, swing, lfoAnchorTime, beatsPerBar).map((r) => r.event);
+  return compilePatternIterationTracked(pattern, tracks, bpm, stepStartTime, busIdFor, swing, lfoAnchorTime, beatsPerBar, scale).map((r) => r.event);
 }
 
 /** Same as compilePatternIteration, but keeps each ScheduledEvent paired with the TrackId that
@@ -183,20 +187,25 @@ export function compilePatternIterationTracked(
   swing = 0.5,
   lfoAnchorTime?: number,
   beatsPerBar = DEFAULT_BEATS_PER_BAR,
+  scale?: Partial<ProjectScale> | null,
 ): { event: ScheduledEvent; trackId: TrackId }[] {
   const results: { event: ScheduledEvent; trackId: TrackId }[] = [];
   const notesByTrack = groupNotesByTrack(pattern);
   for (const track of tracks) {
     const busId = busIdFor(track.id);
     const trackEvents: ScheduledEvent[] = [];
-    for (const note of playedNotes(track, notesByTrack.get(track.id) ?? [], pattern, beatsPerBar)) {
+    for (const note of playedNotes(track, notesByTrack.get(track.id) ?? [], pattern, beatsPerBar, scale)) {
       const event = compileNote(track, note, bpm, stepStartTime, busId, swing, lfoAnchorTime);
       if (event) trackEvents.push(event);
     }
     if (effectiveVoiceMode(track) === "mono") {
       for (let i = 0; i < trackEvents.length - 1; i++) {
         const current = trackEvents[i];
-        const gap = trackEvents[i + 1].time - current.time;
+        // The next event that starts later: chord tones share a start and are not "the next note".
+        let j = i + 1;
+        while (j < trackEvents.length - 1 && trackEvents[j].time <= current.time) j++;
+        if (trackEvents[j].time <= current.time) continue;
+        const gap = trackEvents[j].time - current.time;
         if (current.duration !== undefined && current.duration > gap) current.duration = Math.max(0, gap);
       }
     }
@@ -208,9 +217,12 @@ export function compilePatternIterationTracked(
 /** The notes a track actually plays this iteration: its stored notes, or — with the arp on — the
  * notes the arp generates from them (model/arp.ts). The one seam between the stored pattern and
  * the engine events; an arp-less track returns its own list untouched. */
-function playedNotes(track: Track, notes: Note[], pattern: Pattern, beatsPerBar: number): Note[] {
-  if (!isArpActive(track) || notes.length === 0) return notes;
-  return arpTrackNotes(notes, arpOf(track), beatsPerBar, pattern.bars * beatsPerBar);
+function playedNotes(track: Track, notes: Note[], pattern: Pattern, beatsPerBar: number, scale?: Partial<ProjectScale> | null): PlayedNote[] {
+  // Chords first (model/chord.ts): a chord note becomes its tones as ordinary notes, so the arp
+  // below sees them as its pool and everything after sees only plain notes.
+  const expanded = expandChordNotes(track, notes, scale);
+  if (!isArpActive(track) || expanded.length === 0) return expanded;
+  return arpTrackNotes(expanded, arpOf(track), beatsPerBar, pattern.bars * beatsPerBar);
 }
 
 /** One pass over the pattern, instead of one scan per track: with 64 tracks, a scan per track

@@ -12,6 +12,9 @@ import * as trackConfig from "./trackConfig";
 import * as edit from "./edit";
 import { setTrackArp, type ArpVelocity, type TrackArp } from "./arp";
 import { snapAddedNoteToScale } from "./scaleEntry";
+import { setNoteChord, setNoteMode, type NoteChord } from "./chord";
+import { applyRecipe } from "../guide/apply";
+import type { Recipe } from "../guide/recipes";
 import { setProjectScale, type ProjectScale } from "./scale";
 
 export type Action =
@@ -20,6 +23,7 @@ export type Action =
   | { type: "SET_PROJECT_NAME"; name: string }
   | { type: "SET_PROJECT_SCALE"; patch: Partial<ProjectScale> }
   | { type: "SET_TRACK_ARP"; trackId: TrackId; patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> } }
+  | { type: "APPLY_RECIPE"; recipe: Recipe; patternId: PatternId; trackId: TrackId | null; unavailableKinds?: InstrumentKindId[] }
   | { type: "ADD_ASSET"; asset: Asset }
   | { type: "ASSIGN_ASSET"; trackId: TrackId; assetId: AssetId }
   | { type: "RENAME_ASSET"; assetId: AssetId; name: string }
@@ -44,6 +48,8 @@ export type Action =
   | { type: "SET_ASSET_CHOP_START"; assetId: AssetId; start: number }
   | { type: "SET_ASSET_ENVELOPE"; assetId: AssetId; envelope: Partial<SampleEnvelope> }
   | { type: "SET_NOTE_PITCH"; patternId: PatternId; noteId: NoteId; pitch: number }
+  | { type: "SET_NOTE_MODE"; patternId: PatternId; noteId: NoteId; mode: "note" | "chord" }
+  | { type: "SET_NOTE_CHORD"; patternId: PatternId; noteId: NoteId; patch: Partial<NoteChord> }
   | { type: "SET_NOTE_VELOCITY"; patternId: PatternId; noteId: NoteId; velocity: number }
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
   | { type: "REMOVE_NOTE"; patternId: PatternId; noteId: NoteId }
@@ -103,6 +109,12 @@ export function projectReducer(state: Project, action: Action): Project {
       return setTrackArp(state, action.trackId, action.patch);
     case "SET_PROJECT_NAME":
       return project.renameProject(state, action.name);
+    case "APPLY_RECIPE": {
+      // Musical Guide "Try this" (guide/apply.ts): the one way the guide changes a project.
+      const unavailable = action.unavailableKinds ?? [];
+      const result = applyRecipe(state, action.recipe, { patternId: action.patternId, trackId: action.trackId, isKindAvailable: (k) => !unavailable.includes(k) });
+      return result.ok ? result.project : state;
+    }
     case "ADD_ASSET":
       return project.addAsset(state, action.asset);
     case "ASSIGN_ASSET":
@@ -151,6 +163,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setAssetEnvelope(state, action.assetId, action.envelope);
     case "SET_NOTE_PITCH":
       return project.setNotePitch(state, action.patternId, action.noteId, action.pitch);
+    case "SET_NOTE_MODE":
+      return setNoteMode(state, action.patternId, action.noteId, action.mode);
+    case "SET_NOTE_CHORD":
+      return setNoteChord(state, action.patternId, action.noteId, action.patch);
     case "SET_NOTE_VELOCITY":
       return project.setNoteVelocity(state, action.patternId, action.noteId, action.velocity);
     case "ADD_NOTE":

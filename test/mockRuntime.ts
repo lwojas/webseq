@@ -139,6 +139,7 @@ export function mockRuntime() {
     clearEffectLfo: vi.fn((bus: number, id: number, slot: number) => calls.clearEffectLfo.push([bus, id, slot])),
     scheduleParams: vi.fn((events: Record<string, unknown>[]) => calls.scheduleParams.push(events)),
     setSampleParameter: vi.fn((id: number, param: number, value: number) => calls.setSampleParameter.push([id, param, value])),
+    getCurrentTime: vi.fn(() => 0),
     createInstrument: vi.fn((kind: number, opts: { bus?: number } = {}) => {
       const id = nextInstrument++;
       calls.createInstrument.push({ kind, ...opts, id });
