@@ -10,9 +10,12 @@ const DB_NAME = "webseq";
 // Bumped from 1 -> 2 to create the "assets" store (renamed from "samples") — onupgradeneeded
 // only fires on a version bump, so a lower version would leave an existing local database
 // without it.
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 export const PROJECTS_STORE = "projects";
 export const ASSETS_STORE = "assets";
+// Added in v3: the single crash-recovery slot (recovery.ts / recoveryStore.ts), separate from
+// explicit saves in "projects".
+export const RECOVERY_STORE = "recovery";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -24,6 +27,7 @@ export function openDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(PROJECTS_STORE)) db.createObjectStore(PROJECTS_STORE, { keyPath: "id" });
       if (!db.objectStoreNames.contains(ASSETS_STORE)) db.createObjectStore(ASSETS_STORE, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(RECOVERY_STORE)) db.createObjectStore(RECOVERY_STORE, { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

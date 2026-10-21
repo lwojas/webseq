@@ -116,6 +116,28 @@ select {
   color: var(--danger);
 }
 
+/* Startup crash-recovery prompt (App.tsx, persistence/recovery.ts) — webtracker's amber-bordered
+   banner above the chrome. */
+.recovery-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 6px 12px;
+  background: var(--panel-alt);
+  border-bottom: 1px solid var(--amber);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.recovery-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .project-select {
   background: var(--panel-alt);
   border: 1px solid var(--border-strong);

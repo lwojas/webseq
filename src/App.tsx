@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AudioRuntime } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
-import type { Asset, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
 import { FX_KIND } from "./audio/fxChain";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
-import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, type CopiedNote, type GridResolution } from "./model/notes";
+import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, GRID_RESOLUTIONS, type CopiedNote, type GridResolution } from "./model/notes";
 import { adjacentPatternId } from "./model/patternNav";
 import { chainShiftForReorder, moveChainEntry } from "./model/project";
 import { buildEditPanelModel, trackLabel, type EditClipboard } from "./app/editModel";
@@ -22,6 +22,8 @@ import { syncBuses } from "./audio/busSync";
 import { encodeWav } from "./audio/wav";
 import { saveProject, loadProject, listProjects, deleteProject } from "./persistence/projectStore";
 import { remapAssetIds } from "./model/project";
+import { createRecoveryScheduler, timeAgo, type RecoveryRecord } from "./persistence/recovery";
+import { putRecovery, getRecovery, getRecoveryAssets, clearRecovery, resetRecoveryAssetCache } from "./persistence/recoveryStore";
 import type { ResamplePhase } from "./components/TransportBar";
 import type { ImportBatchResult } from "./components/AssetsPanel";
 import type { ModulationUi } from "./components/ModulationSlot";
@@ -747,6 +749,40 @@ export function App() {
   }, []);
 
   // --- persistence ---
+  const recoveryScheduler = useMemo(
+    () => createRecoveryScheduler({ write: (record) => putRecovery(record, assetDataRef.current) }),
+    [],
+  );
+  // A recoverable previous session found at startup, shown as a prompt until the user picks.
+  const [recoveryPrompt, setRecoveryPrompt] = useState<RecoveryRecord | null>(null);
+  // Snapshots stay off until the startup check has resolved (and its prompt been answered), so
+  // an edit made while the prompt is up can't overwrite the very record it offers. The check
+  // result also gates the first run: the pristine initial project is never snapshotted.
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    getRecovery().then((record) => {
+      if (cancelled) return;
+      setRecoveryPrompt(record);
+      setRecoveryChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // The project object with nothing unsaved (initial / just New'd / just Loaded). Every reducer
+  // edit yields a new object, so `project !== baseline` means "edited since".
+  const cleanBaselineRef = useRef<Project>(project);
+  useEffect(() => {
+    if (!recoveryChecked || recoveryPrompt) return;
+    if (project === cleanBaselineRef.current) return;
+    recoveryScheduler.schedule({
+      project,
+      ui: { selectedPatternId, selectedTarget, activeBank, gridResolution },
+    });
+  }, [recoveryChecked, recoveryPrompt, project, selectedPatternId, selectedTarget, activeBank, gridResolution, recoveryScheduler]);
+  useEffect(() => () => recoveryScheduler.cancel(), [recoveryScheduler]);
+
   const refreshSavedProjects = useCallback(() => {
     listProjects().then(setSavedProjects);
   }, []);
@@ -757,13 +793,17 @@ export function App() {
     setSaveError(null);
     try {
       await saveProject(project, assetDataRef.current);
+      // The recovery snapshot only covers the gap before a save (same as webtracker) — drop it
+      // so this saved session doesn't prompt for a restore next startup.
+      recoveryScheduler.cancel();
+      void clearRecovery();
       refreshSavedProjects();
       setSaveStatus("saved");
     } catch (err) {
       setSaveStatus("error");
       setSaveError(err instanceof Error ? err.message : String(err));
     }
-  }, [project, refreshSavedProjects]);
+  }, [project, refreshSavedProjects, recoveryScheduler]);
 
   // Clears the transient "Saved ✓" confirmation after a couple seconds — a UI-only timer for a
   // toast message, not anything audio-timed, so a plain setTimeout is fine here (see
@@ -774,41 +814,88 @@ export function App() {
     return () => clearTimeout(timer);
   }, [saveStatus]);
 
+  // Replaces the open project with `loaded` (a saved project or a recovery record's project):
+  // re-registers each asset's bytes with the engine, remaps ids, and swaps the project in.
+  // Shared by Load and Restore so both go through one path.
+  const installProject = useCallback(
+    async (runtimeInstance: AudioRuntime, source: Project, assetData: Map<AssetId, ArrayBuffer>): Promise<Project> => {
+      transportRef.current?.stop();
+      releaseEngineSamples(runtimeInstance);
+      const idMap = new Map<AssetId, AssetId>();
+      assetDataRef.current = new Map();
+      for (const asset of source.assets) {
+        const data = assetData.get(asset.id);
+        if (!data) continue;
+        const meta = await runtimeInstance.loadSample(data.slice(0), { name: asset.name });
+        idMap.set(asset.id, meta.id);
+        assetDataRef.current.set(meta.id, data);
+      }
+      const remapped = withMissingTracks(remapAssetIds(source, idMap));
+      // Deliberately NOT resetting trackBusesRef here: webdsp's createBus() hands buses out
+      // from a one-way counter (MAX_TRACK_BUSES = 32) with no release call, so wiping this map
+      // on every load would force a brand-new set of buses per load and exhaust the pool after
+      // just two — see ensureTrackBuses' doc comment. Every project has the same fixed,
+      // deterministic track ids (createInitialTracks: "track-1".."track-64" — there is no add/
+      // remove-track feature), so the existing id -> bus mapping is still correct for whatever
+      // project is loaded next; ensureTrackBuses only ever allocates for an id it hasn't seen.
+      // A pending recovery write belongs to the project being replaced (webtracker's ordering rule).
+      recoveryScheduler.cancel();
+      resetRecoveryAssetCache();
+      dispatch({ type: "LOAD_PROJECT", project: remapped });
+      setStatus("stopped");
+      // Not a correctness fix (track ids are fixed/deterministic across every project, so the
+      // clipboard's positions would still make sense, and a stale copied assetId already falls
+      // back to null on paste — see trackConfig.ts) — just avoids a copy from a previous
+      // project session confusingly outliving it (ECS-112/ECS-124).
+      setNoteClipboard(null);
+      setEditClipboard({});
+      return remapped;
+    },
+    [recoveryScheduler],
+  );
+
   const handleLoadProject = useCallback(async () => {
     if (!loadTargetId) return;
     const loaded = await loadProject(loadTargetId);
     if (!loaded) return;
     const runtimeInstance = runtime ?? (await init());
     if (!runtimeInstance) return;
+    // A freshly loaded project has nothing unsaved: don't snapshot it until it's edited.
+    const installed = await installProject(runtimeInstance, loaded.project, loaded.assetData);
+    cleanBaselineRef.current = installed;
+  }, [loadTargetId, runtime, init, installProject]);
 
-    transportRef.current?.stop();
-    releaseEngineSamples(runtimeInstance);
-    const idMap = new Map<AssetId, AssetId>();
-    assetDataRef.current = new Map();
-    for (const asset of loaded.project.assets) {
-      const data = loaded.assetData.get(asset.id);
-      if (!data) continue;
-      const meta = await runtimeInstance.loadSample(data.slice(0), { name: asset.name });
-      idMap.set(asset.id, meta.id);
-      assetDataRef.current.set(meta.id, data);
+  // --- crash recovery (persistence/recovery.ts; modelled on webtracker's resume) ---
+  const handleRestoreRecovery = useCallback(async () => {
+    if (!recoveryPrompt) return;
+    const record = recoveryPrompt;
+    const runtimeInstance = runtime ?? (await init());
+    if (!runtimeInstance) return;
+    try {
+      const assetData = await getRecoveryAssets(record);
+      const installed = await installProject(runtimeInstance, record.project, assetData);
+      // Restore the view state, validated against the project actually installed.
+      const { ui } = record;
+      const patternId = installed.patterns.some((p) => p.id === ui.selectedPatternId) ? ui.selectedPatternId : installed.patterns[0].id;
+      setSelectedPatternId(patternId);
+      setSelectedTarget(ui.selectedTarget === "master" || installed.tracks.some((t) => t.id === ui.selectedTarget) ? ui.selectedTarget : "master");
+      setSelectedFxId(null);
+      setActiveBank(Number.isInteger(ui.activeBank) && ui.activeBank >= 0 ? ui.activeBank : 0);
+      if (GRID_RESOLUTIONS.includes(ui.gridResolution)) setGridResolution(ui.gridResolution);
+      // The record stays in the slot: a restored session is still unsaved work, so (like
+      // webtracker) it keeps prompting until saved or discarded. The restore itself re-writes it.
+      setRecoveryPrompt(null);
+    } catch {
+      // Unreadable/incompatible data must never wedge startup: drop it and carry on.
+      void clearRecovery();
+      setRecoveryPrompt(null);
     }
-    const remapped = withMissingTracks(remapAssetIds(loaded.project, idMap));
-    // Deliberately NOT resetting trackBusesRef here: webdsp's createBus() hands buses out
-    // from a one-way counter (MAX_TRACK_BUSES = 32) with no release call, so wiping this map
-    // on every load would force a brand-new set of buses per load and exhaust the pool after
-    // just two — see ensureTrackBuses' doc comment. Every project has the same fixed,
-    // deterministic track ids (createInitialTracks: "track-1".."track-64" — there is no add/
-    // remove-track feature), so the existing id -> bus mapping is still correct for whatever
-    // project is loaded next; ensureTrackBuses only ever allocates for an id it hasn't seen.
-    dispatch({ type: "LOAD_PROJECT", project: remapped });
-    setStatus("stopped");
-    // Not a correctness fix (track ids are fixed/deterministic across every project, so the
-    // clipboard's positions would still make sense, and a stale copied assetId already falls
-    // back to null on paste — see trackConfig.ts) — just avoids a copy from a previous
-    // project session confusingly outliving it (ECS-112/ECS-124).
-    setNoteClipboard(null);
-    setEditClipboard({});
-  }, [loadTargetId, runtime, init]);
+  }, [recoveryPrompt, runtime, init, installProject]);
+
+  const handleDismissRecovery = useCallback(() => {
+    void clearRecovery();
+    setRecoveryPrompt(null);
+  }, []);
 
   const handleNewProject = useCallback(() => {
     transportRef.current?.stop();
@@ -817,11 +904,15 @@ export function App() {
     // See handleLoadProject's comment just above: trackBusesRef is intentionally kept, not
     // reset, since webdsp has no way to release a bus and every project shares the same
     // track ids.
-    dispatch({ type: "LOAD_PROJECT", project: createInitialProject() });
+    const fresh = createInitialProject();
+    recoveryScheduler.cancel();
+    resetRecoveryAssetCache();
+    cleanBaselineRef.current = fresh;
+    dispatch({ type: "LOAD_PROJECT", project: fresh });
     setStatus("stopped");
     setNoteClipboard(null);
     setEditClipboard({});
-  }, [runtime]);
+  }, [runtime, recoveryScheduler]);
 
   const handleDeleteProject = useCallback(async () => {
     if (!loadTargetId) return;
@@ -1032,6 +1123,22 @@ export function App() {
 
   return (
     <div className="app" data-mobile-tab={mobileTab} data-main-view={mainView} data-takeover={derived.takeover} data-library-view={libraryView}>
+      {recoveryPrompt && (
+        <div className="recovery-banner" role="alert">
+          <span>
+            Previous session detected{recoveryPrompt.projectName ? ` — "${recoveryPrompt.projectName}"` : ""}, unsaved,{" "}
+            {timeAgo(recoveryPrompt.savedAt)}. Restore it?
+          </span>
+          <div className="recovery-banner-actions">
+            <button className="btn small" onClick={() => void handleRestoreRecovery()}>
+              Restore
+            </button>
+            <button className="btn small" onClick={handleDismissRecovery}>
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
       <Chrome
         layout={layout}
         mainView={mainView}
