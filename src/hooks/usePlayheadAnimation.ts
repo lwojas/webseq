@@ -19,6 +19,7 @@
 // also driving feedback off the same clock (see useMidiControls.ts). `transform` is
 // compositor-only, so the browser never re-lays-out the page to redraw this line.
 import { useEffect, useRef } from "react";
+import { perfCounters } from "../debug/perfOverlay";
 
 export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: number, enabled = true) {
   const elementRef = useRef<HTMLDivElement | null>(null);
@@ -57,6 +58,7 @@ export function usePlayheadAnimation(getBeat: () => number | null, pxPerBeat: nu
           if (transform !== lastTransform) {
             el.style.transform = transform;
             lastTransform = transform;
+            perfCounters.playheadWrites++;
           }
         }
       }
