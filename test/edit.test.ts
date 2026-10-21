@@ -5,9 +5,10 @@ import { addInstrumentLfo, setInstrumentParam, setTrackInstrument } from "../src
 import { setTrackEventLfo } from "../src/model/eventLfo";
 import { addAsset, addNote, assignAsset, BANK_SIZE, createInitialProject, setPatternBars, setTrackVolume } from "../src/model/project";
 import {
-  canPasteSynthLfos, copyBank, copyFx, copyInstrument, copyModulation, copyTrack, duplicateBar, duplicateSequence,
+  canPasteSynthLfos, copyBank, copyFx, copyInstrument, copyModulation, copyTrack, duplicateBar, duplicateSequence, extendTrack,
   pasteBank, pasteFx, pasteInstrument, pasteModulation, pasteTrack,
 } from "../src/model/edit";
+import { projectReducer as reducer } from "../src/model/reducer";
 import { notesForTrack } from "../src/model/types";
 import type { Asset, Project } from "../src/model/types";
 
@@ -168,5 +169,64 @@ describe("Bar Tools", () => {
     expect(copy).toMatchObject({ start: 16, pitch: 3, lfo: 0.5, velocity: 0.7, trackId: "track-1" });
     expect(duplicateBar(project, pid, 5)).toEqual(project);
     expect(duplicateSequence(setPatternBars(project, pid, 33), pid).patterns[0].bars).toBe(33);
+  });
+});
+
+describe("Extend Track", () => {
+  // 8-bar pattern (16 steps/bar); track-1 fills bars 0-3, track-2 has one step in bar 1.
+  function fourOfEight() {
+    let { project, pid } = setup();
+    project = setPatternBars(project, pid, 8);
+    project = addNote(project, pid, "track-1", 16);
+    project = addNote(project, pid, "track-1", 48);
+    project = addNote(project, pid, "track-1", 52);
+    project = addNote(project, pid, "track-2", 20);
+    const pat = project.patterns[0];
+    const last = Object.values(pat.notes).find((n) => n.trackId === "track-1" && n.start === 52)!;
+    project = { ...project, patterns: [{ ...pat, notes: { ...pat.notes, [last.id]: { ...last, pitch: 5, velocity: 0.4, lfo: 0.3 } } }] };
+    return { project, pid };
+  }
+  const starts = (p: Project, pid: string, t: string) => notes(p, pid, t).map((n) => n.start);
+
+  it("1 bar copies the last bar's steps with all fields and fresh ids", () => {
+    const { project, pid } = fourOfEight();
+    const next = extendTrack(project, pid, "track-1", 1);
+    expect(starts(next, pid, "track-1")).toEqual([0, 4, 16, 48, 52, 64, 68]);
+    const copy = notes(next, pid, "track-1").find((n) => n.start === 68)!;
+    expect(copy).toMatchObject({ pitch: 5, velocity: 0.4, lfo: 0.3 });
+    const ids = new Set(notes(project, pid, "track-1").map((n) => n.id));
+    expect(ids.has(copy.id)).toBe(false);
+  });
+
+  it("to sequence end repeats only the last bar, leaves other tracks and the length alone", () => {
+    const { project, pid } = fourOfEight();
+    const next = extendTrack(project, pid, "track-1");
+    expect(starts(next, pid, "track-1")).toEqual([0, 4, 16, 48, 52, 64, 68, 80, 84, 96, 100, 112, 116]);
+    expect(notes(next, pid, "track-2")).toEqual(notes(project, pid, "track-2"));
+    expect(next.patterns[0].bars).toBe(8);
+  });
+
+  it("does nothing when the track reaches the end, is empty, or the bars count overshoots", () => {
+    const { project, pid } = fourOfEight();
+    const full = extendTrack(project, pid, "track-1");
+    expect(extendTrack(full, pid, "track-1")).toEqual(full);
+    expect(extendTrack(project, pid, "track-9")).toEqual(project);
+    expect(starts(extendTrack(project, pid, "track-1", 99), pid, "track-1")).toHaveLength(13);
+  });
+
+  it("a note running past the bar end is clamped, and the last occupied bar is the source", () => {
+    let { project, pid } = fourOfEight();
+    const pat = project.patterns[0];
+    const n = Object.values(pat.notes).find((x) => x.trackId === "track-1" && x.start === 52)!;
+    project = { ...project, patterns: [{ ...pat, notes: { ...pat.notes, [n.id]: { ...n, duration: 40 } } }] };
+    const copy = notes(extendTrack(project, pid, "track-1", 1), pid, "track-1").find((x) => x.start === 68)!;
+    expect(copy.duration).toBe(12);
+  });
+
+  it("is one reducer action (the app has no undo stack, so prior state is the original)", () => {
+    const { project, pid } = fourOfEight();
+    const next = reducer(project, { type: "EXTEND_TRACK", patternId: pid, trackId: "track-1" });
+    expect(starts(next, pid, "track-1")).toHaveLength(13);
+    expect(starts(project, pid, "track-1")).toHaveLength(5);
   });
 });

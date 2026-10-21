@@ -258,3 +258,36 @@ export function appendBarsCopy(pattern: Pattern, beatsPerBar: number, fromBar: n
   }
   return { ...pattern, bars: pattern.bars + barCount, notes: { ...pattern.notes, ...added } };
 }
+
+/** The track's extent in bars: one past the last bar holding a step start (0 = no steps). Tracks
+ * have no length of their own — every track shares Pattern.bars — so this is derived, and
+ * trailing silence is indistinguishable from "not yet extended". */
+export function trackBarExtent(pattern: Pattern, trackId: TrackId, beatsPerBar: number): number {
+  let last = -1;
+  for (const note of Object.values(pattern.notes)) {
+    if (note.trackId === trackId) last = Math.max(last, Math.floor(note.start / beatsPerBar));
+  }
+  return last + 1;
+}
+
+/** Fills the track's bars after its extent by repeating its last occupied bar, `barCount` bars
+ * (or up to the pattern end when omitted). Copies get fresh ids and every field; durations are
+ * clamped to their bar. Only that track is touched and Pattern.bars never changes. Returns the
+ * pattern unchanged when the track has no steps or no room is left. */
+export function extendTrackLastBar(pattern: Pattern, trackId: TrackId, beatsPerBar: number, barCount?: number): Pattern {
+  const extent = trackBarExtent(pattern, trackId, beatsPerBar);
+  const room = pattern.bars - extent;
+  const count = Math.min(barCount ?? room, room);
+  if (extent < 1 || count < 1) return pattern;
+  const srcStart = (extent - 1) * beatsPerBar;
+  const srcEnd = extent * beatsPerBar;
+  const source = Object.values(pattern.notes).filter((n) => n.trackId === trackId && n.start >= srcStart && n.start < srcEnd);
+  const added: Pattern["notes"] = {};
+  for (let k = 1; k <= count; k++) {
+    for (const note of source) {
+      const id = nextId("note");
+      added[id] = { ...note, id, start: note.start + k * beatsPerBar, duration: Math.min(note.duration, srcEnd - note.start) };
+    }
+  }
+  return { ...pattern, notes: { ...pattern.notes, ...added } };
+}

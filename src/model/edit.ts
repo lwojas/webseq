@@ -21,7 +21,7 @@ import type {
   VoiceMode,
 } from "./types";
 import { trackById } from "./types";
-import { appendBarsCopy, type CopiedNote } from "./notes";
+import { appendBarsCopy, extendTrackLastBar, type CopiedNote } from "./notes";
 import { INSTRUMENT_DEFS } from "./instruments";
 import { clearTrackNotes, pasteNotes, tracksInBank, updatePattern } from "./project";
 import { cloneFxChain, cloneInstrument, copyTrackConfig, pasteTrackConfig, type CopiedTrackConfig } from "./trackConfig";
@@ -210,4 +210,10 @@ export function duplicateSequence(project: Project, patternId: PatternId): Proje
 /** Appends a copy of bar `bar` (0-based) to the end of the pattern. */
 export function duplicateBar(project: Project, patternId: PatternId, bar: number): Project {
   return updatePattern(project, patternId, (p) => appendBarsCopy(p, project.beatsPerBar, bar, 1));
+}
+
+/** Repeats the track's last occupied bar into the following `bars` bars (to the pattern end when
+ * omitted), within the existing pattern length. Other tracks and Pattern.bars are untouched. */
+export function extendTrack(project: Project, patternId: PatternId, trackId: TrackId, bars?: number): Project {
+  return updatePattern(project, patternId, (p) => extendTrackLastBar(p, trackId, project.beatsPerBar, bars));
 }

@@ -59,7 +59,9 @@ src/app/          — layout, kept apart from state and behaviour: layout.ts (vi
                     one `useLayout()` breakpoint hook, and the pure `deriveLayout()` that
                     says what shows where), Chrome / Workspace / SidePanel / Dock /
                     PatternsView / MobileTabBar (arrangement per breakpoint), editModel.ts
-                    (the Edit panel's clipboard rows and bar tools). App.tsx owns the state
+                    (the Edit panel's clipboard rows and bar tools, incl. Extend Track — repeats the
+                    selected track's last occupied bar, 1 bar or to the pattern end, never changing
+                    Pattern.bars). App.tsx owns the state
                     and handlers and passes already-wired props to these.
 src/components/   — React: transport bar, pattern strip (the pattern being edited), Patterns
                     page (library + queue with reordering), sequencer grid (MASTER row +

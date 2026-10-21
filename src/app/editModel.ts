@@ -6,7 +6,7 @@ import type { Dispatch } from "react";
 import type { Action } from "../model/reducer";
 import type { Note, Pattern, Project, Track, TrackId } from "../model/types";
 import { BANK_SIZE } from "../model/project";
-import { MAX_PATTERN_BARS } from "../model/notes";
+import { MAX_PATTERN_BARS, trackBarExtent } from "../model/notes";
 import type { CopiedNote } from "../model/notes";
 import {
   canPasteSynthLfos,
@@ -220,5 +220,24 @@ export function buildEditPanelModel(ctx: EditPanelContext): { clipboardRows: Cli
       },
     },
   ];
+  // Extend Track: tracks have no length of their own, so the extent is derived from the steps.
+  const extent = selectedTrack ? trackBarExtent(selectedPattern, selectedTrack.id, project.beatsPerBar) : 0;
+  const extendBlocked = !selectedTrack
+    ? noTrack
+    : extent < 1
+      ? "No steps on this track"
+      : extent >= selectedPattern.bars
+        ? "Track already reaches the sequence end"
+        : null;
+  const extendTool = (id: string, label: string, bars: number | undefined): BarTool => ({
+    id, label, blocked: extendBlocked,
+    hint: extendBlocked ? null : `Repeat bar ${extent} → bar ${bars === undefined ? selectedPattern.bars : extent + bars}`,
+    onRun: () => {
+      if (!selectedTrack || extendBlocked) return;
+      dispatch({ type: "EXTEND_TRACK", patternId: selectedPattern.id, trackId: selectedTrack.id, bars });
+      setClipboardStatus(`${trackLabel(project.tracks, selectedTrack.id)} · bar ${extent} repeated`);
+    },
+  });
+  barTools.push(extendTool("extend-track-1", "Extend Track 1 Bar", 1), extendTool("extend-track-end", "Extend Track to Sequence End", undefined));
   return { clipboardRows, barTools };
 }
