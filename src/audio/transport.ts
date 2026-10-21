@@ -109,6 +109,11 @@ export class Transport {
     private readonly getProject: () => Project,
     private readonly getBusId: (target: FxTarget) => BusId | undefined,
     private readonly playback: Playback,
+    /** Clock the *UI* reads the playhead from (see getPlayheadInfo). Defaults to the audio clock;
+     * the app passes a smoothed one (audio/smoothClock.ts) because the raw audio clock only steps
+     * once per hardware buffer, which makes a playhead read straight from it choppy on phones.
+     * Scheduling always uses the real audio clock. */
+    private readonly uiClock: () => number = () => runtime.getCurrentTime(),
   ) {
     // Forget each sequenced voice once the engine reports it ended. activeVoices then holds only
     // voices that may still sound, which is all haltAudio needs to release. Without this the set
@@ -242,9 +247,8 @@ export class Transport {
    * never cached: caching it here could race a queue edit against tick()'s own scheduling of
    * the same step and disagree with what was actually sent to webdsp. Holds `startPosition`
    * during the lead-in pre-roll, same rationale as the original single-pattern Transport. */
-  private currentPosition(): Position {
+  private currentPosition(now = this.runtime.getCurrentTime()): Position {
     if (this.status !== "playing") return this.pausedPosition;
-    const now = this.runtime.getCurrentTime();
     if (now < this.audibleFrom) return this.startPosition;
     const spb = secondsPerBeat(this.anchorTempo);
     for (const w of this.stepWindows) {
@@ -286,12 +290,12 @@ export class Transport {
    * chain is empty or every entry is dangling) and how far into it, in beats. A pattern
    * editor should only draw a playhead when its own pattern id matches this one. */
   getPlayheadInfo(): { patternId: PatternId | null; beat: number } {
-    const { patternId, beat } = this.currentPosition();
+    const { patternId, beat } = this.currentPosition(this.uiClock());
     return { patternId, beat };
   }
 
   getPlayheadBeat(): number {
-    return this.currentPosition().beat;
+    return this.currentPosition(this.uiClock()).beat;
   }
 
   /** `"idle"` | `"armed"` (waiting for the target pattern's next boundary) | `"capturing"`

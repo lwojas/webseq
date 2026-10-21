@@ -15,6 +15,7 @@ import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { usePlayingPosition } from "./hooks/usePlayingPosition";
 import { Transport, type PlaybackStatus } from "./audio/transport";
+import { createSmoothClock } from "./audio/smoothClock";
 import { Playback, type ManualPlaybackSnapshot } from "./audio/playback";
 import { ensureTrackBuses, busIdForTarget, type TrackBusMap } from "./audio/buses";
 import { syncBuses } from "./audio/busSync";
@@ -128,7 +129,7 @@ export function App() {
     if (!runtime) return;
     trackBusesRef.current = ensureTrackBuses(runtime, project.tracks.map((t) => t.id), trackBusesRef.current);
     if (!transportRef.current) {
-      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId, ensurePlayback(runtime));
+      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId, ensurePlayback(runtime), createSmoothClock(() => runtime.getCurrentTime(), () => performance.now() / 1000));
     }
   }, [runtime, project.tracks, getBusId, ensurePlayback]);
 
@@ -173,7 +174,7 @@ export function App() {
     if (!rt) return null;
     trackBusesRef.current = ensureTrackBuses(rt, projectRef.current.tracks.map((t) => t.id), trackBusesRef.current);
     syncBuses(rt, projectRef.current, trackBusesRef.current);
-    const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt));
+    const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt), createSmoothClock(() => rt.getCurrentTime(), () => performance.now() / 1000));
     transportRef.current = t;
     return t;
   }, [init, getBusId, ensurePlayback]);
