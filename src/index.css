@@ -1531,6 +1531,14 @@ select {
   z-index: 3;
 }
 
+/* The blurred glow enlarges the playhead's compositor layer and gets re-composited every frame —
+   noticeable jank on phones, so touch devices get the bare 2px line. */
+@media (pointer: coarse), (max-width: 768px) {
+  .playhead {
+    box-shadow: none;
+  }
+}
+
 .grid-body {
   position: relative;
   display: flex;
