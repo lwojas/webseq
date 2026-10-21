@@ -161,7 +161,7 @@ describe("compileInstrumentNotes", () => {
   });
 
   it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
-    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth"] as const) {
+    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth", "edge"] as const) {
       expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
     }
   });
@@ -214,6 +214,23 @@ describe("compileInstrumentNotes", () => {
     expect(def.params.find((p) => p.id === "filtertype")?.options?.map((o) => o.label)).toEqual(["Low-pass", "High-pass"]);
     const proj = projectWithNotes("percsynth");
     expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeUndefined();
+  });
+
+  it("lists Edge as sustained, with every engine param and routing/filter modes as options", () => {
+    const def = INSTRUMENT_DEFS.edge;
+    expect(def.sustained).toBe(true);
+    expect(def.params.map((p) => p.id)).toEqual(INSTRUMENT_PARAM_NAMES.edge);
+    expect(new Set(def.params.map((p) => p.id)).size).toBe(def.params.length);
+    for (const p of def.params) {
+      expect(p.default).toBeGreaterThanOrEqual(p.min);
+      expect(p.default).toBeLessThanOrEqual(p.max);
+    }
+    expect(def.params.find((p) => p.id === "routing")?.options?.map((o) => o.label)).toEqual(["Filter A", "Series", "Parallel"]);
+    expect(def.params.find((p) => p.id === "filtera")?.options?.map((o) => o.label)).toEqual(["LP 12", "LP 24", "HP 12", "Band-pass"]);
+    expect(def.params.find((p) => p.id === "pitchenv")!.min).toBeLessThan(0);   // a signed transient
+    const proj = projectWithNotes("edge");
+    expect(rootMidiNote(proj.tracks[0])).toBeCloseTo(57);   // 220 Hz = A3
+    expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeGreaterThan(0);
   });
 
   it("lists the Digital Machines with tune/decay/depth first, one-shots unsustained and Tone/Chaos sustained", () => {

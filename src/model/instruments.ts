@@ -404,6 +404,50 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "drive", label: "Drive", min: 0, max: 1, step: 0.01, default: 0.2 },
     ],
   },
+  // Edge (webdsp docs/edge-instrument.md): clean, sharp plucks, stabs and leads. A band-limited oscillator
+  // whose brightness is a harmonic count (enveloped by the tone envelope), a signed pitch transient, two
+  // filter stages with single/series/parallel routing, one LFO. Ids are the engine's own (lowercase) names.
+  // Sustained: a pluck (Sustain 0, the default) ends itself within the note, a lead (Sustain 1) holds for
+  // the note's length. Root is the Tune (220 Hz = A3).
+  edge: {
+    kind: "edge",
+    label: "Edge",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 1760, step: 0.5, unit: "Hz", default: 220 },
+      { id: "shape", label: "Shape", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "bright", label: "Bright", min: 0, max: 1, step: 0.01, default: 0.55 },
+      { id: "brightenv", label: "Bright Env", min: -1, max: 1, step: 0.01, default: 0.4 },
+      { id: "detune", label: "Detune", min: 0, max: 50, step: 0.5, unit: "ct", default: 0 },
+      { id: "pitchenv", label: "Pitch Env", min: -24, max: 24, step: 0.1, unit: "st", default: 3 },
+      { id: "pitchdecay", label: "Pitch Time", min: 0.002, max: 0.4, step: 0.001, unit: "s", default: 0.025 },
+      {
+        id: "routing", label: "Routing", min: 0, max: 2, step: 1, default: 1,
+        options: ["Filter A", "Series", "Parallel"].map((label, value) => ({ value, label })),
+      },
+      {
+        id: "filtera", label: "Filter A", min: 0, max: 3, step: 1, default: 0,
+        options: ["LP 12", "LP 24", "HP 12", "Band-pass"].map((label, value) => ({ value, label })),
+      },
+      {
+        id: "filterb", label: "Filter B", min: 0, max: 3, step: 1, default: 2,
+        options: ["LP 12", "LP 24", "HP 12", "Band-pass"].map((label, value) => ({ value, label })),
+      },
+      { id: "cutoff", label: "Cutoff", min: 40, max: 16000, step: 1, unit: "Hz", default: 3000 },
+      { id: "spread", label: "B Offset", min: -4, max: 4, step: 0.05, unit: "oct", default: -3 },
+      { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.1 },
+      { id: "filterenv", label: "Filter Env", min: -1, max: 1, step: 0.01, default: 0.5 },
+      { id: "tonedecay", label: "Tone Decay", min: 0.01, max: 2, step: 0.01, unit: "s", default: 0.18 },
+      { id: "lforate", label: "LFO Rate", min: 0.1, max: 20, step: 0.1, unit: "Hz", default: 5 },
+      { id: "lfopitch", label: "LFO > Pitch", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "lfofilter", label: "LFO > Filter", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "attack", label: "Attack", min: 0.0005, max: 0.25, step: 0.0005, unit: "s", default: 0.001 },
+      { id: "decay", label: "Decay", min: 0.01, max: 4, step: 0.01, unit: "s", default: 0.3 },
+      { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "release", label: "Release", min: 0.005, max: 2, step: 0.005, unit: "s", default: 0.08 },
+    ],
+  },
 };
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];

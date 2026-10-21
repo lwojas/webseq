@@ -16,6 +16,7 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   dm_crack: ["tune", "decay", "fm", "body", "noise", "burst", "tone", "drive"],
   dm_chaos: ["tune", "decay", "chaos", "ratio", "fold", "noise", "sweep", "hold"],
   percsynth: ["tune", "osc1wave", "osc1level", "osc2wave", "osc2pitch", "osc2level", "osc2fm", "pitchenv", "pitchdecay", "osc2env", "noise", "noisetone", "noisedecay", "filtertype", "cutoff", "resonance", "filterenv", "filterdecay", "attack", "decay", "sustain", "release", "drive"],
+  edge: ["tune", "shape", "bright", "brightenv", "detune", "pitchenv", "pitchdecay", "routing", "filtera", "filterb", "cutoff", "spread", "resonance", "filterenv", "tonedecay", "lforate", "lfopitch", "lfofilter", "attack", "decay", "sustain", "release"],
   fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide"],
 };
@@ -51,6 +52,7 @@ const KIND_IDS: [string, InstrumentKind][] = [
   ["dm_crack", InstrumentKind.DmCrack],
   ["dm_chaos", InstrumentKind.DmChaos],
   ["percsynth", InstrumentKind.PercSynth],
+  ["edge", InstrumentKind.Edge],
 ];
 
 export function mockRuntime() {
