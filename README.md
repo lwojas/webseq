@@ -312,3 +312,18 @@ test coverage that doesn't actually exist — including catching a real bug this
 version of `webdsp`'s `armCapture()` resolved its caller with an already-`postMessage`-detached
 `ArrayBuffer`, invisible to the Node-based test suite since nothing there exercises real
 `postMessage` transfer semantics.
+
+## Docs
+
+Feature notes live in [`docs/`](docs/):
+
+- [Audio auditioning and shared manual triggering](docs/audio-auditioning-and-manual-triggering.md)
+- [FX MIDI controls](docs/fx-midi-controls.md)
+- [Modulation: automation and LFOs](docs/modulation.md)
+- [Loading multiple samples into the Asset Bin](docs/multi-sample-import.md)
+- [Chord mode and the Musical Guide](docs/musical-guide.md)
+- [Pattern launcher MIDI controls](docs/pattern-launcher-midi-controls.md)
+- [Chop mode (sample slicing)](docs/sample-chop.md)
+- [Project scale and per-track arpeggiator](docs/scale-and-arp.md)
+- [Session recovery (project resume)](docs/session-recovery.md)
+- [Track LFO](docs/track-lfo.md)
