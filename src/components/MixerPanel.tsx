@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { METER_LED_DB, type AudioRuntime, type BusId } from "webdsp";
 import { useMixerMeters } from "../audio/useMixerMeters";
 import { MAX_TRACK_VOLUME, MIN_TRACK_VOLUME } from "../model/project";
@@ -71,6 +71,7 @@ export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted,
               step={0.01}
               value={track.volume}
               onChange={(e) => onSetVolume(track.id, Number(e.target.value))}
+              style={{ "--fader-fill": `${((track.volume - MIN_TRACK_VOLUME) / (MAX_TRACK_VOLUME - MIN_TRACK_VOLUME)) * 100}%` } as CSSProperties}
               aria-label={`${track.name} volume`}
               aria-orientation="vertical"
             />

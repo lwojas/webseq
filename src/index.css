@@ -29,7 +29,8 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-family:
+    "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   -webkit-font-smoothing: antialiased;
 }
@@ -1679,8 +1680,6 @@ select {
   color: #eafffa;
 }
 
-
-
 /* Transient "Track 03 · 4 notes" feedback (ECS-112) — same treatment as AssetsPanel's
    .import-status (uppercase micro-label in --accent), cleared by App.tsx after 2s.
    flex-basis: 100% forces it onto its own line within .track-mode-row's flex-wrap, the same
@@ -2098,9 +2097,61 @@ select {
    width becomes the fader's visible vertical length once rotated, so it tracks the wrap's height
    (100cqh) — a fixed length got cropped whenever other strip rows (e.g. pan) squeezed the wrap. */
 .mixer-fader {
+  /* Tweakable dimensions (overridden in the mobile block). Thumb w/h are in the input's
+     unrotated frame: w is along the travel, h is across the track. */
+  --fader-track-h: 4px;
+  --fader-thumb-w: 14px;
+  --fader-thumb-h: 14px;
+  --fader-fill: 0%; /* set inline from the value by MixerPanel */
+
   width: min(130px, calc(100cqh - 4px));
+  height: var(--fader-thumb-h);
+  margin: 0;
   transform: rotate(-90deg);
-  accent-color: var(--accent);
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  /* Stops a vertical swipe on the fader from scrolling/pull-to-refreshing the page. */
+  touch-action: none;
+}
+
+.mixer-fader::-webkit-slider-runnable-track {
+  height: var(--fader-track-h);
+  border-radius: calc(var(--fader-track-h) / 2);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fader-fill),
+    var(--border) var(--fader-fill)
+  );
+}
+
+.mixer-fader::-moz-range-track {
+  height: var(--fader-track-h);
+  border-radius: calc(var(--fader-track-h) / 2);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fader-fill),
+    var(--border) var(--fader-fill)
+  );
+}
+
+.mixer-fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--fader-thumb-w);
+  height: var(--fader-thumb-h);
+  /* Webkit doesn't centre the thumb on the track by itself. */
+  margin-top: calc((var(--fader-track-h) - var(--fader-thumb-h)) / 2);
+  border-radius: 3px;
+  background: var(--accent);
+  border: none;
+}
+
+.mixer-fader::-moz-range-thumb {
+  width: var(--fader-thumb-w);
+  height: var(--fader-thumb-h);
+  border-radius: 3px;
+  background: var(--accent);
+  border: none;
 }
 
 .mixer-pan {
@@ -2499,7 +2550,8 @@ select {
     border-top: none;
   }
 
-  .app[data-mobile-tab="library"]:not([data-library-view="patterns"]) .side-panel {
+  .app[data-mobile-tab="library"]:not([data-library-view="patterns"])
+    .side-panel {
     display: flex;
     width: 100%;
     flex: 1;
@@ -2600,9 +2652,16 @@ select {
   }
 
   .mixer-fader {
-    width: calc(100cqh - 4px);
+    width: calc(100cqh - 100px);
     /* A flex item in a narrow wrapper: without this it shrinks back to the input's ~129px default. */
     flex-shrink: 0;
+  }
+
+  /* Fatter track and a big, easy-to-grab thumb on touch. Tweak these three. */
+  .mixer-fader {
+    --fader-track-h: 16px;
+    --fader-thumb-w: 44px;
+    --fader-thumb-h: 32px;
   }
 
   .mobile-tab.active {
@@ -2631,7 +2690,6 @@ select {
     min-width: 36px;
     min-height: 36px;
   }
-
 
   .te-card select,
   .te-remove {
@@ -2675,7 +2733,6 @@ select {
   .mobile-tab {
     padding: 12px 2px;
   }
-
 
   .mixer-mute,
   .mixer-solo {
