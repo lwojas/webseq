@@ -6,7 +6,7 @@ import { InstrumentKind, type AudioRuntime } from "webdsp";
 export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   kick: ["tune", "pitchDrop", "pitchDecay", "decay", "punch", "drive"],
   snare: ["tune", "decay", "snap", "noise"],
-  pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release"],
+  pulse: ["tune", "cutoff", "resonance", "pump", "repeat", "rate", "diffuse", "attack", "release", "pumpRate", "pumpAttack", "pluck", "grit"],
   pad: ["tune", "tone", "movement", "detune", "space", "attack", "release"],
   hypersaw: ["tune", "detune", "spread", "density", "cutoff", "attack", "decay", "sustain", "release"],
   pwmbeast: ["tune", "width", "pwm", "rate", "shape", "harmonics", "drive", "cutoff", "resonance", "envamt", "sub", "attack", "decay", "sustain", "release"],

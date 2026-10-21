@@ -138,7 +138,19 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "tune", label: "Root", min: 27.5, max: 440, step: 0.5, unit: "Hz", default: 110 },
       { id: "cutoff", label: "Cutoff", min: 60, max: 6000, step: 1, unit: "Hz", default: 500 },
       { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.25 },
+      { id: "grit", label: "Grit", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "pluck", label: "Pluck", min: 0, max: 1, step: 0.01, default: 0 },
       { id: "pump", label: "Pump", min: 0, max: 1, step: 0.01, default: 0.5 },
+      {
+        id: "pumpRate",
+        label: "Pump Rate",
+        min: -1,
+        max: 5,
+        step: 1,
+        default: -1, // Link: follows Rate
+        options: ["Link", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32"].map((label, i) => ({ value: i - 1, label })),
+      },
+      { id: "pumpAttack", label: "Pump Attack", min: 0, max: 1, step: 0.01, default: 0 },
       { id: "repeat", label: "Repeat", min: 0, max: 1, step: 0.01, default: 0.4 },
       {
         id: "rate",
