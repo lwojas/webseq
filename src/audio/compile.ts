@@ -220,6 +220,38 @@ export function compilePatternIterationTracked(
   return results;
 }
 
+/** Two notes closer than this start on the same engine frame (a frame is ~21 us at 48 kHz). */
+const SAME_START_SECONDS = 5e-6;
+
+/** Choke-group tie-break: which of `entries` (every sample event and synth note of one pattern
+ * iteration) must not play because a track later in track order, in the same choke group, starts a
+ * note at the same instant. Priority is purely `tracks` order, last track wins, so the outcome never
+ * depends on scheduling or queue order. The engine would cut the loser on its own start frame anyway;
+ * dropping it up front just makes the result explicit. Notes at different times are not ties: the
+ * later one cuts the earlier, whichever track it is on. Returns one flag per entry, true = drop. */
+export function simultaneousChokeLosers(tracks: readonly Track[], entries: readonly { trackId: TrackId; time: number }[]): boolean[] {
+  const order = new Map<TrackId, number>();
+  const group = new Map<TrackId, number>();
+  tracks.forEach((t, i) => {
+    order.set(t.id, i);
+    const g = effectiveChokeGroup(t);
+    if (g !== null) group.set(t.id, g);
+  });
+  const grouped = entries
+    .map((e, index) => ({ index, time: e.time, g: group.get(e.trackId), rank: order.get(e.trackId) ?? -1 }))
+    .filter((e) => e.g !== undefined)
+    .sort((a, b) => a.time - b.time);
+  const losers = new Array<boolean>(entries.length).fill(false);
+  for (let i = 0; i < grouped.length; i++) {
+    for (let j = i + 1; j < grouped.length && grouped[j].time - grouped[i].time <= SAME_START_SECONDS; j++) {
+      const a = grouped[i], b = grouped[j];
+      if (a.g !== b.g || a.rank === b.rank) continue;
+      losers[(a.rank < b.rank ? a : b).index] = true;
+    }
+  }
+  return losers;
+}
+
 /** The notes a track actually plays this iteration: its stored notes, or — with the arp on — the
  * notes the arp generates from them (model/arp.ts). The one seam between the stored pattern and
  * the engine events; an arp-less track returns its own list untouched. */

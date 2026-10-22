@@ -47,7 +47,7 @@ clip) carries the group.
 
 - Synth-instrument tracks choke too, in the same groups as sample tracks (a synth closed hat cuts a sample open hat).
 - Every member chokes every other member; there are no send/receive roles, per-note choke or choke-time controls.
-- Two notes starting on the very same frame in one group: the later-scheduled one wins.
+- Two notes of one group starting at the very same instant: the track **later in track order wins** and the earlier track's note is not played (`simultaneousChokeLosers` in `audio/compile.ts`, applied by the transport per pattern iteration). This is a fixed rule, independent of scheduling order. Notes at different times follow the normal rule: the later note cuts the earlier one, whichever track it is on.
 
 Tests: `test/chokeGroup.test.ts` (model, persistence, compile, manual triggers); the voice behaviour itself is tested in
 webdsp (`native/test/choke_test.cpp`).

@@ -26,7 +26,7 @@
 import type { AudioRuntime, BusId, SampleMetadata, VoiceHandle } from "webdsp";
 import type { ChainEntryId, FxTarget, PatternId, Project } from "../model/types";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
-import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat } from "./compile";
+import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat, simultaneousChokeLosers } from "./compile";
 import { restoreAutomation, scheduleAutomation, startAutomation } from "./automation";
 import { instrumentHostFor } from "./instruments";
 import type { Playback } from "./playback";
@@ -408,7 +408,7 @@ export class Transport {
         continue;
       }
       const stepStartTime = this.nextStepStartTime;
-      const compiled = compilePatternIterationTracked(
+      let compiled = compilePatternIterationTracked(
         pattern,
         project.tracks,
         this.anchorTempo,
@@ -419,6 +419,18 @@ export class Transport {
         project.beatsPerBar,
         project.scale,
       );
+      const compiledCount = compiled.length;
+      let synthNotes = compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale);
+      // Choke groups: notes of two tracks in one group starting at the same instant are resolved here,
+      // last track in track order wins (see simultaneousChokeLosers), not left to engine queue order.
+      const losers = simultaneousChokeLosers(project.tracks, [
+        ...compiled.map((c) => ({ trackId: c.trackId, time: c.event.time })),
+        ...synthNotes.map((n) => ({ trackId: n.trackId, time: n.params.time ?? 0 })),
+      ]);
+      if (losers.some(Boolean)) {
+        compiled = compiled.filter((_, i) => !losers[i]);
+        synthNotes = synthNotes.filter((_, i) => !losers[compiledCount + i]);
+      }
       if (compiled.length > 0) {
         // Sort by time before handing events to the engine. Compiling per track leaves them out
         // of time order, and the engine's queue insertion is linear for each out-of-order event
@@ -436,7 +448,7 @@ export class Transport {
       // Synth tracks: one instrumentNoteOn per note, each carrying its absolute start time so the
       // engine fires it sample-accurately (runtime.cancelScheduled() drops any still pending).
       const instrumentHost = instrumentHostFor(this.runtime);
-      for (const { trackId, params, voice } of compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale)) {
+      for (const { trackId, params, voice } of synthNotes) {
         instrumentHost.noteOn(trackId, params, voice);
       }
       const stepEndTime = stepStartTime + beats * spb;

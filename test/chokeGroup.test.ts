@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AudioRuntime, TriggerParams, VoiceHandle } from "webdsp";
-import { compileInstrumentNotes, compilePatternIterationTracked } from "../src/audio/compile";
+import { compileInstrumentNotes, compilePatternIterationTracked, simultaneousChokeLosers } from "../src/audio/compile";
 import { Playback } from "../src/audio/playback";
 import { addNote } from "../src/model/notes";
 import { createInitialProject, setTrackChokeGroup, setTrackVoiceMode } from "../src/model/project";
@@ -177,5 +177,39 @@ describe("synth tracks", () => {
     expect(by("track-1").chokeGroup).toBe(1);
     expect(by("track-2").chokeGroup).toBe(1);
     expect("chokeGroup" in by("track-3")).toBe(false);
+  });
+});
+
+describe("simultaneous notes in a group: last track wins", () => {
+  const entry = (trackId: string, time: number) => ({ trackId, time });
+
+  it("at the same instant the later track in track order plays and the earlier is dropped", () => {
+    const project = drumKit({ "track-2": 1, "track-3": 1 });
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-2", 1), entry("track-3", 1)])).toEqual([true, false]);
+    // Independent of the order the entries arrive in.
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-3", 1), entry("track-2", 1)])).toEqual([false, true]);
+  });
+
+  it("with three tracks in the group only the last survives", () => {
+    const project = drumKit({ "track-1": 1, "track-2": 1, "track-3": 1 });
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-1", 2), entry("track-3", 2), entry("track-2", 2)])).toEqual([true, false, true]);
+  });
+
+  it("notes at different times are not ties: both play, the engine cuts the earlier", () => {
+    const project = drumKit({ "track-2": 1, "track-3": 1 });
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-3", 1), entry("track-2", 1.125)])).toEqual([false, false]);
+  });
+
+  it("other groups, ungrouped tracks and a track's own notes are never dropped", () => {
+    const project = drumKit({ "track-2": 1, "track-3": 2, "track-4": 1 });
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-1", 1), entry("track-3", 1), entry("track-2", 1)])).toEqual([false, false, false]);
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-2", 1), entry("track-2", 1)])).toEqual([false, false]);
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-2", 1), entry("track-4", 1)])).toEqual([true, false]);
+  });
+
+  it("works across sample and synth tracks sharing a group", () => {
+    // track-1 is a sample track, track-3 a synth: track-3 is later in order so it wins.
+    const project = drumKit({ "track-1": 1, "track-3": 1 });
+    expect(simultaneousChokeLosers(project.tracks, [entry("track-3", 0.5), entry("track-1", 0.5)])).toEqual([false, true]);
   });
 });
