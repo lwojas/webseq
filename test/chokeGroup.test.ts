@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AudioRuntime, TriggerParams, VoiceHandle } from "webdsp";
-import { compilePatternIterationTracked } from "../src/audio/compile";
+import { compileInstrumentNotes, compilePatternIterationTracked } from "../src/audio/compile";
 import { Playback } from "../src/audio/playback";
 import { addNote } from "../src/model/notes";
 import { createInitialProject, setTrackChokeGroup, setTrackVoiceMode } from "../src/model/project";
@@ -152,5 +152,30 @@ describe("manual triggers", () => {
     expect(triggered[1]).toEqual({ sampleId: 1, bus: 11 });
     // The cut is the engine's: the sequencer-side table does no releasing for a group.
     expect(runtime.release).not.toHaveBeenCalled();
+  });
+});
+
+describe("synth tracks", () => {
+  function synthKit(groups: Record<string, number | null>): Project {
+    let project = createInitialProject();
+    project = {
+      ...project,
+      tracks: project.tracks.map((t, i) => (i < 3 ? { ...t, assetId: null, instrument: { kind: i === 2 ? "kick" : "hihat", params: {} } } : t)) as Track[],
+    };
+    for (const [trackId, group] of Object.entries(groups)) project = setTrackChokeGroup(project, trackId, group);
+    return project;
+  }
+  const compile = (project: Project) => {
+    let pattern: Pattern = project.patterns[0];
+    for (const trackId of ["track-1", "track-2", "track-3"]) pattern = addNote(pattern, BEATS_PER_BAR, trackId, 0, 1);
+    return compileInstrumentNotes(pattern, project.tracks, 120, 0, 0.5, undefined, BEATS_PER_BAR);
+  };
+
+  it("grouped synth notes carry the group; ungrouped ones do not", () => {
+    const notes = compile(synthKit({ "track-1": 1, "track-2": 1 }));
+    const by = (id: string) => notes.find((n) => n.trackId === id)!.params;
+    expect(by("track-1").chokeGroup).toBe(1);
+    expect(by("track-2").chokeGroup).toBe(1);
+    expect("chokeGroup" in by("track-3")).toBe(false);
   });
 });

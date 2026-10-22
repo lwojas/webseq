@@ -148,6 +148,7 @@ export class Playback {
     if (!def || this.isCaptureBusy()) return false;
     return instrumentHostFor(this.runtime).noteOn(track.id, {
       velocity: AUDITION_GAIN,
+      ...chokeParams(track),
       ...(def.sustained ? { duration: SYNTH_PREVIEW_SECONDS } : {}),
     });
   }

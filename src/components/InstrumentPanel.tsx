@@ -204,25 +204,25 @@ export function InstrumentPanel({
                 ))}
               </div>
             </div>
-            <div className="track-mode-group">
-              <label className="track-mode-label" htmlFor={`choke-group-${track.id}`}>Choke Group</label>
-              <select
-                id={`choke-group-${track.id}`}
-                className="fx-add-select"
-                value={effectiveChokeGroup(track) ?? ""}
-                onChange={(e) => onSetChokeGroup(track.id, e.target.value === "" ? null : Number(e.target.value))}
-                title="Tracks in the same group cut each other off (e.g. open and closed hi-hat)"
-              >
-                <option value="">None</option>
-                {chokeGroupOptions(effectiveChokeGroup(track)).map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
-            </div>
           </>
         )}
+        <div className="track-mode-group">
+          <label className="track-mode-label" htmlFor={`choke-group-${track.id}`}>Choke Group</label>
+          <select
+            id={`choke-group-${track.id}`}
+            className="fx-add-select"
+            value={effectiveChokeGroup(track) ?? ""}
+            onChange={(e) => onSetChokeGroup(track.id, e.target.value === "" ? null : Number(e.target.value))}
+            title="Tracks in the same group cut each other off (e.g. open and closed hi-hat)"
+          >
+            <option value="">None</option>
+            {chokeGroupOptions(effectiveChokeGroup(track)).map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        </div>
         {synth && (
           <div className="track-mode-group">
             <span className="track-mode-label">Kind</span>

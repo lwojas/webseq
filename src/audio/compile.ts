@@ -119,6 +119,8 @@ export function compileInstrumentNote(
     velocity: effectiveVelocity(track, note, time, lfoClock(bpm, lfoAnchorTime)),
   };
   if (note.pitch) params.pitch = note.pitch;
+  const chokeGroup = effectiveChokeGroup(track);
+  if (chokeGroup !== null) params.chokeGroup = chokeGroup;
   if (def.sustained) params.duration = note.duration * spb;
   return params;
 }

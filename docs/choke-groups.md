@@ -45,7 +45,7 @@ clip) carries the group.
 
 ## Limits (MVP)
 
-- Sample tracks only; synth-instrument tracks are not choked.
+- Synth-instrument tracks choke too, in the same groups as sample tracks (a synth closed hat cuts a sample open hat).
 - Every member chokes every other member; there are no send/receive roles, per-note choke or choke-time controls.
 - Two notes starting on the very same frame in one group: the later-scheduled one wins.
 
