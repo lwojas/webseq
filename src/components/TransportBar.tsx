@@ -16,6 +16,9 @@ function gridResolutionLabel(resolution: GridResolution): string {
 interface Props {
   status: PlaybackStatus;
   bpm: number;
+  /** The host tempo while the transport follows an external clock; the tempo then belongs to the host, so
+   * the control shows it and is read-only. Null when playing on our own. */
+  followedBpm?: number | null;
   swing: number;
   gridResolution: GridResolution;
   scale: ProjectScale;
@@ -51,7 +54,8 @@ interface Props {
 
 export function TransportBar({
   status,
-  bpm,
+  bpm: projectBpm,
+  followedBpm = null,
   swing,
   gridResolution,
   scale,
@@ -80,7 +84,8 @@ export function TransportBar({
   // A stable getter: an inline arrow would restart the per-frame loop on every render.
   const getResampleText = useCallback(() => getResampleLabel().toUpperCase(), [getResampleLabel]);
   const resampleLiveRef = useRafText(getResampleText);
-  const bpmDisabled = resamplePhase === "pending" || resamplePhase === "processing";
+  const bpm = followedBpm ?? projectBpm;
+  const bpmDisabled = resamplePhase === "pending" || resamplePhase === "processing" || followedBpm !== null;
 
   return (
     <div className={`transport ${variant === "settings" ? "transport-settings" : ""}`}>
@@ -99,7 +104,7 @@ export function TransportBar({
       )}
 
       <div className="field">
-        <span>BPM</span>
+        <span>{followedBpm !== null ? "BPM · host" : "BPM"}</span>
         <input
           type="range"
           min={MIN_BPM}
