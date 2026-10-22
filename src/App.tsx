@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { hasEmbeddedHost, type AudioRuntime } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
-import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
 import { FX_KIND } from "./audio/fxChain";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
@@ -13,6 +13,7 @@ import { buildEditPanelModel, trackLabel, type EditClipboard } from "./app/editM
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { createHostSync } from "./audio/hostSync";
+import { attachPlainMidiInputs } from "./midi/dawNoteInput";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { usePlayingPosition } from "./hooks/usePlayingPosition";
 import { Transport, type PlaybackStatus } from "./audio/transport";
@@ -162,6 +163,35 @@ export function App() {
     });
     return () => sync.dispose();
   }, [runtime]);
+
+  // Plain MIDI inputs (a keyboard; a plugin host's MIDI) play the selected track. A browser would ask permission
+  // for MIDI on page load, so this listens only where the host provides its MIDI without asking.
+  const selectedTargetRef = useRef(selectedTarget);
+  selectedTargetRef.current = selectedTarget;
+  useEffect(() => {
+    if (!runtime || !hasEmbeddedHost()) return;
+    const playback = ensurePlayback(runtime);
+    const heldTrack = new Map<number, Track>(); // the key's note-on track, so its note-off ends the same voice
+    const targetTrack = () => {
+      const target = selectedTargetRef.current;
+      return target === "master" ? undefined : trackById(projectRef.current, target);
+    };
+    return attachPlainMidiInputs({
+      noteOn: (note, velocity) => {
+        const track = targetTrack();
+        if (track && playback.noteOn(track, note, velocity)) heldTrack.set(note, track);
+      },
+      noteOff: (note) => {
+        const track = heldTrack.get(note);
+        if (track) playback.noteOff(track, note);
+        heldTrack.delete(note);
+      },
+      allNotesOff: () => {
+        for (const [note, track] of heldTrack) playback.noteOff(track, note);
+        heldTrack.clear();
+      },
+    });
+  }, [runtime, ensurePlayback]);
 
   // Manual voices whose track or asset changed under them (reassigned, removed) are released
   // here. Cheap: it scans at most one entry per track.
