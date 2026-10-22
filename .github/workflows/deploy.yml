@@ -26,6 +26,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # webseq always builds against webdsp's latest main, whatever package-lock.json last pinned.
+      - run: npm update webdsp
       - run: npm run build
         env:
           GITHUB_PAGES: true

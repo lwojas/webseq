@@ -5,6 +5,8 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
+# Always build against webdsp's latest main, whatever package-lock.json last pinned.
+RUN npm update webdsp
 
 COPY . .
 
