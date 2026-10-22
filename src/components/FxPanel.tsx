@@ -1,6 +1,6 @@
 import { FX_DEFS } from "../model/fx";
 import type { FxId, FxTarget, FxType, Track, TrackId, TrackLfo } from "../model/types";
-import { resolvedOutput } from "../model/types";
+import { resolvedOutput, resolvedSend } from "../model/types";
 import { canRouteTo } from "../model/project";
 import { FxChainStrip } from "./FxChainStrip";
 import { ModulePanel } from "./ModulePanel";
@@ -12,6 +12,9 @@ interface Props {
   /** Every track in the project, in order — the routing destinations on offer. */
   tracks: Track[];
   onSetOutput: (trackId: TrackId, dest: TrackId | null) => void;
+  /** FX send: `dest` null removes it; with a destination and an `amount` (0..1) only the level
+   * changes, with a destination alone the send is created/re-pointed. */
+  onSetSend: (trackId: TrackId, dest: TrackId | null, amount?: number) => void;
   fx: import("../model/types").FxInstance[];
   selectedFxId: FxId | null;
   onSelectFx: (id: FxId) => void;
@@ -39,6 +42,7 @@ export function FxPanel({
   track,
   tracks,
   onSetOutput,
+  onSetSend,
   fx,
   selectedFxId,
   onSelectFx,
@@ -61,7 +65,7 @@ export function FxPanel({
   return (
     <div className="fx-panel">
       <div className="fx-panel-title">{title} — FX CHAIN</div>
-      {track && <RoutingRow track={track} tracks={tracks} onSetOutput={onSetOutput} />}
+      {track && <RoutingRow track={track} tracks={tracks} onSetOutput={onSetOutput} onSetSend={onSetSend} />}
       <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} onMoveFx={onMoveFx} />
 
       {selectedFx && def && (
@@ -95,10 +99,11 @@ export function FxPanel({
 /** Where the selected track sends its audio once its own FX chain has run: the master (default)
  * or another track, which then runs it through that track's FX chain. Destinations that would
  * loop back (or the track itself) are left out of the list, so an invalid route can't be picked. */
-function RoutingRow({ track, tracks, onSetOutput }: { track: Track; tracks: Track[]; onSetOutput: Props["onSetOutput"] }) {
+function RoutingRow({ track, tracks, onSetOutput, onSetSend }: { track: Track; tracks: Track[]; onSetOutput: Props["onSetOutput"]; onSetSend: Props["onSetSend"] }) {
   const project = { tracks } as import("../model/types").Project;
   const current = resolvedOutput(project, track);
-  const incoming = tracks.filter((t) => t.id !== track.id && resolvedOutput(project, t) === track.id).length;
+  const send = resolvedSend(project, track);
+  const incoming = tracks.filter((t) => t.id !== track.id && (resolvedOutput(project, t) === track.id || resolvedSend(project, t)?.to === track.id)).length;
   return (
     <div className="track-mode-row">
       <label className="track-mode-group">
@@ -119,8 +124,41 @@ function RoutingRow({ track, tracks, onSetOutput }: { track: Track; tracks: Trac
           )}
         </select>
       </label>
+      <label className="track-mode-group">
+        <span className="track-mode-label">FX send</span>
+        <select
+          className="fx-add-select"
+          value={send?.to ?? ""}
+          onChange={(e) => onSetSend(track.id, e.target.value === "" ? null : e.target.value)}
+          aria-label="Send a copy of this track's audio (post-fader) to"
+        >
+          <option value="">None</option>
+          {tracks.map((t, i) =>
+            t.id === send?.to || canRouteTo(project, track.id, t.id) ? (
+              <option key={t.id} value={t.id}>
+                {String(i + 1).padStart(2, "0")} · {t.name}
+              </option>
+            ) : null,
+          )}
+        </select>
+      </label>
+      {send && (
+        <label className="track-mode-group">
+          <span className="track-mode-label">Send {Math.round(send.amount * 100)}%</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={send.amount}
+            onChange={(e) => onSetSend(track.id, send.to, Number(e.target.value))}
+            aria-label="FX send amount"
+            title="FX send level, after the fader"
+          />
+        </label>
+      )}
       {incoming > 0 && (
-        <span className="track-mode-label" title="Tracks routed into this one run through its FX chain">
+        <span className="track-mode-label" title="Tracks routed or sent into this one run through its FX chain">
           Receiving from {incoming} track{incoming === 1 ? "" : "s"}
         </span>
       )}

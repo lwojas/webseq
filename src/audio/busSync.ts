@@ -7,7 +7,7 @@
 // only for chains that contain FX (FxChainSync.sync is a no-op for an empty chain on an
 // untouched bus), and volume/pan don't end dormancy, so they go to every track.
 import { MASTER_BUS, NodeParam, type AudioRuntime, type BusId } from "webdsp";
-import { resolvedOutput, type Project } from "../model/types";
+import { resolvedOutput, resolvedSend, type Project } from "../model/types";
 import { assetLengthFrames, cueRegions } from "../model/chop";
 import { DEFAULT_ENVELOPE } from "../model/types";
 import type { TrackBusMap } from "./buses";
@@ -55,34 +55,43 @@ function syncSampleRegions(runtime: AudioRuntime, project: Project): void {
   }
 }
 
-// Last output route pushed per track bus, per runtime (bus -> destination bus, 0 = master). A
-// bus the engine has never been told about is at its default, master.
-const pushedRoutes = new WeakMap<AudioRuntime, Map<BusId, BusId>>();
+// Last output route and send destination pushed per track bus, per runtime (bus -> destination
+// bus; 0 = master for outputs, 0 = no send for sends). A bus the engine has never been told about
+// is at its default.
+const pushedRoutes = new WeakMap<AudioRuntime, Map<BusId, [BusId, BusId]>>();
 
-// Pushes each track's output route as NodeParam.BusOutput. The engine refuses a route that would
-// close a loop *given the routes it currently has*, so when several routes change at once (a
-// project load, an undo) the changed ones are first parked on master and then set to their new
-// destinations — safe for any acyclic target graph, whatever order the changes arrive in.
+// Pushes each track's output route (NodeParam.BusOutput) and FX send destination
+// (NodeParam.BusSendTarget). The engine refuses an edge that would close a loop *given the edges
+// it currently has*, so when several change at once (a project load, an undo) the changed buses'
+// edges are first parked (output on master, send cleared) and then set to their new destinations
+// — safe for any acyclic target graph, whatever order the changes arrive in. The send level
+// itself (BusSendAmount) is a plain per-bus value pushed by applyTrackMix.
 function syncRoutes(runtime: AudioRuntime, project: Project, buses: TrackBusMap): void {
   let pushed = pushedRoutes.get(runtime);
   if (!pushed) {
     pushed = new Map();
     pushedRoutes.set(runtime, pushed);
   }
-  const changed: Array<[BusId, BusId]> = [];
+  const changed: Array<[BusId, BusId, BusId]> = [];
   for (const track of project.tracks) {
     const busId = buses[track.id];
     if (busId === undefined) continue;
     const out = resolvedOutput(project, track);
     const dest = out === "master" ? MASTER_BUS : (buses[out] ?? MASTER_BUS);
-    if ((pushed.get(busId) ?? MASTER_BUS) !== dest) changed.push([busId, dest]);
+    const send = resolvedSend(project, track);
+    const sendDest = send ? (buses[send.to] ?? 0) : 0;
+    const [oldDest, oldSend] = pushed.get(busId) ?? [MASTER_BUS, 0];
+    if (oldDest !== dest || oldSend !== sendDest) changed.push([busId, dest, sendDest]);
   }
   for (const [busId] of changed) {
-    if ((pushed.get(busId) ?? MASTER_BUS) !== MASTER_BUS) runtime.setNodeParameter(busId, NodeParam.BusOutput, MASTER_BUS);
+    const [oldDest, oldSend] = pushed.get(busId) ?? [MASTER_BUS, 0];
+    if (oldDest !== MASTER_BUS) runtime.setNodeParameter(busId, NodeParam.BusOutput, MASTER_BUS);
+    if (oldSend !== 0) runtime.setNodeParameter(busId, NodeParam.BusSendTarget, 0);
   }
-  for (const [busId, dest] of changed) {
+  for (const [busId, dest, sendDest] of changed) {
     if (dest !== MASTER_BUS) runtime.setNodeParameter(busId, NodeParam.BusOutput, dest);
-    pushed.set(busId, dest);
+    if (sendDest !== 0) runtime.setNodeParameter(busId, NodeParam.BusSendTarget, sendDest);
+    pushed.set(busId, [dest, sendDest]);
   }
 }
 

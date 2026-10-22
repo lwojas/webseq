@@ -669,6 +669,16 @@ export function App() {
     [],
   );
 
+  const handleSetTrackSend = useCallback(
+    (trackId: TrackId, dest: TrackId | null, amount?: number) =>
+      dispatch(
+        dest === null || amount === undefined
+          ? { type: "SET_TRACK_SEND", trackId, dest }
+          : { type: "SET_TRACK_SEND_AMOUNT", trackId, amount },
+      ),
+    [],
+  );
+
   const handleSetTrackOutput = useCallback(
     (trackId: TrackId, dest: TrackId | null) => dispatch({ type: "SET_TRACK_OUTPUT", trackId, dest }),
     [],
@@ -1315,6 +1325,7 @@ export function App() {
             track: selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null),
             tracks: project.tracks,
             onSetOutput: handleSetTrackOutput,
+            onSetSend: handleSetTrackSend,
             fx: fxOwner?.fx ?? [],
             selectedFxId,
             onSelectFx: setSelectedFxId,

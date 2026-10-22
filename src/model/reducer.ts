@@ -36,6 +36,8 @@ export type Action =
   | { type: "SET_TRACK_CHOKE_GROUP"; trackId: TrackId; chokeGroup: number | null }
   | { type: "SET_TRACK_PAN"; trackId: TrackId; pan: number }
   | { type: "SET_TRACK_OUTPUT"; trackId: TrackId; dest: TrackId | null }
+  | { type: "SET_TRACK_SEND"; trackId: TrackId; dest: TrackId | null; amount?: number }
+  | { type: "SET_TRACK_SEND_AMOUNT"; trackId: TrackId; amount: number }
   | { type: "SET_TRACK_INSTRUMENT"; trackId: TrackId; kind: InstrumentKindId | null }
   | { type: "SET_INSTRUMENT_PARAM"; trackId: TrackId; paramId: string; value: number }
   | { type: "SET_TRACK_EVENT_LFO"; trackId: TrackId; patch: Partial<TrackEventLfo> }
@@ -141,6 +143,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setTrackPan(state, action.trackId, action.pan);
     case "SET_TRACK_OUTPUT":
       return project.setTrackOutput(state, action.trackId, action.dest);
+    case "SET_TRACK_SEND":
+      return project.setTrackSend(state, action.trackId, action.dest, action.amount);
+    case "SET_TRACK_SEND_AMOUNT":
+      return project.setTrackSendAmount(state, action.trackId, action.amount);
     case "SET_TRACK_INSTRUMENT":
       return pruneSourceLanes(instruments.setTrackInstrument(state, action.trackId, action.kind), action.trackId);
     case "SET_INSTRUMENT_PARAM":

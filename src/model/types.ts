@@ -107,10 +107,24 @@ export interface Track {
    * source). Pushed to the engine as the track bus's NodeParam.BusOutput (audio/busSync.ts).
    * Read through resolvedOutput, which also guards against a dangling or cyclic id. */
   outputTrack?: TrackId | null;
+  /** An FX send: a second, independent path from this track to another track (the FX bus),
+   * tapped after this track's FX chain and fader and scaled by `amount`. Unlike `outputTrack`
+   * (which *replaces* the track's route to master) the track still plays to its own output as
+   * well, so the destination is a shared return. Absent = no send, so older projects are
+   * untouched. Pushed to the engine as the track bus's BusSendTarget/BusSendAmount (audio/
+   * busSync.ts, audio/mixer.ts). Read through resolvedSend, which defaults and guards it. */
+  send?: TrackSend;
   /** Per-track arpeggiator (model/arp.ts): generates this track's notes from the stored ones at
    * compile time (audio/compile.ts). Absent or `enabled: false` = the notes play exactly as stored,
    * so older projects are untouched. */
   arp?: TrackArp;
+}
+
+/** A track's FX send (see Track.send). `amount` is a linear level, 0..1 (1 = the post-fader
+ * signal at full level — the same convention as `volume`); a missing amount reads as 1. */
+export interface TrackSend {
+  to: TrackId;
+  amount?: number;
 }
 
 /** What a Track LFO modulates. Only the note's velocity for now; the type is the seam for other
@@ -413,15 +427,88 @@ export function fxOwner(project: Project, target: FxTarget): { fx: FxInstance[];
   return trackById(project, target) ?? null;
 }
 
-/** The gain actually audible for `track` once mute/solo are accounted for: 0 if it's muted,
- * or if any *other* track in the project is soloed and this one isn't; otherwise its own
- * `volume`. Pure model-level policy, independent of webdsp — src/audio/mixer.ts just pushes
- * whatever this returns straight to the engine's BusGain, it has no mute/solo concept itself. */
+/** The fader: the track's own `volume`, or 0 when muted. This is the one level both of the
+ * track's outputs — its main route and its FX send — are tapped after, so it is where mute lives
+ * (a muted track feeds neither). Solo is deliberately not here; see mainGate and sendGate. */
+export function faderGain(track: Pick<Track, "volume" | "muted">): number {
+  return track.muted ? 0 : track.volume;
+}
+
+/** 1 when `track`'s *main* output is audible under the current solo state, else 0: nothing is
+ * soloed, it is soloed itself, or a soloed source feeds it (the FX return of a soloed track must
+ * be heard). This gates only what the track sends on to its output route — never its FX send. */
+export function mainGate(project: Project, track: Track): number {
+  if (!project.tracks.some((t) => t.soloed)) return 1;
+  return track.soloed || isDownstreamOfSoloed(project, track) ? 1 : 0;
+}
+
+/** The gain actually audible at `track`'s main output once mute/solo are accounted for: its
+ * fader times mainGate. Pure model-level policy, independent of webdsp — src/audio/mixer.ts
+ * pushes the two factors to separate engine controls (BusGain, BusMainGain). */
 export function effectiveTrackGain(project: Project, track: Track): number {
-  if (track.muted) return 0;
-  const anySoloed = project.tracks.some((t) => t.soloed);
-  if (anySoloed && !track.soloed && !isDownstreamOfSoloed(project, track)) return 0;
-  return track.volume;
+  return faderGain(track) * mainGate(project, track);
+}
+
+/** `track`'s FX send with the amount defaulted (missing = 1) and clamped to 0..1, or null when it
+ * has none. A send that can't be honoured — a destination that no longer exists, itself, or one
+ * that would close a loop through any outputs/sends — reads as no send, so a hand-edited or stale
+ * project can never produce an invalid audio graph (setTrackSend never stores such a value). */
+export function resolvedSend(project: Project, track: Pick<Track, "id" | "send">): { to: TrackId; amount: number } | null {
+  const send = track.send;
+  if (!send || send.to === track.id || !trackById(project, send.to)) return null;
+  if (leadsTo(project, send.to, track.id)) return null;
+  const amount = Number.isFinite(send.amount) ? Math.min(1, Math.max(0, send.amount as number)) : 1;
+  return { to: send.to, amount };
+}
+
+/** The send's own level — amount times sendGate, 0 with no send — *excluding* the fader: the
+ * engine taps the send after the fader (BusGain), so this is what BusSendAmount carries. */
+export function sendLevel(project: Project, track: Track): number {
+  const send = resolvedSend(project, track);
+  return send ? send.amount * sendGate(project, track, send.to) : 0;
+}
+
+/** The level actually delivered to the FX bus: the fader (volume, and mute — a muted source feeds
+ * nothing) times sendLevel. */
+export function effectiveSendLevel(project: Project, track: Track): number {
+  return faderGain(track) * sendLevel(project, track);
+}
+
+/** 1 when `track`'s send is wanted under the current solo state: nothing soloed, the source is
+ * soloed, or the FX bus it feeds is soloed (or leads to a soloed track). Soloing an FX bus thus
+ * keeps its sources' sends flowing even though their main outputs are gated off, and a
+ * non-soloed source never contributes to a soloed source's return. */
+function sendGate(project: Project, track: Track, dest: TrackId): number {
+  if (!project.tracks.some((t) => t.soloed)) return 1;
+  if (track.soloed) return 1;
+  return reachesSoloed(project, dest) ? 1 : 0;
+}
+
+/** The tracks `track` feeds directly: its main output route and its FX send. */
+function feeds(project: Project, track: Track): TrackId[] {
+  const out = resolvedOutput(project, track);
+  const send = track.send && trackById(project, track.send.to) ? track.send.to : null;
+  return [...(out === "master" ? [] : [out]), ...(send && send !== track.id ? [send] : [])];
+}
+
+/** True when `from` is `target` or reaches it through any chain of outputs and sends. */
+export function leadsTo(project: Project, from: TrackId, target: TrackId): boolean {
+  const seen = new Set<TrackId>();
+  const stack = [from];
+  while (stack.length > 0) {
+    const id = stack.pop() as TrackId;
+    if (id === target) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const t = trackById(project, id);
+    if (t) stack.push(...feeds(project, t));
+  }
+  return false;
+}
+
+/** True when `id` is soloed or leads (through outputs/sends) to a soloed track. */
+function reachesSoloed(project: Project, id: TrackId): boolean {
+  return project.tracks.some((t) => t.soloed && leadsTo(project, id, t.id));
 }
 
 /** Where `track` actually sends its audio: the id of another track, or "master". Anything that
@@ -442,20 +529,26 @@ export function resolvedOutput(project: Project, track: Pick<Track, "id" | "outp
   return cursor == null ? dest : "master";
 }
 
-/** True when a soloed track routes (directly or through other tracks) into `track`: the FX track
- * receiving a soloed source must stay audible, or soloing a drum would silence its own bus. */
+/** True when a soloed, unmuted track routes (through outputs and sends) into `track`: the FX
+ * track receiving a soloed source must stay audible, or soloing a drum would silence its own
+ * bus. */
 function isDownstreamOfSoloed(project: Project, track: Track): boolean {
   return project.tracks.some((src) => {
-    if (!src.soloed || src.muted) return false;
-    let dest = resolvedOutput(project, src);
-    for (let hops = 0; dest !== "master" && hops <= project.tracks.length; hops++) {
-      if (dest === track.id) return true;
-      const next = trackById(project, dest);
-      if (!next) return false;
-      dest = resolvedOutput(project, next);
-    }
-    return false;
+    if (!src.soloed || src.muted || src.id === track.id) return false;
+    const reaches = (id: TrackId, hops: number): boolean => {
+      if (id === track.id) return true;
+      const t = trackById(project, id);
+      return hops > 0 && !!t && feedTargets(project, t).some((d) => reaches(d, hops - 1));
+    };
+    return feedTargets(project, src).some((d) => reaches(d, project.tracks.length));
   });
+}
+
+/** What `feeds` lists, but a send only counts while it is resolvable and audible (amount > 0). */
+function feedTargets(project: Project, track: Track): TrackId[] {
+  const out = resolvedOutput(project, track);
+  const send = resolvedSend(project, track);
+  return [...(out === "master" ? [] : [out]), ...(send && send.amount > 0 ? [send.to] : [])];
 }
 
 /** `track.playbackMode`, defaulted for a track that predates the field (see its doc comment) —

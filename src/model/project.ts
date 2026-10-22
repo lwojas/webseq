@@ -5,7 +5,7 @@
 
 import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, Track, TrackId, VoiceMode } from "./types";
 import { normalizeChopStart, normalizeCues } from "./chop";
-import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE } from "./types";
+import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, leadsTo } from "./types";
 import * as notes from "./notes";
 
 export const MIN_BPM = 40;
@@ -239,15 +239,12 @@ export function setTrackPan(project: Project, trackId: TrackId, pan: number): Pr
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, pan: clampPan(pan) } : t)) };
 }
 
-/** True when `trackId` may send its audio to `destId`: a different, existing track whose own
- * route doesn't (transitively) lead back to `trackId`. */
+/** True when `trackId` may send its audio to `destId` — as its output or as an FX send: a
+ * different, existing track that doesn't (transitively, through outputs *and* sends) lead back to
+ * `trackId`. */
 export function canRouteTo(project: Project, trackId: TrackId, destId: TrackId): boolean {
   if (destId === trackId || !project.tracks.some((t) => t.id === destId)) return false;
-  for (let cursor: TrackId | null | undefined = destId, hops = 0; cursor != null && hops <= project.tracks.length; hops++) {
-    if (cursor === trackId) return false;
-    cursor = project.tracks.find((t) => t.id === cursor)?.outputTrack;
-  }
-  return true;
+  return !leadsTo(project, destId, trackId);
 }
 
 /** Routes a track's output to another track, or to the master with `null`. An invalid target
@@ -263,6 +260,34 @@ export function setTrackOutput(project: Project, trackId: TrackId, dest: TrackId
       return dest == null ? rest : { ...rest, outputTrack: dest };
     }),
   };
+}
+
+/** Level a send starts at when it is first created from the UI. (A stored send with no amount
+ * reads as 1 — see resolvedSend — so projects that predate the field keep their full level.) */
+export const DEFAULT_SEND_AMOUNT = 0.5;
+
+/** Sets a track's FX send: `dest` null removes it. `amount` (clamped to 0..1) defaults to the
+ * track's existing amount when only the destination changes, else DEFAULT_SEND_AMOUNT. An invalid
+ * target (self, unknown, or one that would close a loop) leaves the project unchanged. No send is
+ * stored as an absent field, so a default project serialises exactly as before sends existed. */
+export function setTrackSend(project: Project, trackId: TrackId, dest: TrackId | null, amount?: number): Project {
+  if (dest != null && !canRouteTo(project, trackId, dest)) return project;
+  return {
+    ...project,
+    tracks: project.tracks.map((t) => {
+      if (t.id !== trackId) return t;
+      const { send: old, ...rest } = t;
+      if (dest == null) return rest;
+      const next = amount ?? old?.amount ?? DEFAULT_SEND_AMOUNT;
+      return { ...rest, send: { to: dest, amount: Math.min(1, Math.max(0, next)) } };
+    }),
+  };
+}
+
+/** Changes only the amount of an existing send; a track without one is left alone. */
+export function setTrackSendAmount(project: Project, trackId: TrackId, amount: number): Project {
+  const track = project.tracks.find((t) => t.id === trackId);
+  return track?.send ? setTrackSend(project, trackId, track.send.to, amount) : project;
 }
 
 export function setTrackMuted(project: Project, trackId: TrackId, muted: boolean): Project {
