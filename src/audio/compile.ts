@@ -7,7 +7,7 @@
 import { findLane, valueAtBeat } from "../model/automation";
 import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
-import { effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
 import { effectiveSampleMode } from "../model/chop";
 import { instrumentDefFor } from "../model/instruments";
 import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
@@ -79,6 +79,10 @@ export function compileNote(
   };
   if (busId !== undefined) event.bus = busId;
   if (effectivePlaybackMode(track) === "loop") event.loop = true;
+  // Choke group: the engine cuts the group's other tracks' voices at this event's exact start frame
+  // (webdsp VoiceManager), so no sequencer-side release is involved. Tracks are told apart by bus.
+  const chokeGroup = effectiveChokeGroup(track);
+  if (chokeGroup !== null) event.chokeGroup = chokeGroup;
   if (effectiveSampleMode(track) === "chop") {
     // Chop: the note's pitch selects the slice (0 = first) and never transposes. A negative
     // pitch has no slice; a slice beyond the sample's count is dropped by the engine.

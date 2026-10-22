@@ -2,7 +2,7 @@ import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/in
 import { ModBadge, ModulationSlot, modulationBadges, type AutomationUi, type ModulationUi } from "./ModulationSlot";
 import { ChopEditor } from "./ChopEditor";
 import { effectiveSampleMode } from "../model/chop";
-import { DEFAULT_ENVELOPE, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import { DEFAULT_ENVELOPE, effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
 import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackLfo, VoiceMode } from "../model/types";
 
 interface Props {
@@ -29,6 +29,8 @@ interface Props {
    * instance (see audio/instruments.ts), so neither applies to them. */
   onSetPlaybackMode: (trackId: string, mode: PlaybackMode) => void;
   onSetVoiceMode: (trackId: string, mode: VoiceMode) => void;
+  /** Choke group (null = none): playing this track cuts off the other tracks in the same group. */
+  onSetChokeGroup: (trackId: string, group: number | null) => void;
   /** Chromatic (pitch transposes) vs chop (pitch picks a slice) for a sample track. */
   onSetSampleMode: (trackId: string, mode: SampleMode) => void;
   onSetCues: (assetId: number, cues: number[]) => void;
@@ -91,6 +93,15 @@ const ENVELOPE_FIELDS: { id: keyof SampleEnvelope; label: string; max: number; s
  * track's context. Sample tracks get the sample's ADSR; synth tracks get the instrument's own
  * controls (rendered generically from INSTRUMENT_DEFS). Per-step pitch/velocity/length are NOT
  * here: they belong to the Track Editor, which edits the steps themselves. */
+const CHOKE_GROUP_COUNT = 8;
+
+/** Group numbers offered in the Choke Group select: 1..8, plus the track's current group when a
+ * project holds a larger one, so the select never shows a value it cannot represent. */
+function chokeGroupOptions(current: number | null): number[] {
+  const groups = Array.from({ length: CHOKE_GROUP_COUNT }, (_, i) => i + 1);
+  return current !== null && current > CHOKE_GROUP_COUNT ? [...groups, current] : groups;
+}
+
 export function InstrumentPanel({
   track,
   asset,
@@ -105,6 +116,7 @@ export function InstrumentPanel({
   automation,
   onSetPlaybackMode,
   onSetVoiceMode,
+  onSetChokeGroup,
   onSetSampleMode,
   onSetCues,
   onSetChopStart,
@@ -191,6 +203,23 @@ export function InstrumentPanel({
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="track-mode-group">
+              <label className="track-mode-label" htmlFor={`choke-group-${track.id}`}>Choke Group</label>
+              <select
+                id={`choke-group-${track.id}`}
+                className="fx-add-select"
+                value={effectiveChokeGroup(track) ?? ""}
+                onChange={(e) => onSetChokeGroup(track.id, e.target.value === "" ? null : Number(e.target.value))}
+                title="Tracks in the same group cut each other off (e.g. open and closed hi-hat)"
+              >
+                <option value="">None</option>
+                {chokeGroupOptions(effectiveChokeGroup(track)).map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
             </div>
           </>
         )}

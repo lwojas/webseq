@@ -10,7 +10,7 @@
 // them. Stop goes through Transport.stop(), which calls stopAll() here explicitly.
 import type { AudioRuntime, BusId, VoiceHandle } from "webdsp";
 import type { AssetId, FxTarget, Project, Track, TrackId } from "../model/types";
-import { effectivePlaybackMode, effectiveVoiceMode, trackById } from "../model/types";
+import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode, trackById } from "../model/types";
 import { instrumentDefFor } from "../model/instruments";
 import { instrumentHostFor } from "./instruments";
 
@@ -20,6 +20,13 @@ const SYNTH_PREVIEW_SECONDS = 0.5;
 /** Fixed audition level (about -2 dB). There is deliberately no preview-level control yet —
  * see docs/audio-auditioning-and-manual-triggering.md, "Deferrals". */
 export const AUDITION_GAIN = 0.8;
+
+/** The choke-group part of a manual trigger: a manual hit chokes (and is choked by) the same
+ * group as the sequencer's, because the cut is made by the engine, not tracked here. */
+function chokeParams(track: Track): { chokeGroup?: number } {
+  const chokeGroup = effectiveChokeGroup(track);
+  return chokeGroup === null ? {} : { chokeGroup };
+}
 
 type VoiceOwner = "sequencer" | "manual";
 
@@ -148,7 +155,7 @@ export class Playback {
   triggerTrackOnce(track: Track): boolean {
     const target = this.trackTarget(track);
     if (!target) return false;
-    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus });
+    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, ...chokeParams(track) });
     if (effectiveVoiceMode(track) === "mono") this.registerMonoVoice(track.id, handle, "manual");
     return true;
   }
@@ -163,7 +170,7 @@ export class Playback {
     }
     const target = this.trackTarget(track);
     if (!target) return false;
-    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, loop: true });
+    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, loop: true, ...chokeParams(track) });
     this.loops.set(track.id, { assetId: target.assetId, handle });
     if (effectiveVoiceMode(track) === "mono") this.registerMonoVoice(track.id, handle, "manual");
     this.notify();

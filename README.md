@@ -322,6 +322,7 @@ Feature notes live in [`docs/`](docs/):
 - [Audio auditioning and shared manual triggering](docs/audio-auditioning-and-manual-triggering.md)
 - [FX MIDI controls](docs/fx-midi-controls.md)
 - [Modulation: automation and LFOs](docs/modulation.md)
+- [Track choke groups (open/closed hi-hat)](docs/choke-groups.md)
 - [Loading multiple samples into the Asset Bin](docs/multi-sample-import.md)
 - [Chord mode and the Musical Guide](docs/musical-guide.md)
 - [Pattern launcher MIDI controls](docs/pattern-launcher-midi-controls.md)

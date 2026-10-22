@@ -75,6 +75,12 @@ export interface Track {
    * (ECS-82/ECS-87). "mono" only ever constrains a track against itself, never other tracks.
    * Optional for the same missing-field-defaults-safely reason as playbackMode. */
   voiceMode?: VoiceMode;
+  /** Choke group (positive integer), or null/absent for none. Playing a note on a track cuts off the
+   * currently sounding voices of every *other* track in the same group, at that note's exact start
+   * (open/closed hi-hat). Distinct from voiceMode (a track against itself) and from the engine's
+   * voice stealing (a full voice pool). Read through effectiveChokeGroup. Optional for the same
+   * missing-field-defaults-safely reason as voiceMode. Sample tracks only. See docs/choke-groups.md. */
+  chokeGroup?: number | null;
   /** Chromatic: a note's pitch transposes the sample. Chop: the sample's cue points (Asset.cues)
    * slice it and a note's pitch picks the slice (0 = first) instead of transposing — see
    * audio/compile.ts and model/chop.ts. A property of how *this track* plays the sample, so two
@@ -467,6 +473,13 @@ export function effectivePan(track: Pick<Track, "pan">): number {
 /** True when the track has something to play: a sample or a synth instrument. */
 export function trackHasSource(track: Pick<Track, "assetId" | "instrument">): boolean {
   return track.assetId != null || track.instrument != null;
+}
+
+/** `track.chokeGroup` as a positive integer, or null for none. Anything else a hand-edited or
+ * older project might hold (absent, 0, negative, fractional, NaN) counts as none. */
+export function effectiveChokeGroup(track: Pick<Track, "chokeGroup">): number | null {
+  const g = track.chokeGroup;
+  return typeof g === "number" && Number.isInteger(g) && g >= 1 ? g : null;
 }
 
 /** `track.voiceMode`, defaulted the same way as effectivePlaybackMode. */

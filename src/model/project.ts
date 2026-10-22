@@ -47,6 +47,7 @@ export function createInitialTracks(trackCount = DEFAULT_TRACK_COUNT): Track[] {
     soloed: false,
     playbackMode: DEFAULT_PLAYBACK_MODE,
     voiceMode: DEFAULT_VOICE_MODE,
+    chokeGroup: null,
   }));
 }
 
@@ -281,6 +282,13 @@ export function setTrackPlaybackMode(project: Project, trackId: TrackId, playbac
 
 export function setTrackVoiceMode(project: Project, trackId: TrackId, voiceMode: VoiceMode): Project {
   return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, voiceMode } : t)) };
+}
+
+/** Assigns the track to choke group `chokeGroup` (a positive integer), or removes it from any with
+ * null. An invalid value is stored as null. */
+export function setTrackChokeGroup(project: Project, trackId: TrackId, chokeGroup: number | null): Project {
+  const group = chokeGroup != null && Number.isInteger(chokeGroup) && chokeGroup >= 1 ? chokeGroup : null;
+  return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, chokeGroup: group } : t)) };
 }
 
 export function setTrackSampleMode(project: Project, trackId: TrackId, sampleMode: SampleMode): Project {

@@ -761,6 +761,11 @@ export function App() {
     [],
   );
 
+  const handleSetTrackChokeGroup = useCallback(
+    (trackId: TrackId, chokeGroup: number | null) => dispatch({ type: "SET_TRACK_CHOKE_GROUP", trackId, chokeGroup }),
+    [],
+  );
+
   // Changing tab always leaves a takeover view (picker / settings), which only exist on the Timeline.
   const handleSelectMobileTab = useCallback((tab: MobileTab) => {
     setMobileTab(tab);
@@ -1145,6 +1150,7 @@ export function App() {
     automation: automationFor(null),
     onSetPlaybackMode: handleSetTrackPlaybackMode,
     onSetVoiceMode: handleSetTrackVoiceMode,
+    onSetChokeGroup: handleSetTrackChokeGroup,
     onSetSampleMode: handleSetSampleMode,
     onSetCues: handleSetCues,
     onSetChopStart: handleSetChopStart,
