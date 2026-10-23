@@ -15,5 +15,9 @@ untouched. The DAW input resolves to midi-core's generic device (no controls bou
 - Only where the host provides MIDI without asking (`hasEmbeddedHost()`): a browser would show a permission prompt on
   page load. Enabling it for keyboards in the browser would be a setting, not an on-load default.
 - Not forwarded: SysEx, pitch bend, sustain pedal, aftertouch.
-- Latency: notes travel DAW -> native -> WebView -> `runtime.instrumentNoteOn`, roughly 10-30 ms plus a block. Fine for
-  entering and auditioning; a native fast path (note routing in the plugin) is the planned fix for tight live playing.
+- **Native routing (low latency).** When the host can play MIDI itself (`capabilities.midiRouting`, webdsp `docs/midi-routing.md`), the page
+  does not play the notes: it declares a route for the selected track (`audio/midiRoute.ts`, the same mapping as `Playback.noteOn`: the sample
+  chromatically or per chop slice, looping while held, mono; a pitched synth sounds the key, a drum plays from middle C) and the host plays
+  incoming notes on its audio thread, sample-accurately, also with the window closed. The route follows the selected track (and the engine
+  objects it needs; it is cleared during a resample and for MASTER). Without `midiRouting` (an older plugin) the page plays the notes as
+  described above, roughly 10-30 ms plus a block behind.

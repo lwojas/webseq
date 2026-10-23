@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { getHostState, hasEmbeddedHost, type AudioRuntime } from "webdsp";
+import { getHostState, hasEmbeddedHost, sameMidiRoute, type AudioRuntime, type MidiRoute } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
 import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
@@ -14,6 +14,8 @@ import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { createHostSync } from "./audio/hostSync";
 import { attachPlainMidiInputs } from "./midi/dawNoteInput";
+import { routeForTrack } from "./audio/midiRoute";
+import { instrumentHostFor } from "./audio/instruments";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { usePlayingPosition } from "./hooks/usePlayingPosition";
 import { Transport, type PlaybackStatus } from "./audio/transport";
@@ -172,7 +174,9 @@ export function App() {
   const selectedTargetRef = useRef(selectedTarget);
   selectedTargetRef.current = selectedTarget;
   useEffect(() => {
-    if (!runtime || !hasEmbeddedHost()) return;
+    // A host that plays MIDI itself (capabilities.midiRouting) is told what a key plays (the effect below) and plays it natively; the page
+    // must not play the same notes again.
+    if (!runtime || !hasEmbeddedHost() || capabilities?.midiRouting) return;
     const playback = ensurePlayback(runtime);
     const heldTrack = new Map<number, Track>(); // the key's note-on track, so its note-off ends the same voice
     const targetTrack = () => {
@@ -194,7 +198,26 @@ export function App() {
         heldTrack.clear();
       },
     });
-  }, [runtime, ensurePlayback]);
+  }, [runtime, capabilities, ensurePlayback]);
+
+  // A host that can play incoming MIDI notes itself is told what a key plays: the selected track's sample or synth (audio/midiRoute.ts, the same
+  // mapping as Playback.noteOn). It then plays them natively, sample-accurately and with the window closed. Runs after every render, after the
+  // engine sync above has created instruments and buses, and sends only when the route changes; a target the engine does not know yet counts as
+  // no route, so it is sent once it exists.
+  const sentRouteRef = useRef<MidiRoute | null>(null);
+  useEffect(() => {
+    if (!runtime || !capabilities?.midiRouting) return;
+    const track = selectedTarget === "master" ? undefined : trackById(project, selectedTarget);
+    const wanted = routeForTrack(track, {
+      instrumentId: track ? instrumentHostFor(runtime).primaryInstrumentId(track.id) : undefined,
+      busId: track ? getBusId(track.id) : undefined,
+      captureBusy: resamplePhase === "pending" || resamplePhase === "processing",
+    });
+    const route = wanted && (wanted.kind === "instrument" || runtime.getSample(wanted.id)) ? wanted : null;
+    if (sameMidiRoute(sentRouteRef.current, route)) return;
+    sentRouteRef.current = route;
+    runtime.setMidiRoute(route);
+  });
 
   // Manual voices whose track or asset changed under them (reassigned, removed) are released
   // here. Cheap: it scans at most one entry per track.
