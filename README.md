@@ -230,8 +230,8 @@ webseq also runs, unmodified, inside the [webvst](https://github.com/lwojas/webv
 URL, with the audio engine native). Nothing here is plugin-specific: the app uses webdsp's host seams, which are `null` /
 never fire in a browser, so standalone behaviour is unchanged.
 
-- **Develop as usual** (`npm run dev`, port 5174). To try it in a DAW, load the plugin; it opens `http://localhost:5174` by
-  default (`WEBVST_URL` overrides). Restart the dev server after changing the `webdsp` dependency.
+- **Develop as usual** (`npm run dev`, port 5174). To try it in a DAW, load the **WebSeq** plugin; it opens
+  `http://localhost:5174` by default (`WEBVST_URL_WEBSEQ` in the host's environment overrides). Restart the dev server after changing the `webdsp` dependency.
 - What the app does when hosted: follows the DAW transport and tempo (`docs/host-sync.md`); plain MIDI inputs, including the
   DAW's MIDI, play the selected track (`docs/daw-midi.md`); the project is saved in the DAW session instead of local recovery
   (`docs/host-state.md`); Export / Import use the host's file dialogs (`docs/project-files.md`).
