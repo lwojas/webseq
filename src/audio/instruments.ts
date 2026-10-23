@@ -172,6 +172,11 @@ export class InstrumentHost {
 
   /** Plays a note on `trackId`'s instrument; `voice` is the chord tone (0 for an ordinary note),
    * which picks the instance. Returns false if the track has none live. */
+  /** The engine instrument that plays this synth track's notes (the first one, for a chord track), once it has been created. */
+  primaryInstrumentId(trackId: TrackId): InstrumentId | undefined {
+    return this.live.get(trackId)?.ids[0];
+  }
+
   noteOn(trackId: TrackId, params: InstrumentNoteParams, voice = 0): boolean {
     const live = this.live.get(trackId);
     if (!live) return false;
