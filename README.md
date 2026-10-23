@@ -219,6 +219,25 @@ space, see `model/types.ts`), so a fresh runtime almost never reproduces a previ
 ids — and remaps every reference (`remapAssetIds` in `model/project.ts`) to whatever id the
 runtime actually gives it this time. No backend; this is IndexedDB only, fully local/offline.
 
+**Project files.** *Export* / *Import* write and read a self-contained, versioned file (`.webseq.json`: the project plus
+the bytes of the assets it uses, base64) so a project can move between browsers, be kept, or go into the plugin
+(`persistence/projectFile.ts`, `docs/project-files.md`). A newer-format file is refused with a clear message; assets whose
+bytes are missing are skipped, not fatal.
+
+## Running inside the WebVST plugin
+
+webseq also runs, unmodified, inside the [webvst](https://github.com/lwojas/webvst) VST3 plugin (a WebView loading this app by
+URL, with the audio engine native). Nothing here is plugin-specific: the app uses webdsp's host seams, which are `null` /
+never fire in a browser, so standalone behaviour is unchanged.
+
+- **Develop as usual** (`npm run dev`, port 5174). To try it in a DAW, load the plugin; it opens `http://localhost:5174` by
+  default (`WEBVST_URL` overrides). Restart the dev server after changing the `webdsp` dependency.
+- What the app does when hosted: follows the DAW transport and tempo (`docs/host-sync.md`); plain MIDI inputs, including the
+  DAW's MIDI, play the selected track (`docs/daw-midi.md`); the project is saved in the DAW session instead of local recovery
+  (`docs/host-state.md`); Export / Import use the host's file dialogs (`docs/project-files.md`).
+- **Moving a project between browser and plugin:** Export in one, Import in the other (`.webseq.json`, self-contained).
+- The plugin's build pipeline, protocol and day-to-day workflow live in webvst's `docs/ARCHITECTURE.md`.
+
 ## Known gotchas (already fixed here — don't undo them)
 
 1. **Vite's dev server breaks `webdsp`'s worklet loading unless excluded from
@@ -328,5 +347,9 @@ Feature notes live in [`docs/`](docs/):
 - [Pattern launcher MIDI controls](docs/pattern-launcher-midi-controls.md)
 - [Chop mode (sample slicing)](docs/sample-chop.md)
 - [Project scale and per-track arpeggiator](docs/scale-and-arp.md)
+- [Project files (Export / Import)](docs/project-files.md)
+- [Following a host transport (plugin)](docs/host-sync.md)
+- [MIDI keys and a plugin host's MIDI](docs/daw-midi.md)
+- [The project in a host's session (plugin)](docs/host-state.md)
 - [Session recovery (project resume)](docs/session-recovery.md)
 - [Track LFO](docs/track-lfo.md)
