@@ -26,7 +26,7 @@ import { saveProject, loadProject, listProjects, deleteProject } from "./persist
 import { remapAssetIds } from "./model/project";
 import type { NoteChord } from "./model/chord";
 import { createRecoveryScheduler, timeAgo, type RecoveryRecord } from "./persistence/recovery";
-import { fromHostSnapshot, publishRecord } from "./persistence/hostState";
+import { HOST_PUBLISH_DEBOUNCE_MS, fromHostSnapshot, publishRecord, shouldWriteProject } from "./persistence/hostState";
 import { exportProjectFile, importProjectFile } from "./persistence/projectIO";
 import { putRecovery, getRecovery, getRecoveryAssets, clearRecovery, resetRecoveryAssetCache } from "./persistence/recoveryStore";
 import type { ResamplePhase } from "./components/TransportBar";
@@ -871,6 +871,7 @@ export function App() {
   const recoveryScheduler = useMemo(
     () =>
       createRecoveryScheduler({
+        debounceMs: hostState ? HOST_PUBLISH_DEBOUNCE_MS : undefined,
         write: async (record) => {
           if (hostState) publishRecord(hostState, record, assetDataRef.current);
           else await putRecovery(record, assetDataRef.current);
@@ -903,14 +904,18 @@ export function App() {
   // The project object with nothing unsaved (initial / just New'd / just Loaded). Every reducer
   // edit yields a new object, so `project !== baseline` means "edited since".
   const cleanBaselineRef = useRef<Project>(project);
+  // The untouched initial project, and whether the host has said what its session holds (a snapshot or "nothing"):
+  // see shouldWriteProject for why a host publishes loads and new projects too, but not before it has answered.
+  const pristineRef = useRef<Project>(project);
+  const [hostAnswered, setHostAnswered] = useState(false);
   useEffect(() => {
     if (!recoveryChecked || recoveryPrompt) return;
-    if (project === cleanBaselineRef.current) return;
+    if (!shouldWriteProject({ hosted: hostState !== null, hostAnswered, project, pristine: pristineRef.current, baseline: cleanBaselineRef.current })) return;
     recoveryScheduler.schedule({
       project,
       ui: { selectedPatternId, selectedTarget, activeBank, gridResolution },
     });
-  }, [recoveryChecked, recoveryPrompt, project, selectedPatternId, selectedTarget, activeBank, gridResolution, recoveryScheduler]);
+  }, [recoveryChecked, recoveryPrompt, project, selectedPatternId, selectedTarget, activeBank, gridResolution, recoveryScheduler, hostState, hostAnswered]);
   useEffect(() => () => recoveryScheduler.cancel(), [recoveryScheduler]);
 
   const refreshSavedProjects = useCallback(() => {
@@ -1064,13 +1069,18 @@ export function App() {
   useEffect(() => {
     if (!hostState) return;
     return hostState.onRestore((snapshot) => {
+      setHostAnswered(true); // from here the session follows the project, whatever the answer was
       if (!snapshot || restoredSnapshotRef.current === snapshot) return; // null: a new session, nothing saved
       restoredSnapshotRef.current = snapshot;
       const restored = fromHostSnapshot(snapshot);
       if (!restored) return; // not ours, an unknown format or malformed: start fresh
       void (async () => {
+        // Waits for the runtime if it is still starting (the host answers at once, usually before it is up).
         const runtimeInstance = runtime ?? (await init());
-        if (!runtimeInstance) return;
+        if (!runtimeInstance) {
+          restoredSnapshotRef.current = null; // could not start the engine: a later delivery may try again
+          return;
+        }
         try {
           await restoreRecord(runtimeInstance, restored.record, restored.assetData);
         } catch {

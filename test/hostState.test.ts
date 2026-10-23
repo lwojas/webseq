@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { HostStateBridge, HostStateSnapshot } from "webdsp";
-import { HOST_STATE_APP, HOST_STATE_FORMAT, fromHostSnapshot, publishRecord, toHostSnapshot } from "../src/persistence/hostState";
+import { HOST_PUBLISH_DEBOUNCE_MS, HOST_STATE_APP, HOST_STATE_FORMAT, fromHostSnapshot, publishRecord, shouldWriteProject, toHostSnapshot } from "../src/persistence/hostState";
 import { addAsset, assignAsset, createInitialProject } from "../src/model/project";
 import type { RecoveryRecord } from "../src/persistence/recovery";
 import type { Asset } from "../src/model/types";
@@ -65,5 +65,33 @@ describe("host state snapshot", () => {
     delete snapshot.blobs["12"];
     const restored = fromHostSnapshot(snapshot);
     expect([...restored!.assetData.keys()]).toEqual([11]);
+  });
+});
+
+describe("when to write the project out", () => {
+  const initial = { id: "initial" };
+  const edited = { id: "edited" };
+  const loaded = { id: "loaded" };
+
+  it("locally, writes only what is not exactly as last saved or loaded", () => {
+    expect(shouldWriteProject({ hosted: false, hostAnswered: false, project: initial, pristine: initial, baseline: initial })).toBe(false);
+    expect(shouldWriteProject({ hosted: false, hostAnswered: false, project: edited, pristine: initial, baseline: initial })).toBe(true);
+    expect(shouldWriteProject({ hosted: false, hostAnswered: false, project: loaded, pristine: initial, baseline: loaded })).toBe(false); // just loaded: nothing unsaved
+  });
+
+  it("in a host, holds back the untouched initial project until the host has answered, then publishes everything else", () => {
+    // before the answer: even an edit waits (it could overwrite the saved session before its restore arrives)
+    expect(shouldWriteProject({ hosted: true, hostAnswered: false, project: edited, pristine: initial, baseline: initial })).toBe(false);
+    // after the answer: the untouched initial project still is not published, anything else is
+    expect(shouldWriteProject({ hosted: true, hostAnswered: true, project: initial, pristine: initial, baseline: initial })).toBe(false);
+    expect(shouldWriteProject({ hosted: true, hostAnswered: true, project: edited, pristine: initial, baseline: initial })).toBe(true);
+  });
+
+  it("in a host, a project that was only loaded (so 'clean' locally) is still published", () => {
+    expect(shouldWriteProject({ hosted: true, hostAnswered: true, project: loaded, pristine: initial, baseline: loaded })).toBe(true);
+  });
+
+  it("publishes quickly in a host", () => {
+    expect(HOST_PUBLISH_DEBOUNCE_MS).toBeLessThan(1000);
   });
 });
