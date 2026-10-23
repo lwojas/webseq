@@ -27,3 +27,11 @@ there instead of in the page's storage. In a browser `getHostState()` is null an
   before the restore arrives could overwrite the saved session.
 - `useAudioRuntime`'s `init()` is single-flight: a caller that arrives while the runtime is starting waits for it (it used to
   get `null` back and give up).
+
+## Which saved project is open
+
+The session keeps the project, which carries its id, but the saved-projects list's selection is separate UI state. When the open
+project is one of the saved ones (same id, e.g. a plugin window reopened onto its session), the list now shows which
+(`preselectSavedProject`). It is considered once per open project and only after the list has loaded, never overrides a selection
+already made, and does nothing when no saved project matches. It only moves the dropdown: recovery, restore, Load and Delete are
+unchanged (Load still loads the saved copy; the restored project keeps its unsaved edits).
