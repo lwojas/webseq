@@ -11,7 +11,8 @@
 import type { AudioRuntime, BusId, VoiceHandle } from "webdsp";
 import type { AssetId, FxTarget, Project, Track, TrackId } from "../model/types";
 import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode, trackById } from "../model/types";
-import { instrumentDefFor } from "../model/instruments";
+import { effectiveSampleMode } from "../model/chop";
+import { instrumentDefFor, rootMidiNote } from "../model/instruments";
 import { instrumentHostFor } from "./instruments";
 
 /** Length of the manual preview note for a sustained synth (Bass); one-shot drums end themselves. */
@@ -20,6 +21,9 @@ const SYNTH_PREVIEW_SECONDS = 0.5;
 /** Fixed audition level (about -2 dB). There is deliberately no preview-level control yet —
  * see docs/audio-auditioning-and-manual-triggering.md, "Deferrals". */
 export const AUDITION_GAIN = 0.8;
+
+/** The MIDI note that plays a track at its own pitch (middle C): a key's pitch is its distance from this. */
+export const MIDI_UNITY_NOTE = 60;
 
 /** The choke-group part of a manual trigger: a manual hit chokes (and is choked by) the same
  * group as the sequencer's, because the cut is made by the engine, not tracked here. */
@@ -51,6 +55,8 @@ export class Playback {
   private lastMono = new Map<TrackId, { handle: VoiceHandle; owner: VoiceOwner }>();
   private loops = new Map<TrackId, TrackLoop>();
   private audition: Audition | null = null;
+  private heldKeyVoices = new Map<string, VoiceHandle>();
+  private heldSynthNote = new Map<TrackId, number>();
   private listeners = new Set<(snapshot: ManualPlaybackSnapshot) => void>();
 
   constructor(
@@ -153,6 +159,60 @@ export class Playback {
     });
   }
 
+  // --- keys (a MIDI keyboard) ---
+
+  /** A key pressed: plays `midiNote` on `track`. A sample (or drum) plays at its own pitch from
+   * `MIDI_UNITY_NOTE`, chromatically, or the slice `midiNote - MIDI_UNITY_NOTE` for a chop track; a pitched
+   * synth sounds the key itself (its root key plays its tune). `velocity` is 0..1. Returns false if refused. */
+  noteOn(track: Track, midiNote: number, velocity: number): boolean {
+    if (this.isCaptureBusy()) return false;
+    const level = Math.min(1, Math.max(0, velocity));
+    if (track.instrument) {
+      const def = instrumentDefFor(track);
+      if (!def) return false;
+      // A pitched synth sounds the key it is given (its own root plays at the root key); a drum plays at its
+      // own pitch from middle C, like a sample.
+      const root = def.category === "drum" ? null : rootMidiNote(track);
+      const pitch = midiNote - (root === null ? MIDI_UNITY_NOTE : Math.round(root));
+      const played = instrumentHostFor(this.runtime).noteOn(track.id, { velocity: level, ...(pitch ? { pitch } : {}), ...chokeParams(track) });
+      if (played) this.heldSynthNote.set(track.id, midiNote);
+      return played;
+    }
+    const target = this.trackTarget(track);
+    if (!target) return false;
+    const pitch = midiNote - MIDI_UNITY_NOTE;
+    const chop = effectiveSampleMode(track) === "chop";
+    if (chop && pitch < 0) return false;
+    const looping = effectivePlaybackMode(track) === "loop";
+    const handle = this.runtime.trigger({
+      sampleId: target.assetId,
+      bus: target.bus,
+      gain: level,
+      ...(looping ? { loop: true } : {}),
+      ...(chop ? { region: pitch } : pitch ? { pitch } : {}),
+      ...chokeParams(track),
+    });
+    if (effectiveVoiceMode(track) === "mono") this.registerMonoVoice(track.id, handle, "manual");
+    // Only a held (looping) voice follows the key up; a one-shot rings out like a pad hit.
+    if (looping) this.heldKeyVoices.set(`${track.id}:${midiNote}`, handle);
+    return true;
+  }
+
+  /** A key released: ends a looping voice, and sends a synth the note-off (only if that key is the one it is
+   * playing, since a synth track is monophonic: an older key released must not cut the newer note). */
+  noteOff(track: Track, midiNote: number): void {
+    const key = `${track.id}:${midiNote}`;
+    const handle = this.heldKeyVoices.get(key);
+    if (handle !== undefined) {
+      this.runtime.release(handle);
+      this.heldKeyVoices.delete(key);
+    }
+    if (track.instrument && this.heldSynthNote.get(track.id) === midiNote) {
+      this.heldSynthNote.delete(track.id);
+      instrumentHostFor(this.runtime).noteOff(track.id);
+    }
+  }
+
   triggerTrackOnce(track: Track): boolean {
     const target = this.trackTarget(track);
     if (!target) return false;
@@ -193,6 +253,9 @@ export class Playback {
   stopAll(): void {
     for (const loop of this.loops.values()) this.runtime.release(loop.handle);
     this.loops.clear();
+    for (const handle of this.heldKeyVoices.values()) this.runtime.release(handle);
+    this.heldKeyVoices.clear();
+    this.heldSynthNote.clear();
     for (const [trackId, entry] of this.lastMono) {
       if (entry.owner === "manual") this.lastMono.delete(trackId);
     }

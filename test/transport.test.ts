@@ -740,3 +740,38 @@ describe("queue reordering (pure)", () => {
     expect(chainShiftForReorder(chain, moved.slice(1), "b")).toBe(0);
   });
 });
+
+describe("Transport.playAt", () => {
+  it("lines the queue up so the requested chain beat sounds at the requested time and tempo", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, advance } = fakeRuntime();
+    let project = singlePatternProject(); // one 16-beat pattern, a note on beat 0
+    project = addNote(project, project.patterns[0].id, "track-1", 8);
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    // Chain beat 8 (the second note) at t = 2.0 s, 150 bpm (one webseq beat = 0.1 s).
+    transport.playAt(8, 2.0, 150);
+    advance(1.95); // inside the lookahead of the start
+    vi.advanceTimersByTime(30);
+    const times = scheduled.map((e) => e.time).sort((a, b) => a - b);
+    expect(times[0]).toBeCloseTo(2.0, 6); // the note on beat 8 sounds exactly at the requested time
+    expect(runtime.setTempo).toHaveBeenLastCalledWith(150, { anchorTime: expect.closeTo(2.0 - 8 * secondsPerBeat(150), 6) });
+    expect(project.bpm).toBe(120); // the project's own tempo is untouched
+    transport.stop();
+    vi.useRealTimers();
+  });
+
+  it("wraps around the queue and clamps a start in the past to just after now", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled } = fakeRuntime();
+    const project = singlePatternProject();
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+    transport.playAt(16 * 5, -3, 120); // five loops in, "at" long ago
+    vi.advanceTimersByTime(30);
+    const first = Math.min(...scheduled.map((e) => e.time));
+    expect(first).toBeGreaterThanOrEqual(0.03 - 1e-9); // clamped to now (0) + 30 ms
+    expect(transport.getStatus()).toBe("playing");
+    transport.stop();
+    vi.useRealTimers();
+  });
+});

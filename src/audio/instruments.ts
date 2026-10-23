@@ -179,6 +179,12 @@ export class InstrumentHost {
     return true;
   }
 
+  /** Note-off for one synth track's instrument (a released key; sustained synths enter their release). */
+  noteOff(trackId: TrackId): void {
+    const live = this.live.get(trackId);
+    if (live) for (const id of live.ids) this.runtime.instrumentNoteOff(id);
+  }
+
   /** Note-off for every live instrument — for Stop/Pause, so a held bass note doesn't ring on.
    * Pending (scheduled) notes are dropped separately by runtime.cancelScheduled(). */
   stopAll(): void {

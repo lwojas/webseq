@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { AudioRuntime } from "webdsp";
+import { hasEmbeddedHost, type AudioRuntime } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
-import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
 import { FX_KIND } from "./audio/fxChain";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
@@ -12,6 +12,8 @@ import { chainShiftForReorder, moveChainEntry } from "./model/project";
 import { buildEditPanelModel, trackLabel, type EditClipboard } from "./app/editModel";
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
+import { createHostSync } from "./audio/hostSync";
+import { attachPlainMidiInputs } from "./midi/dawNoteInput";
 import { useTimelineZoom } from "./hooks/useTimelineZoom";
 import { usePlayingPosition } from "./hooks/usePlayingPosition";
 import { Transport, type PlaybackStatus } from "./audio/transport";
@@ -69,6 +71,8 @@ export function App() {
   const playbackRef = useRef<Playback | null>(null);
 
   const [status, setStatus] = useState<PlaybackStatus>("stopped");
+  // The host tempo while following an external clock (audio/hostSync.ts); null when playing on our own.
+  const [followedBpm, setFollowedBpm] = useState<number | null>(null);
   // Which asset is auditioning and which tracks are looping (ECS-83). Written only when the
   // Playback actually changes, so this re-renders on starts/stops/ends, not per tick.
   const [manual, setManual] = useState<ManualPlaybackSnapshot>({ auditionAssetId: null, loopingTrackIds: [] });
@@ -139,6 +143,55 @@ export function App() {
       transportRef.current = new Transport(runtime, () => projectRef.current, getBusId, ensurePlayback(runtime), createSmoothClock(() => runtime.getCurrentTime(), () => performance.now() / 1000));
     }
   }, [runtime, project.tracks, getBusId, ensurePlayback]);
+
+  // A runtime hosted by a plugin needs no user gesture, and the host's transport can start before anyone
+  // clicks Play: bring the runtime up at startup so it can follow. In a browser this does nothing.
+  useEffect(() => {
+    if (hasEmbeddedHost()) void init();
+  }, [init]);
+
+  // Follow the host's transport when the runtime has one (a plugin host); never fires in a browser.
+  useEffect(() => {
+    if (!runtime) return;
+    const sync = createHostSync({
+      runtime,
+      getTransport: () => transportRef.current,
+      onChange: (bpm) => {
+        setStatus(transportRef.current?.getStatus() ?? "stopped");
+        setFollowedBpm(bpm);
+      },
+    });
+    return () => sync.dispose();
+  }, [runtime]);
+
+  // Plain MIDI inputs (a keyboard; a plugin host's MIDI) play the selected track. A browser would ask permission
+  // for MIDI on page load, so this listens only where the host provides its MIDI without asking.
+  const selectedTargetRef = useRef(selectedTarget);
+  selectedTargetRef.current = selectedTarget;
+  useEffect(() => {
+    if (!runtime || !hasEmbeddedHost()) return;
+    const playback = ensurePlayback(runtime);
+    const heldTrack = new Map<number, Track>(); // the key's note-on track, so its note-off ends the same voice
+    const targetTrack = () => {
+      const target = selectedTargetRef.current;
+      return target === "master" ? undefined : trackById(projectRef.current, target);
+    };
+    return attachPlainMidiInputs({
+      noteOn: (note, velocity) => {
+        const track = targetTrack();
+        if (track && playback.noteOn(track, note, velocity)) heldTrack.set(note, track);
+      },
+      noteOff: (note) => {
+        const track = heldTrack.get(note);
+        if (track) playback.noteOff(track, note);
+        heldTrack.delete(note);
+      },
+      allNotesOff: () => {
+        for (const [note, track] of heldTrack) playback.noteOff(track, note);
+        heldTrack.clear();
+      },
+    });
+  }, [runtime, ensurePlayback]);
 
   // Manual voices whose track or asset changed under them (reassigned, removed) are released
   // here. Cheap: it scans at most one entry per track.
@@ -1123,6 +1176,7 @@ export function App() {
   const transportProps = {
     status,
     bpm: project.bpm,
+    followedBpm,
     swing: project.swing,
     gridResolution,
     scale: projectScale,

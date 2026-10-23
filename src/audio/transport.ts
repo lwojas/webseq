@@ -34,6 +34,10 @@ import type { Playback } from "./playback";
 const LOOKAHEAD_SECONDS = 0.15;
 const TICK_INTERVAL_MS = 25;
 const LEAD_IN_SECONDS = 0.05;
+// playAt() never starts sooner than this after now: the scheduler needs at least a tick to put notes in.
+const MIN_START_AHEAD_SECONDS = 0.03;
+// A note this close before the audible start still counts as on it (float error in the beat -> time sum).
+const AUDIBLE_EPSILON_SECONDS = 1e-5;
 // Bounds how many dangling chain entries (referencing a deleted pattern) tick() will skip
 // past in one call before giving up for that tick — cheap insurance against an all-dangling
 // chain spinning forever without ever advancing real time.
@@ -132,21 +136,37 @@ export class Transport {
     const wasPaused = this.status === "paused";
     const project = this.getProject();
     const resume = wasPaused ? this.pausedPosition : this.chainStart(project);
+    this.begin(resume, this.runtime.getCurrentTime() + LEAD_IN_SECONDS, project.bpm);
+  }
 
+  /** Starts (or restarts) playback so that queue position `chainBeat` (webseq beats from the start of the
+   * pattern queue, wrapping around the queue's length) sounds at engine time `at`, at `bpm` quarter notes
+   * per minute. This is what following an external clock needs (see audio/hostSync.ts): the clock says
+   * where it is and when, and the sequencer lines up with it. `at` is clamped to just after now, so a late
+   * request starts at the nearest moment that is still in the future. A running transport is cancelled
+   * first (already-triggered notes are cut, like retime()). The project's own BPM is not touched. */
+  playAt(chainBeat: number, at: number, bpm: number): void {
+    if (this.status === "playing") this.haltAudio();
+    const project = this.getProject();
     const now = this.runtime.getCurrentTime();
-    const spb = secondsPerBeat(project.bpm);
-    this.anchorTempo = project.bpm;
+    this.begin(this.positionAtChainBeat(project, chainBeat), Math.max(at, now + MIN_START_AHEAD_SECONDS), bpm);
+  }
+
+  /** Common start: the queue position `resume` sounds at engine time `audibleAt`, at `bpm`. */
+  private begin(resume: Position, audibleAt: number, bpm: number): void {
+    const spb = secondsPerBeat(bpm);
+    this.anchorTempo = bpm;
     this.nextStepIndex = resume.stepIndex;
-    this.nextStepStartTime = now + LEAD_IN_SECONDS - resume.beat * spb;
+    this.nextStepStartTime = audibleAt - resume.beat * spb;
     // Tempo-aware synths (Pulse) lock their pump/repeat to the engine's beat grid, not to note
     // starts. Anchor it to the pattern start before anything is scheduled (message order is
     // preserved); retime() and resume both come through here, so they re-anchor too.
-    this.runtime.setTempo(project.bpm, { anchorTime: this.nextStepStartTime });
+    this.runtime.setTempo(bpm, { anchorTime: this.nextStepStartTime });
     // Track LFOs (model/eventLfo.ts) use the same anchor: their cycle 0 is the start of the pattern
     // instance playback (re)started on, and they run on unbroken across later pattern changes.
     this.lfoAnchorTime = this.nextStepStartTime;
     this.startPosition = resume;
-    this.audibleFrom = now + LEAD_IN_SECONDS;
+    this.audibleFrom = audibleAt;
     this.stepWindows = [];
     startAutomation(this.runtime, this.audibleFrom);
     this.playback.dropSequencerVoices();
@@ -154,6 +174,28 @@ export class Transport {
 
     this.timerId = setInterval(() => this.tick(), TICK_INTERVAL_MS);
     this.tick();
+  }
+
+  /** The queue position `chainBeat` beats from the start of the queue, wrapping around its total length
+   * (dangling entries and empty patterns are skipped, as tick() skips them). */
+  private positionAtChainBeat(project: Project, chainBeat: number): Position {
+    const lengths: { stepIndex: number; patternId: PatternId; beats: number }[] = [];
+    let total = 0;
+    for (let i = 0; i < project.patternChain.length; i++) {
+      const step = resolveChainStep(project, i);
+      if (!step) continue;
+      const beats = totalBeats(step.pattern, project.beatsPerBar);
+      if (beats <= 0) continue;
+      lengths.push({ stepIndex: i, patternId: step.pattern.id, beats });
+      total += beats;
+    }
+    if (total <= 0 || !Number.isFinite(chainBeat)) return this.chainStart(project);
+    let within = ((chainBeat % total) + total) % total;
+    for (const l of lengths) {
+      if (within < l.beats) return { stepIndex: l.stepIndex, patternId: l.patternId, beat: within };
+      within -= l.beats;
+    }
+    return this.chainStart(project);
   }
 
   /** Stops the schedule-ahead timer and cancels not-yet-fired events, remembering the
@@ -419,8 +461,15 @@ export class Transport {
         project.beatsPerBar,
         project.scale,
       );
-      const compiledCount = compiled.length;
       let synthNotes = compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale);
+      // Starting part-way into a pattern (resume, or following an external clock) leaves the notes before
+      // that point in the past: drop them rather than let the engine fire them all at once.
+      if (stepStartTime < this.audibleFrom) {
+        const cutoff = this.audibleFrom - AUDIBLE_EPSILON_SECONDS;
+        compiled = compiled.filter((c) => c.event.time >= cutoff);
+        synthNotes = synthNotes.filter((n) => (n.params.time ?? 0) >= cutoff);
+      }
+      const compiledCount = compiled.length;
       // Choke groups: notes of two tracks in one group starting at the same instant are resolved here,
       // last track in track order wins (see simultaneousChokeLosers), not left to engine queue order.
       const losers = simultaneousChokeLosers(project.tracks, [
