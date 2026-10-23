@@ -28,6 +28,7 @@ import type { NoteChord } from "./model/chord";
 import { createRecoveryScheduler, timeAgo, type RecoveryRecord } from "./persistence/recovery";
 import { HOST_PUBLISH_DEBOUNCE_MS, fromHostSnapshot, publishRecord, shouldWriteProject } from "./persistence/hostState";
 import { exportProjectFile, importProjectFile } from "./persistence/projectIO";
+import { preselectSavedProject } from "./persistence/savedSelection";
 import { putRecovery, getRecovery, getRecoveryAssets, clearRecovery, resetRecoveryAssetCache } from "./persistence/recoveryStore";
 import type { ResamplePhase } from "./components/TransportBar";
 import type { ImportBatchResult } from "./components/AssetsPanel";
@@ -922,6 +923,15 @@ export function App() {
     listProjects().then(setSavedProjects);
   }, []);
   useEffect(() => refreshSavedProjects(), [refreshSavedProjects]);
+  // When the open project is one of the saved ones (same id: restored after being loaded or saved, e.g. a plugin window reopened
+  // onto its session), show which one in the list. Considered once per open project and only once the list has loaded; it never
+  // overrides a selection already made and does nothing when no saved project matches. Recovery itself is not involved.
+  const preselectedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (savedProjects.length === 0 || preselectedForRef.current === project.id) return;
+    preselectedForRef.current = project.id;
+    setLoadTargetId((current) => preselectSavedProject(current, project.id, savedProjects));
+  }, [project.id, savedProjects]);
 
   const handleSaveProject = useCallback(async () => {
     setSaveStatus("saving");
