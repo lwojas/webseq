@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { hasEmbeddedHost, type AudioRuntime } from "webdsp";
+import { getHostState, hasEmbeddedHost, type AudioRuntime } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
 import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
@@ -26,6 +26,7 @@ import { saveProject, loadProject, listProjects, deleteProject } from "./persist
 import { remapAssetIds } from "./model/project";
 import type { NoteChord } from "./model/chord";
 import { createRecoveryScheduler, timeAgo, type RecoveryRecord } from "./persistence/recovery";
+import { fromHostSnapshot, publishRecord } from "./persistence/hostState";
 import { putRecovery, getRecovery, getRecoveryAssets, clearRecovery, resetRecoveryAssetCache } from "./persistence/recoveryStore";
 import type { ResamplePhase } from "./components/TransportBar";
 import type { ImportBatchResult } from "./components/AssetsPanel";
@@ -864,9 +865,17 @@ export function App() {
   );
 
   // --- persistence ---
+  // A host with its own session (a plugin) keeps the project there; otherwise the local recovery slot does.
+  const hostState = useMemo(() => getHostState(), []);
   const recoveryScheduler = useMemo(
-    () => createRecoveryScheduler({ write: (record) => putRecovery(record, assetDataRef.current) }),
-    [],
+    () =>
+      createRecoveryScheduler({
+        write: async (record) => {
+          if (hostState) publishRecord(hostState, record, assetDataRef.current);
+          else await putRecovery(record, assetDataRef.current);
+        },
+      }),
+    [hostState],
   );
   // A recoverable previous session found at startup, shown as a prompt until the user picks.
   const [recoveryPrompt, setRecoveryPrompt] = useState<RecoveryRecord | null>(null);
@@ -875,6 +884,11 @@ export function App() {
   // result also gates the first run: the pristine initial project is never snapshotted.
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   useEffect(() => {
+    if (hostState) {
+      // The host's session is the source of truth: no recovery prompt, and edits publish from the start.
+      setRecoveryChecked(true);
+      return;
+    }
     let cancelled = false;
     getRecovery().then((record) => {
       if (cancelled) return;
@@ -884,7 +898,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hostState]);
   // The project object with nothing unsaved (initial / just New'd / just Loaded). Every reducer
   // edit yields a new object, so `project !== baseline` means "edited since".
   const cleanBaselineRef = useRef<Project>(project);
@@ -909,16 +923,19 @@ export function App() {
     try {
       await saveProject(project, assetDataRef.current);
       // The recovery snapshot only covers the gap before a save (same as webtracker) — drop it
-      // so this saved session doesn't prompt for a restore next startup.
-      recoveryScheduler.cancel();
-      void clearRecovery();
+      // so this saved session doesn't prompt for a restore next startup. A host's session is not
+      // a recovery slot: it keeps tracking the project.
+      if (!hostState) {
+        recoveryScheduler.cancel();
+        void clearRecovery();
+      }
       refreshSavedProjects();
       setSaveStatus("saved");
     } catch (err) {
       setSaveStatus("error");
       setSaveError(err instanceof Error ? err.message : String(err));
     }
-  }, [project, refreshSavedProjects, recoveryScheduler]);
+  }, [project, refreshSavedProjects, recoveryScheduler, hostState]);
 
   // Clears the transient "Saved ✓" confirmation after a couple seconds — a UI-only timer for a
   // toast message, not anything audio-timed, so a plain setTimeout is fine here (see
@@ -981,15 +998,11 @@ export function App() {
   }, [loadTargetId, runtime, init, installProject]);
 
   // --- crash recovery (persistence/recovery.ts; modelled on webtracker's resume) ---
-  const handleRestoreRecovery = useCallback(async () => {
-    if (!recoveryPrompt) return;
-    const record = recoveryPrompt;
-    const runtimeInstance = runtime ?? (await init());
-    if (!runtimeInstance) return;
-    try {
-      const assetData = await getRecoveryAssets(record);
+  // Installs a recovered/hosted record: the project and its assets, then the view state, validated against the
+  // project actually installed.
+  const restoreRecord = useCallback(
+    async (runtimeInstance: AudioRuntime, record: RecoveryRecord, assetData: Map<AssetId, ArrayBuffer>) => {
       const installed = await installProject(runtimeInstance, record.project, assetData);
-      // Restore the view state, validated against the project actually installed.
       const { ui } = record;
       const patternId = installed.patterns.some((p) => p.id === ui.selectedPatternId) ? ui.selectedPatternId : installed.patterns[0].id;
       setSelectedPatternId(patternId);
@@ -997,6 +1010,18 @@ export function App() {
       setSelectedFxId(null);
       setActiveBank(Number.isInteger(ui.activeBank) && ui.activeBank >= 0 ? ui.activeBank : 0);
       if (GRID_RESOLUTIONS.includes(ui.gridResolution)) setGridResolution(ui.gridResolution);
+    },
+    [installProject],
+  );
+
+  const handleRestoreRecovery = useCallback(async () => {
+    if (!recoveryPrompt) return;
+    const record = recoveryPrompt;
+    const runtimeInstance = runtime ?? (await init());
+    if (!runtimeInstance) return;
+    try {
+      const assetData = await getRecoveryAssets(record);
+      await restoreRecord(runtimeInstance, record, assetData);
       // The record stays in the slot: a restored session is still unsaved work, so (like
       // webtracker) it keeps prompting until saved or discarded. The restore itself re-writes it.
       setRecoveryPrompt(null);
@@ -1005,7 +1030,29 @@ export function App() {
       void clearRecovery();
       setRecoveryPrompt(null);
     }
-  }, [recoveryPrompt, runtime, init, installProject]);
+  }, [recoveryPrompt, runtime, init, restoreRecord]);
+
+  // The host handed back the session's project: install it, silently (no prompt: the session is the truth).
+  // Re-subscribing (the runtime appearing) is handed the same snapshot again; it is installed once.
+  const restoredSnapshotRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (!hostState) return;
+    return hostState.onRestore((snapshot) => {
+      if (restoredSnapshotRef.current === snapshot) return;
+      restoredSnapshotRef.current = snapshot;
+      const restored = fromHostSnapshot(snapshot);
+      if (!restored) return; // not ours, an unknown format or malformed: start fresh
+      void (async () => {
+        const runtimeInstance = runtime ?? (await init());
+        if (!runtimeInstance) return;
+        try {
+          await restoreRecord(runtimeInstance, restored.record, restored.assetData);
+        } catch {
+          // keep running on the fresh project rather than wedge startup
+        }
+      })();
+    });
+  }, [hostState, runtime, init, restoreRecord]);
 
   const handleDismissRecovery = useCallback(() => {
     void clearRecovery();
@@ -1022,12 +1069,13 @@ export function App() {
     const fresh = createInitialProject();
     recoveryScheduler.cancel();
     resetRecoveryAssetCache();
+    hostState?.clear(); // the session now starts from nothing too
     cleanBaselineRef.current = fresh;
     dispatch({ type: "LOAD_PROJECT", project: fresh });
     setStatus("stopped");
     setNoteClipboard(null);
     setEditClipboard({});
-  }, [runtime, recoveryScheduler]);
+  }, [runtime, recoveryScheduler, hostState]);
 
   const handleDeleteProject = useCallback(async () => {
     if (!loadTargetId) return;
