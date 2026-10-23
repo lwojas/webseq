@@ -27,6 +27,7 @@ import { remapAssetIds } from "./model/project";
 import type { NoteChord } from "./model/chord";
 import { createRecoveryScheduler, timeAgo, type RecoveryRecord } from "./persistence/recovery";
 import { fromHostSnapshot, publishRecord } from "./persistence/hostState";
+import { exportProjectFile, importProjectFile } from "./persistence/projectIO";
 import { putRecovery, getRecovery, getRecoveryAssets, clearRecovery, resetRecoveryAssetCache } from "./persistence/recoveryStore";
 import type { ResamplePhase } from "./components/TransportBar";
 import type { ImportBatchResult } from "./components/AssetsPanel";
@@ -986,6 +987,31 @@ export function App() {
     [recoveryScheduler],
   );
 
+  // --- project files (persistence/projectFile.ts): how a project moves between the browser and a plugin ---
+  const [fileError, setFileError] = useState<string | null>(null);
+  const handleExportProject = useCallback(async () => {
+    setFileError(null);
+    try {
+      await exportProjectFile(project, assetDataRef.current);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : String(err));
+    }
+  }, [project]);
+
+  const handleImportProject = useCallback(async () => {
+    setFileError(null);
+    try {
+      const opened = await importProjectFile();
+      if (!opened) return; // cancelled
+      const runtimeInstance = runtime ?? (await init());
+      if (!runtimeInstance) return;
+      // Not marked clean: an imported project is new, unsaved work, so recovery (or the host's session) keeps it.
+      await installProject(runtimeInstance, opened.project, opened.assetData);
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : String(err));
+    }
+  }, [runtime, init, installProject]);
+
   const handleLoadProject = useCallback(async () => {
     if (!loadTargetId) return;
     const loaded = await loadProject(loadTargetId);
@@ -1220,6 +1246,9 @@ export function App() {
     onSelectSaved: setLoadTargetId,
     onLoad: handleLoadProject,
     onDelete: handleDeleteProject,
+    onExport: handleExportProject,
+    onImport: handleImportProject,
+    fileError,
   };
   const transportProps = {
     status,
