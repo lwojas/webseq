@@ -72,6 +72,16 @@ export function createRecoveryScheduler({
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
+/** Structural check of a Project: the fields install/restore dereference directly. Shallow on purpose; projects gain
+ * fields additively, and everything reads them through defaults. Shared by recovery records and project files. */
+export function isProjectLike(project: unknown): project is Project {
+  if (!isObject(project)) return false;
+  if (typeof project.id !== "string" || typeof project.name !== "string") return false;
+  if (!Array.isArray(project.tracks) || !Array.isArray(project.patterns) || project.patterns.length === 0) return false;
+  if (!Array.isArray(project.assets) || !Array.isArray(project.patternChain)) return false;
+  return project.assets.every((a) => isObject(a) && typeof a.id === "number");
+}
+
 /** Structural check on whatever came out of IndexedDB. Returns null for anything malformed or
  * from an incompatible build, so startup treats it as "no recovery" and clears it rather than
  * crashing on it. Intentionally shallow: it guards the fields restore dereferences directly. */
@@ -79,10 +89,7 @@ export function parseRecoveryRecord(raw: unknown): RecoveryRecord | null {
   if (!isObject(raw) || !isObject(raw.project) || !isObject(raw.ui)) return null;
   const { project, ui } = raw;
   if (typeof raw.projectId !== "string" || typeof raw.savedAt !== "number" || !Number.isFinite(raw.savedAt)) return null;
-  if (typeof project.id !== "string" || typeof project.name !== "string") return null;
-  if (!Array.isArray(project.tracks) || !Array.isArray(project.patterns) || project.patterns.length === 0) return null;
-  if (!Array.isArray(project.assets) || !Array.isArray(project.patternChain)) return null;
-  if (!project.assets.every((a) => isObject(a) && typeof a.id === "number")) return null;
+  if (!isProjectLike(project)) return null;
   if (typeof ui.selectedPatternId !== "string" || typeof ui.selectedTarget !== "string") return null;
   if (typeof ui.activeBank !== "number" || typeof ui.gridResolution !== "number") return null;
   return raw as unknown as RecoveryRecord;

@@ -8,11 +8,16 @@ interface Props {
   onSelectSaved: (id: string) => void;
   onLoad: () => void;
   onDelete: () => void;
+  /** Writes the project as a file / opens one. A file is how a project moves between the browser and a plugin. */
+  onExport: () => void;
+  onImport: () => void;
+  /** Why the last export or import failed, shown until the next attempt; null when it did not. */
+  fileError: string | null;
 }
 
 /** New / Save / Load / Delete for the project. Inline in the desktop top bar; on a phone it lives
  * in the ⋯ Settings view (SettingsView) so the top bar can stay one row. */
-export function ProjectBar({ saveStatus, saveError, savedProjects, loadTargetId, onNew, onSave, onSelectSaved, onLoad, onDelete }: Props) {
+export function ProjectBar({ saveStatus, saveError, savedProjects, loadTargetId, onNew, onSave, onSelectSaved, onLoad, onDelete, onExport, onImport, fileError }: Props) {
   return (
     <div className="project-controls">
       <button className="btn small" onClick={onNew}>
@@ -41,6 +46,17 @@ export function ProjectBar({ saveStatus, saveError, savedProjects, loadTargetId,
       <button className="btn small danger" onClick={onDelete} disabled={!loadTargetId}>
         Delete
       </button>
+      <button className="btn small" onClick={onExport} title="Save the project, with its audio, as a file you can open in another browser or in the plugin">
+        Export
+      </button>
+      <button className="btn small" onClick={onImport} title="Open a project file">
+        Import
+      </button>
+      {fileError && (
+        <span className="save-status error" title={fileError}>
+          File failed
+        </span>
+      )}
     </div>
   );
 }
