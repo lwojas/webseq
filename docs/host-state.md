@@ -35,3 +35,10 @@ project is one of the saved ones (same id, e.g. a plugin window reopened onto it
 (`preselectSavedProject`). It is considered once per open project and only after the list has loaded, never overrides a selection
 already made, and does nothing when no saved project matches. It only moves the dropdown: recovery, restore, Load and Delete are
 unchanged (Load still loads the saved copy; the restored project keeps its unsaved edits).
+
+**Known issue: Load discards unsaved edits.** *Load* replaces the open project with the saved copy, and the restored project can carry edits
+that were never saved (that is the point of restoring it). With the saved project now preselected, *Load* is one click away from throwing those
+edits away, with no warning. This is the same as before (you could always select the project and press Load), but it is more
+reachable now. Possible fixes, not done: ask before loading over a project that differs from its saved copy (needs the saved copy's
+state kept to compare against, or an "unsaved changes" marker), or leave *Load* disabled while the selected project is the one that is open
+and unchanged.
