@@ -1038,7 +1038,7 @@ export function App() {
   useEffect(() => {
     if (!hostState) return;
     return hostState.onRestore((snapshot) => {
-      if (restoredSnapshotRef.current === snapshot) return;
+      if (!snapshot || restoredSnapshotRef.current === snapshot) return; // null: a new session, nothing saved
       restoredSnapshotRef.current = snapshot;
       const restored = fromHostSnapshot(snapshot);
       if (!restored) return; // not ours, an unknown format or malformed: start fresh
