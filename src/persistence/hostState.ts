@@ -44,3 +44,18 @@ export function fromHostSnapshot(snapshot: HostStateSnapshot): { record: Recover
   }
   return { record, assetData };
 }
+
+/** How soon after an edit the project is published to the host. Short, because a plugin window can be closed at any
+ * moment and the page (with its pending write) goes with it; the local recovery write can afford to be slower. */
+export const HOST_PUBLISH_DEBOUNCE_MS = 300;
+
+/** Whether the current project should be written out now (recovery locally, or the host's session).
+ *
+ * Locally, a project that is exactly as last saved or loaded (`baseline`) is never snapshotted: there is nothing unsaved.
+ * In a host the session is the thing being kept, and it has not seen a project that was merely loaded, imported or
+ * started fresh, so those must be published too: only the untouched initial project is held back, and only until the
+ * host has answered (publishing it earlier could overwrite the saved session before its restore arrives). */
+export function shouldWriteProject(state: { hosted: boolean; hostAnswered: boolean; project: unknown; pristine: unknown; baseline: unknown }): boolean {
+  if (!state.hosted) return state.project !== state.baseline;
+  return state.hostAnswered && state.project !== state.pristine;
+}
