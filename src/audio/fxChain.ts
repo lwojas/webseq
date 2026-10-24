@@ -33,6 +33,7 @@ export const FX_KIND: Record<FxType, EffectKind> = {
   phaser: EffectKind.Phaser,
   bitcrusher: EffectKind.Bitcrusher,
   utility: EffectKind.Utility,
+  dubDelay: EffectKind.DubDelay,
 };
 
 /** FX param id (model/fx.ts FX_DEFS) -> the engine's NodeParam. */
@@ -77,6 +78,12 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
   },
   bitcrusher: { bits: NodeParam.CrushBits, downsample: NodeParam.CrushDownsample, mix: NodeParam.CrushMix },
   utility: { gain: NodeParam.UtilityGain },
+  dubDelay: {
+    division: NodeParam.DubDelayDivision,
+    feedback: NodeParam.DubDelayFeedback,
+    tone: NodeParam.DubDelayTone,
+    mix: NodeParam.DubDelayMix,
+  },
 };
 
 interface LiveEffect {

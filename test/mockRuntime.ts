@@ -22,11 +22,12 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
 };
 // Which mock controls the engine reports as modulation targets (a stand-in for ModDomain tables).
 const MODULATABLE = new Set(["bass.tune", "bass.body", "bass.cutoff", "bass.resonance", "pulse.cutoff", "pulse.pump"]);
-/** EffectKind -> modulatable FX control names (EffectKind.Filter = 0 ... Utility = 8). */
+/** EffectKind -> modulatable FX control names (EffectKind.Filter = 0 ... Utility = 8, DubDelay = 9). */
 export const FX_PARAM_NAMES: Record<number, string[]> = {
   0: ["cutoff", "resonance"],
   2: ["feedback", "mix"],
   8: ["gain"],
+  9: ["feedback", "tone", "mix"],
 };
 export const MODULATION_INFO = {
   maxLfos: 4,

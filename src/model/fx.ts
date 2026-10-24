@@ -145,6 +145,34 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
+  // Tempo-synced feedback delay (webdsp Dub Delay): the time is a division of the transport BPM, not
+  // seconds, and the tone filter sits inside the feedback loop so repeats darken. Division values
+  // mirror webdsp's DubDelayDivision.
+  dubDelay: {
+    type: "dubDelay",
+    label: "Dub Delay",
+    params: [
+      {
+        id: "division",
+        label: "Time",
+        min: 0,
+        max: 5,
+        step: 1,
+        default: 2,
+        options: [
+          { label: "1/16", value: 0 },
+          { label: "1/8", value: 1 },
+          { label: "1/8.", value: 2 },
+          { label: "1/4", value: 3 },
+          { label: "1/4.", value: 4 },
+          { label: "1/2", value: 5 },
+        ],
+      },
+      { id: "feedback", label: "Feedback", min: 0, max: 0.95, step: 0.01, default: 0.45 },
+      { id: "tone", label: "Tone", min: 200, max: 16000, step: 1, unit: "Hz", default: 3000 },
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
+    ],
+  },
   // A bare gain stage (webdsp Utility FX): the automatable per-track volume. Unity (0 dB) is
   // neutral; the bottom of the range is silence. Deliberately one parameter.
   utility: {

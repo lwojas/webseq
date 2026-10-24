@@ -26,6 +26,18 @@ describe("syncBuses", () => {
     expect(calls.addEffect.map((a) => [a.bus, a.kind])).toEqual([[2, EffectKind.Delay]]);
   });
 
+  it("maps a Dub Delay to the engine kind and sends its division as a step index", () => {
+    const { runtime, calls, raw } = mockRuntime();
+    let project = addFx(createInitialProject(), "track-2", "dubDelay");
+    const id = project.tracks.find((t) => t.id === "track-2")!.fx[0].id;
+    project = setFxParam(project, "track-2", id, "division", 4);
+    syncBuses(runtime, project, buses);
+    expect(calls.addEffect.map((a) => [a.bus, a.kind])).toEqual([[2, EffectKind.DubDelay]]);
+    const sent = raw.setEffectParameter.mock.calls.map(([, , p, v]) => [p, v]);
+    expect(sent).toContainEqual([NodeParam.DubDelayDivision, 4]);
+    expect(sent).toContainEqual([NodeParam.DubDelayTone, 3000]);
+  });
+
   it("stacks two filters as two engine instances and honours order changes", () => {
     const { runtime, calls, chains } = mockRuntime();
     let project = createInitialProject();
