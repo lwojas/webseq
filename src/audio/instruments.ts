@@ -177,6 +177,12 @@ export class InstrumentHost {
     return this.live.get(trackId)?.ids[0];
   }
 
+  /** The engine instrument that plays chord tone `voice` of this track (0 for an ordinary note), once created. */
+  instrumentIdFor(trackId: TrackId, voice = 0): InstrumentId | undefined {
+    const ids = this.live.get(trackId)?.ids;
+    return ids && ids.length > 0 ? ids[Math.min(voice, ids.length - 1)] : undefined;
+  }
+
   noteOn(trackId: TrackId, params: InstrumentNoteParams, voice = 0): boolean {
     const live = this.live.get(trackId);
     if (!live) return false;

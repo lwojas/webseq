@@ -23,7 +23,7 @@
 // Transport does own on this pattern's behalf is getCurrentChainEntryId(): the UI needs to
 // know which queue entry is "playing" in order to insert a newly-queued pattern right after
 // it (so "queue next" means next, not "whenever the loop gets back around to it").
-import type { AudioRuntime, BusId, SampleMetadata, VoiceHandle } from "webdsp";
+import { hostBeatAt, type AudioRuntime, type BusId, type HostTransport, type SampleMetadata, type VoiceHandle } from "webdsp";
 import type { ChainEntryId, FxTarget, PatternId, Project } from "../model/types";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
 import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat, simultaneousChokeLosers } from "./compile";
@@ -31,6 +31,8 @@ import { restoreAutomation, scheduleAutomation, startAutomation } from "./automa
 import { instrumentHostFor } from "./instruments";
 import type { Playback } from "./playback";
 
+/** webseq beats are sixteenth steps; the host's positions are quarter notes. */
+const BEATS_PER_QUARTER = 4;
 const LOOKAHEAD_SECONDS = 0.15;
 const TICK_INTERVAL_MS = 25;
 const LEAD_IN_SECONDS = 0.05;
@@ -107,6 +109,9 @@ export class Transport {
   // Engine time of the transport anchor, for Track LFO evaluation (see play()).
   private lfoAnchorTime = 0;
   private resampleState: ResampleState | null = null;
+  // Non-null while the host plays the song itself (audio/nativeSequence.ts; webdsp's runtime.setSequence): nothing is scheduled from here, this
+  // Transport only reports the position the host's transport maps to, for the playhead.
+  private hosted: HostTransport | null = null;
 
   constructor(
     private readonly runtime: AudioRuntime,
@@ -129,10 +134,33 @@ export class Transport {
     return this.status;
   }
 
+  /** True while the host is playing the song natively (attachHost() without detachHost()). */
+  isHosted(): boolean {
+    return this.hosted !== null;
+  }
+
+  /** The host's transport is playing and plays the song itself (webdsp's native sequence): this Transport stops scheduling and from now on
+   * only reports where the host is (`t` maps engine time to the host's position; pass the newest one whenever it changes). Anything this
+   * Transport had already handed to the engine is cut. While hosted, play/pause/stop do nothing: the host owns the transport. */
+  attachHost(t: HostTransport): void {
+    if (this.hosted === null && this.status === "playing") this.haltAudio();
+    this.hosted = t;
+    this.anchorTempo = t.bpm;
+    this.status = "playing";
+  }
+
+  /** The host stopped (or can no longer play the song itself): back to stopped, at the start of the queue. */
+  detachHost(): void {
+    if (this.hosted === null) return;
+    this.hosted = null;
+    this.status = "stopped";
+    this.pausedPosition = this.chainStart(this.getProject());
+  }
+
   /** Starts (or resumes) playback. Resumes from the paused position if paused, otherwise
    * starts from the beginning of the pattern queue. */
   play(): void {
-    if (this.status === "playing") return;
+    if (this.status === "playing" || this.hosted) return;
     const wasPaused = this.status === "paused";
     const project = this.getProject();
     const resume = wasPaused ? this.pausedPosition : this.chainStart(project);
@@ -201,7 +229,7 @@ export class Transport {
   /** Stops the schedule-ahead timer and cancels not-yet-fired events, remembering the
    * current musical position so a later play() resumes from here. */
   pause(): void {
-    if (this.status !== "playing") return;
+    if (this.status !== "playing" || this.hosted) return;
     this.pausedPosition = this.currentPosition();
     this.haltAudio();
     this.status = "paused";
@@ -212,7 +240,7 @@ export class Transport {
    * always the universal silence control (ECS-83). */
   stop(): void {
     this.playback.stopAll();
-    if (this.status === "stopped") return;
+    if (this.status === "stopped" || this.hosted) return;
     this.haltAudio();
     this.pausedPosition = this.chainStart(this.getProject());
     this.status = "stopped";
@@ -246,7 +274,7 @@ export class Transport {
    * playing. Already-triggered notes finish under their original timing; only not-yet-
    * scheduled notes pick up the new tempo. */
   retime(): void {
-    if (this.status !== "playing") return;
+    if (this.status !== "playing" || this.hosted) return;
     // BPM/tempo changes are frozen while a resample is armed/capturing (project brief section
     // 9) — an armed capture's [startTime, stopTime) is already fixed against the *current*
     // schedule, and re-anchoring here would desync the sequencer's own timeline from it. The
@@ -291,6 +319,7 @@ export class Transport {
    * during the lead-in pre-roll, same rationale as the original single-pattern Transport. */
   private currentPosition(now = this.runtime.getCurrentTime()): Position {
     if (this.status !== "playing") return this.pausedPosition;
+    if (this.hosted) return this.positionAtChainBeat(this.getProject(), hostBeatAt(this.hosted, now) * BEATS_PER_QUARTER);
     if (now < this.audibleFrom) return this.startPosition;
     const spb = secondsPerBeat(this.anchorTempo);
     for (const w of this.stepWindows) {
@@ -364,6 +393,7 @@ export class Transport {
    * intervening C) — and arms the engine capture for exactly that step's [start, end). */
   armResample(): { ok: true; patternId: PatternId; result: Promise<ResampleCaptureResult> } | { ok: false; reason: string } {
     if (this.status !== "playing") return { ok: false, reason: "Nothing is playing." };
+    if (this.hosted) return { ok: false, reason: "The host is playing the song; resampling needs this page to play it." };
     if (this.resampleState) return { ok: false, reason: "A resample is already in progress." };
     const project = this.getProject();
     const { patternId } = this.currentPosition();

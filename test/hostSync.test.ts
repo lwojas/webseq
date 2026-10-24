@@ -105,3 +105,36 @@ describe("hostSync", () => {
     expect(playAt).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("hostSync with a native sequence", () => {
+  function nativeSetup() {
+    let listener: ((t: HostTransport) => void) | null = null;
+    const calls: string[] = [];
+    const transport = {
+      getStatus: () => "stopped" as const,
+      playAt: vi.fn(() => calls.push("playAt")),
+      stop: vi.fn(),
+      attachHost: vi.fn((t: HostTransport) => calls.push(`attach(${t.beat})`)),
+      detachHost: vi.fn(() => calls.push("detach")),
+    };
+    const onChange = vi.fn();
+    createHostSync({
+      runtime: { getCurrentTime: () => 10, getHostTransport: () => null, onHostTransport: (fn) => ((listener = fn), () => (listener = null)) },
+      getTransport: () => transport,
+      native: true,
+      onChange,
+    });
+    const emit = (t: Partial<HostTransport>) => listener?.({ playing: true, bpm: 120, beat: 0, time: 10.1, loop: null, timeSignature: null, epoch: 1, ...t });
+    return { emit, calls, transport, onChange };
+  }
+
+  it("never schedules from the page: it follows the host's position while it plays and lets go when it stops", () => {
+    const { emit, calls, transport, onChange } = nativeSetup();
+    emit({ beat: 8 });
+    emit({ beat: 8.5, time: 10.3 }); // a refresh: the mapping is passed on, nothing restarts
+    emit({ playing: false });
+    expect(calls).toEqual(["attach(8)", "attach(8.5)", "detach"]);
+    expect(transport.playAt).not.toHaveBeenCalled();
+    expect(onChange.mock.calls.map((c) => c[0])).toEqual([120, null]);
+  });
+});

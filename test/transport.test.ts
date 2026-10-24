@@ -775,3 +775,31 @@ describe("Transport.playAt", () => {
     vi.useRealTimers();
   });
 });
+
+describe("Transport hosted by a native sequence", () => {
+  it("schedules nothing, reports the playhead from the host's mapping, ignores Play/Stop, and lets go on detach", () => {
+    vi.useFakeTimers();
+    const { runtime, scheduled, advance } = fakeRuntime();
+    const project = singlePatternProject(); // one 16-beat pattern
+    const transport = new Transport(runtime, () => project, noBus, playbackFor(runtime));
+
+    advance(5);
+    // The host heard quarter note 2 (= step 8) at t = 5, at 120 bpm.
+    transport.attachHost({ playing: true, bpm: 120, beat: 2, time: 5, loop: null, timeSignature: null, epoch: 1 });
+    vi.advanceTimersByTime(500);
+    expect(scheduled).toHaveLength(0);
+    expect(transport.getStatus()).toBe("playing");
+    expect(transport.getPlayheadBeat()).toBeCloseTo(8, 3);
+    advance(0.5); // one quarter note later
+    expect(transport.getPlayheadBeat()).toBeCloseTo(12, 3);
+
+    transport.stop();
+    transport.play();
+    expect(transport.getStatus()).toBe("playing"); // the host owns the transport
+    expect(transport.armResample()).toMatchObject({ ok: false });
+
+    transport.detachHost();
+    expect(transport.getStatus()).toBe("stopped");
+    vi.useRealTimers();
+  });
+});
