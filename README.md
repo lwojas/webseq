@@ -238,6 +238,15 @@ never fire in a browser, so standalone behaviour is unchanged.
 - **Moving a project between browser and plugin:** Export in one, Import in the other (`.webseq.json`, self-contained).
 - The plugin's build pipeline, protocol and day-to-day workflow live in webvst's `docs/ARCHITECTURE.md`.
 
+## Known limitation: Bluetooth audio on Android
+
+On Android Chrome, playback can become erratic (the playhead jumps around and the audio stutters) while a Bluetooth headset or
+speaker is the output. This is the device's audio route, not the app: Bluetooth adds large, variable buffering and the
+browser's audio clock stalls and catches up, and the playhead reads that clock. It disappears on the phone's speaker or wired
+headphones. Measured: the engine uses about 1% of its real-time budget, and desktop browsers with the main thread throttled
+20x show no playhead jumps. Raising the `AudioContext` latency hint (`"playback"`) is the usual mitigation for glitches in
+general, but it adds latency for everyone and has not been shown to help on Bluetooth, so it is not applied.
+
 ## Known gotchas (already fixed here — don't undo them)
 
 1. **Vite's dev server breaks `webdsp`'s worklet loading unless excluded from
