@@ -28,6 +28,9 @@ interface SyncTransport {
   getStatus(): "stopped" | "playing" | "paused";
   playAt(chainBeat: number, at: number, bpm: number): void;
   stop(): void;
+  /** Native mode only (see `native` below): the host plays the song itself; this transport just reports its position. */
+  attachHost?(t: HostTransport): void;
+  detachHost?(): void;
 }
 
 export interface HostSync {
@@ -40,11 +43,14 @@ export function createHostSync(opts: {
   runtime: SyncRuntime;
   /** The Transport, or null until it exists; events that arrive earlier are applied once it does. */
   getTransport: () => SyncTransport | null;
+  /** The host plays the song itself (capabilities.nativeSequence; audio/nativeSequence.ts), so nothing is scheduled from here: while the host
+   * plays, the transport only follows its position (for the playhead), and a host stop lets go. */
+  native?: boolean;
   /** Called whenever this follower started, retimed or stopped playback, with the host tempo it is
    * following (null once it let go), so UI state can refresh. */
   onChange: (followedBpm: number | null) => void;
 }): HostSync {
-  const { runtime, getTransport, onChange } = opts;
+  const { runtime, getTransport, onChange, native = false } = opts;
   let prev: HostTransport | null = null;
   let following = false;
   let followedBpm: number | null = null;
@@ -63,6 +69,26 @@ export function createHostSync(opts: {
     const last = prev;
     prev = t;
     const transport = getTransport();
+
+    if (native) {
+      if (!transport?.attachHost) {
+        pendingStart = t.playing;
+        return;
+      }
+      pendingStart = false;
+      if (t.playing) {
+        transport.attachHost(t); // every event refreshes the mapping the playhead reads
+        following = true;
+        followedBpm = t.bpm;
+        if (!last || !last.playing || last.bpm !== t.bpm) onChange(followedBpm);
+      } else if (following) {
+        transport.detachHost?.();
+        following = false;
+        followedBpm = null;
+        onChange(null);
+      }
+      return;
+    }
 
     if (!t.playing) {
       pendingStart = false;

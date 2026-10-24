@@ -20,12 +20,14 @@
 //
 // A user edit of the parameter's own control (a slider) while a lane drives it wins only until the
 // lane's next event.
-import { SampleParam, type AudioRuntime, type BusId, type ScheduledParam } from "webdsp";
+import { SampleParam, type AudioRuntime, type BusId, type ScheduledParam, type SequenceParamEvent } from "webdsp";
 import { valueAtBeat } from "../model/automation";
 import type { AutomationLane, FxTarget, Project, Track } from "../model/types";
 import { DEFAULT_ENVELOPE } from "../model/types";
 import { fxChainsFor } from "./fxChain";
 import { instrumentHostFor } from "./instruments";
+
+const BEATS_PER_QUARTER = 4; // a webseq beat is a sixteenth
 
 const ENVELOPE_PARAMS: Record<string, SampleParam> = {
   attack: SampleParam.EnvAttack,
@@ -226,6 +228,43 @@ export function scheduleAutomation(
     }
   }
   if (events.length > 0) runtime.scheduleParams(events);
+}
+
+/** Every lane's events for ONE step iteration of the queue, as native-sequence parameter events (webdsp Sequence): `stepStartBeats`
+ * and `stepBeats` are in webseq beats (sixteenths) from the start of the queue's cycle, and the events come out in quarter notes. The
+ * same lane contract as scheduleAutomation, so a host playing the sequence automates exactly as this scheduler would. Lanes whose
+ * target does not exist in the engine yet are left out (the sequence is sent again when it does). */
+export function automationSequenceEvents(
+  runtime: AudioRuntime,
+  project: Project,
+  getBusId: (target: FxTarget) => BusId | undefined,
+  stepStartBeats: number,
+  stepBeats: number,
+): SequenceParamEvent[] {
+  const state = stateFor(runtime);
+  const refs: LaneRef[] = [
+    ...lanesOf(runtime, project.master, "master", null, getBusId("master"), state),
+    ...project.tracks.flatMap((track) => lanesOf(runtime, track, track.id, track, getBusId(track.id), state)),
+  ];
+  const out: SequenceParamEvent[] = [];
+  for (const ref of refs) {
+    const resolved = ref.target();
+    if (!resolved) continue;
+    for (const e of laneEvents(ref.lane)) {
+      if (e.pos >= stepBeats) continue; // beyond the pattern's end: that pattern never plays it
+      for (const t of resolved.targets) {
+        out.push({
+          beat: (stepStartBeats + e.pos) / BEATS_PER_QUARTER,
+          kind: "param",
+          target: t.target,
+          param: t.param,
+          value: e.value,
+          ...(e.from !== undefined ? { from: e.from, rampBeats: (e.rampBeats ?? 0) / BEATS_PER_QUARTER } : {}),
+        });
+      }
+    }
+  }
+  return out;
 }
 
 /** Puts every automated parameter back to its project value. Called when playback halts (after

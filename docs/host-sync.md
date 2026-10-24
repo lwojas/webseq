@@ -17,3 +17,22 @@ browser nothing here runs: `runtime.onHostTransport` never fires. Contract: webd
   host start is not missed.
 - Known limits (v1): a tempo change restarts the schedule like `retime()` (notes already sounding are cut), and a host
   loop wrap resyncs after the fact rather than pre-scheduling across the loop point.
+
+## Native sequence (the host plays the song)
+
+A host that reports `capabilities.nativeSequence` (the WebSeq plugin) plays the song itself, so playback survives
+closing the plugin window and renders in an offline bounce. The page stays the editor. Contract: webdsp
+`docs/native-sequence.md`.
+
+- `audio/nativeSequence.ts` compiles one cycle of the pattern queue into a webdsp `Sequence` (quarter notes). It is not a
+  second compiler: every step goes through the same `compilePatternIterationTracked` / `compileInstrumentNotes` /
+  `simultaneousChokeLosers` the lookahead Transport uses, at a fixed 120 bpm (so seconds map exactly to quarter notes),
+  plus the automation lanes (`automationSequenceEvents`). Tempo is the DAW's, applied per block by the host.
+- `App.tsx` sends the sequence after a short pause on every change of the song, and again when the engine becomes
+  able to play more of it (a sample finished loading, an instrument was created). Only a changed result is sent.
+- `hostSync` (`native: true`) never calls `playAt`. While the host plays it hands `Transport.attachHost(t)` the newest
+  mapping (the playhead reads the position from it); a host stop calls `detachHost()`. While attached, Play/Pause/Stop
+  do nothing (the host owns the transport) and resample is refused. With the host stopped, Play works as in a browser.
+- Limits: the engine's tempo grid (tempo-aware synths such as Pulse) is the host's; track LFOs are evaluated on the
+  120 bpm reference clock; a project edit is heard from the next block after the (150 ms) send; reopening the window
+  starts a fresh engine and the sequence is sent again, so sound is cut for that moment.

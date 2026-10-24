@@ -13,6 +13,8 @@ import { buildEditPanelModel, trackLabel, type EditClipboard } from "./app/editM
 import { projectReducer } from "./model/reducer";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { createHostSync } from "./audio/hostSync";
+import { compileNativeSequence } from "./audio/nativeSequence";
+import { automationSequenceEvents } from "./audio/automation";
 import { attachPlainMidiInputs } from "./midi/dawNoteInput";
 import { routeForTrack } from "./audio/midiRoute";
 import { instrumentHostFor } from "./audio/instruments";
@@ -58,6 +60,11 @@ function releaseEngineSamples(rt: AudioRuntime): void {
 
 /** What the Edit panel gets while it isn't showing: shared empties, so nothing is allocated. */
 const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[] } = { clipboardRows: [], barTools: [] };
+
+/** How long the song must be unchanged before it is sent to a host that plays it natively. */
+const NATIVE_SEQUENCE_DEBOUNCE_MS = 150;
+/** How often a slow check looks for the engine having become ready to play more of the song. */
+const NATIVE_SEQUENCE_CHECK_MS = 500;
 
 export function App() {
   const { runtime, capabilities, error, init } = useAudioRuntime();
@@ -161,13 +168,14 @@ export function App() {
     const sync = createHostSync({
       runtime,
       getTransport: () => transportRef.current,
+      native: capabilities?.nativeSequence === true,
       onChange: (bpm) => {
         setStatus(transportRef.current?.getStatus() ?? "stopped");
         setFollowedBpm(bpm);
       },
     });
     return () => sync.dispose();
-  }, [runtime]);
+  }, [runtime, capabilities?.nativeSequence]);
 
   // Plain MIDI inputs (a keyboard; a plugin host's MIDI) play the selected track. A browser would ask permission
   // for MIDI on page load, so this listens only where the host provides its MIDI without asking.
@@ -218,6 +226,44 @@ export function App() {
     sentRouteRef.current = route;
     runtime.setMidiRoute(route);
   });
+
+  // A host that can play the song itself (capabilities.nativeSequence) is handed it as a Sequence (audio/nativeSequence.ts) and plays it against
+  // the DAW's transport, with this window open or closed and in an offline bounce. Every change of the song (or of what the engine has to play it
+  // with: a sample finishing loading, an instrument being created) sends the whole sequence again; the host swaps it in at a block boundary
+  // without cutting sounding notes. A short pause collects a drag or typing into one send, and a slow check catches engine-side readiness that
+  // no React state announces. It sends only when the result differs.
+  const sentSequenceRef = useRef<{ project: Project | null; ready: string; json: string }>({ project: null, ready: "", json: "" });
+  const pushSequence = useCallback(() => {
+    if (!runtime || !capabilities?.nativeSequence) return;
+    const current = projectRef.current;
+    const instruments = instrumentHostFor(runtime);
+    // What the engine can play right now; a change here is a reason to compile again even if the project is the same object.
+    const ready = current.tracks
+      .map((t) => `${runtime.getSample(t.assetId ?? -1) ? 1 : 0}${instruments.instrumentIdFor(t.id, 0) ?? "-"}${getBusId(t.id) ?? "-"}`)
+      .join(",");
+    const sent = sentSequenceRef.current;
+    if (sent.project === current && sent.ready === ready) return;
+    const sequence = compileNativeSequence(current, {
+      getBusId,
+      instrumentIdFor: (trackId, voice) => instruments.instrumentIdFor(trackId, voice),
+      hasSample: (id) => runtime.getSample(id) !== undefined,
+      automation: (start, beats) => automationSequenceEvents(runtime, current, getBusId, start, beats),
+    });
+    const json = JSON.stringify(sequence);
+    sentSequenceRef.current = { project: current, ready, json: json === sent.json ? sent.json : json };
+    if (json !== sent.json) runtime.setSequence(sequence);
+  }, [runtime, capabilities, getBusId]);
+  useEffect(() => {
+    if (!runtime || !capabilities?.nativeSequence) return;
+    sentSequenceRef.current = { project: null, ready: "", json: "" }; // a fresh runtime/engine has no sequence yet
+    const timer = setInterval(pushSequence, NATIVE_SEQUENCE_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [runtime, capabilities, pushSequence]);
+  useEffect(() => {
+    if (!runtime || !capabilities?.nativeSequence) return;
+    const timer = setTimeout(pushSequence, NATIVE_SEQUENCE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [runtime, capabilities, project, pushSequence]);
 
   // Manual voices whose track or asset changed under them (reassigned, removed) are released
   // here. Cheap: it scans at most one entry per track.
