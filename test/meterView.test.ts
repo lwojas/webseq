@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { METER_LED_DB, MeterTracker, emptyMeters } from "webdsp";
+import { MeterTracker, emptyMeters } from "webdsp";
 import { paintMeters, type ClassToggle } from "../src/audio/meterView";
 
 class FakeEl implements ClassToggle {
@@ -15,7 +15,6 @@ class FakeEl implements ClassToggle {
 
 function targets() {
   return {
-    leds: METER_LED_DB.map(() => new FakeEl()),
     masterClip: new FakeEl(),
     trackClips: [new FakeEl(), new FakeEl(), new FakeEl()].map((el, i) => ({ el, bus: i === 2 ? undefined : i + 1 })),
   };
@@ -29,16 +28,11 @@ function snapshot(masterIn: number, buses: Record<number, number> = {}) {
 }
 
 describe("paintMeters", () => {
-  it("lights master LEDs progressively and marks the top ones red", () => {
+  it("leaves the master strip unflagged for a quiet signal", () => {
     const t = new MeterTracker(64);
     const tg = targets();
     t.update(snapshot(0.1), 0);
     paintMeters(t, 0, tg);
-    const lit = tg.leds.filter((l) => l.has("lit")).length;
-    expect(lit).toBeGreaterThan(0);
-    expect(lit).toBeLessThan(METER_LED_DB.length - 3);
-    expect(tg.leds.slice(-3).every((l) => l.has("red"))).toBe(true);
-    expect(tg.leds[0].has("red")).toBe(false);
     expect(tg.masterClip.has("clipping")).toBe(false);
   });
 
@@ -49,7 +43,6 @@ describe("paintMeters", () => {
     paintMeters(t, 0, tg);
     expect(tg.trackClips.map((c) => (c.el as FakeEl).has("clip"))).toEqual([false, true, false]);
     expect(tg.masterClip.has("clipping")).toBe(true);
-    expect(tg.leds.every((l) => l.has("lit"))).toBe(true);
     t.update(snapshot(0), 1500);
     paintMeters(t, 1500, tg);
     expect((tg.trackClips[1].el as FakeEl).has("clip")).toBe(false);

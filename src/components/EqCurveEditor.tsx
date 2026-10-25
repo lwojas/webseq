@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EQ_MAX_HZ, EQ_MIN_HZ, eqBandResponseDb, eqBandUses, eqCurve } from "webdsp";
+import { useSpectrumCanvas, type SpectrumTap } from "../viz/useSpectrumCanvas";
 import { EQ_VIEW_DB, bandsFromParams, dbToY, freqToX, handleDb, widenedValue, widthParam, xToFreq, yToDb } from "../model/eqGeometry";
 
 const W = 640;
@@ -10,16 +11,29 @@ const BAND_COLORS = ["#29e0e0", "#f0a83c", "#9be36b", "#e07ab8"];
 const TYPE_NAMES = ["Bell", "Low shelf", "High shelf", "Low-pass", "High-pass", "Notch"];
 const GRID_HZ = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
+// Live input spectrum behind the curve: its own dB scale (dBFS), independent of the EQ's +-dB axis.
+const SPECTRUM_MIN_DB = -90;
+const SPECTRUM_MAX_DB = -10;
+
 interface Props {
   params: Record<string, number>;
+  /** Where to take the live spectrum from (the engine effect's input); omit for no spectrum. */
+  spectrumTap?: () => SpectrumTap | null;
+  /** Changes when the tapped effect changes, so the display re-attaches. */
+  spectrumKey?: string;
   onSetParam: (paramId: string, value: number) => void;
 }
 
 /** Interactive EQ: the response curve is the control surface. Drag a handle = frequency (x) and
  * gain (y); wheel or shift+vertical drag = Q (bell/notch) or slope (shelves); double-click =
  * enable/disable. Exact values for the selected band sit under the graph. */
-export function EqCurveEditor({ params, onSetParam }: Props) {
+export function EqCurveEditor({ params, onSetParam, spectrumTap, spectrumKey = "" }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const spectrumRef = useRef<HTMLCanvasElement>(null);
+  useSpectrumCanvas(spectrumRef, () => spectrumTap?.() ?? null, spectrumKey, {
+    width: W, height: H, minDb: SPECTRUM_MIN_DB, maxDb: SPECTRUM_MAX_DB,
+    fill: "rgba(160, 190, 220, 0.16)", stroke: "rgba(160, 190, 220, 0.5)",
+  });
   const [selected, setSelected] = useState(1);
   const wasOnAtFirstClick = useRef(false);
   const lastDown = useRef({ band: -1, at: 0 });
@@ -96,6 +110,8 @@ export function EqCurveEditor({ params, onSetParam }: Props) {
   return (
     <div className="eq-editor">
       <div className="eq-main">
+      <div className="eq-graph-wrap">
+      <canvas ref={spectrumRef} className="eq-spectrum" aria-hidden="true" />
       <svg ref={svgRef} className="eq-graph" viewBox={`0 0 ${W} ${H}`} role="group" aria-label="EQ frequency response" onPointerMove={onMove} onPointerUp={onUp}>
         {[-12, -6, 0, 6, 12].map((db) => (
           <g key={db}>
@@ -135,6 +151,7 @@ export function EqCurveEditor({ params, onSetParam }: Props) {
           <text key={`n${i}`} className="eq-handle-num" x={freqToX(b.frequency, W)} y={dbToY(handleDb(b), H) + 3.5}>{i + 1}</text>
         ))}
       </svg>
+      </div>
       <div className="eq-hint">Drag a handle: frequency / gain. Wheel or shift-drag: Q / slope. Double-click: on/off. Range +-{EQ_VIEW_DB} dB, {EQ_MIN_HZ} Hz to {EQ_MAX_HZ / 1000} kHz.</div>
       </div>
       <div className="eq-band-panel" style={{ borderColor: BAND_COLORS[selected] }}>

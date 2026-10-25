@@ -1,6 +1,7 @@
 import { FX_DEFS } from "../model/fx";
 import type { FxInstance } from "../model/types";
 import { EqCurveEditor } from "./EqCurveEditor";
+import type { SpectrumTap } from "../viz/useSpectrumCanvas";
 import { ModBadge } from "./ModulationSlot";
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   badges: Record<string, { auto: boolean; lfos: number }>;
   /** Clicking a parameter's name automates it: adds a lane if there is none, else opens it. */
   onAutomateParam: (paramId: string) => void;
+  /** Live-spectrum source for an EQ (the engine effect's input), or undefined without an engine. */
+  spectrumTap?: () => SpectrumTap | null;
   /** The modulation card (automation + LFOs) for this FX, rendered below its parameters. */
   children?: React.ReactNode;
 }
@@ -19,7 +22,7 @@ interface Props {
  * it's rendering a filter vs. a delay specifically, so a future third FX type needs no new UI
  * code here, only an FX_DEFS entry and an audio/applyFx.ts case. Clicking a parameter's label
  * selects it as the one whose automation is shown in the lane below (see AutomationLane). */
-export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomateParam, children }: Props) {
+export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomateParam, spectrumTap, children }: Props) {
   const def = FX_DEFS[fx.type];
 
   const paramsBlock = (
@@ -74,7 +77,7 @@ export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomatePa
           {fx.enabled ? "On" : "Bypassed"}
         </button>
       </div>
-      {fx.type === "eq" && <EqCurveEditor params={fx.params} onSetParam={onSetParam} />}
+      {fx.type === "eq" && <EqCurveEditor params={fx.params} onSetParam={onSetParam} spectrumTap={spectrumTap} spectrumKey={fx.id} />}
       {fx.type === "eq" ? (
         <details className="eq-all-params">
           <summary>All parameters (click a name to automate)</summary>

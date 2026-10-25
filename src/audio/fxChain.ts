@@ -117,6 +117,11 @@ export class FxChainSync {
 
   constructor(private readonly runtime: AudioRuntime) {}
 
+  /** The engine's id for a project FX on `busId`, or undefined before sync has created it. */
+  engineIdOf(busId: BusId, fxId: FxId): EffectId | undefined {
+    return this.chains.get(busId)?.effects.get(fxId)?.engineId;
+  }
+
   /** Brings the engine chain on `busId` in line with `fx`. */
   sync(busId: BusId, fx: FxInstance[]): void {
     let chain = this.chains.get(busId);

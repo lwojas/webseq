@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { METER_LED_DB, type AudioRuntime, type BusId } from "webdsp";
+import { type AudioRuntime, type BusId } from "webdsp";
 import { useMixerMeters } from "../audio/useMixerMeters";
 import { MAX_TRACK_VOLUME, MIN_TRACK_VOLUME } from "../model/project";
 import type { FxTarget, Track, TrackId } from "../model/types";
@@ -112,10 +112,7 @@ export function MixerPanel({ tracks, trackNumberOffset, onSetVolume, onSetMuted,
         <span className="mixer-strip-num">OUT</span>
         <span className="mixer-strip-name">Master</span>
         <div className="mixer-meter" role="img" aria-label="Master level">
-          {/* Highest LED first, so the danger region sits on top like a level meter. */}
-          {METER_LED_DB.map((db, i) => (
-            <span key={db} className="mixer-led" data-meter-led title={`${db} dBFS`} style={{ order: METER_LED_DB.length - i }} />
-          ))}
+          <canvas className="mixer-meter-canvas" data-meter-canvas />
         </div>
         <button
           className={`btn small mixer-limiter ${limiterOn ? "active" : ""}`}

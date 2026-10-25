@@ -2309,35 +2309,20 @@ select {
   color: var(--text);
 }
 
+/* The master level is a canvas bar (viz/levelMeterView.ts) on the same dB scale as the EQ spectrum;
+   colours are read from --border / --accent / --danger. */
 .mixer-meter {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
-  justify-content: space-evenly;
-  align-items: center;
+  justify-content: center;
   padding: 2px 0;
 }
 
-.mixer-led {
-  flex-shrink: 0;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--border);
-}
-
-.mixer-led.lit {
-  background: var(--accent);
-}
-
-.mixer-led.red {
-  background: color-mix(in srgb, var(--danger) 25%, var(--border));
-}
-
-.mixer-led.red.lit {
-  background: var(--danger);
-  box-shadow: 0 0 5px var(--danger);
+.mixer-meter-canvas {
+  width: 14px;
+  height: 100%;
+  border-radius: 2px;
 }
 
 /* Instrument tab (reuses .fx-panel / .module-* above). */
@@ -3831,11 +3816,29 @@ option.out-of-scale {
   gap: 4px;
 }
 
-.eq-graph {
-  width: 100%;
+/* The live spectrum canvas sits behind the SVG (same aspect ratio as its viewBox) and never takes pointer
+ * events, so handle dragging is unaffected. */
+.eq-graph-wrap {
+  position: relative;
+  aspect-ratio: 640 / 190;
   background: var(--bg);
   border: 1px solid var(--border-strong);
   border-radius: 4px;
+}
+
+.eq-spectrum {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.eq-graph {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   touch-action: none;
   user-select: none;
 }

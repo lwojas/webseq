@@ -3,7 +3,7 @@ import { getHostState, hasEmbeddedHost, sameMidiRoute, type AudioRuntime, type M
 import { forgetPeaks } from "./audio/peaks";
 import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
-import { FX_KIND } from "./audio/fxChain";
+import { FX_KIND, fxChainsFor } from "./audio/fxChain";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, GRID_RESOLUTIONS, type CopiedNote, type GridResolution } from "./model/notes";
@@ -755,6 +755,18 @@ export function App() {
   // --- FX / automation handlers ---
   const handleAddFx = useCallback((type: FxType) => dispatch({ type: "ADD_FX", target: selectedTarget, fxType: type }), [selectedTarget]);
   const handleRemoveFx = useCallback((fxId: FxId) => dispatch({ type: "REMOVE_FX", target: selectedTarget, fxId }), [selectedTarget]);
+  // Live spectrum of an FX's input for the EQ editor. Polled by the display until the FX sync has
+  // created the engine effect; null without an engine.
+  const spectrumTapFor = useCallback(
+    (fxId: FxId) => {
+      const bus = getBusId(selectedTarget);
+      if (!runtime || bus === undefined) return null;
+      const effect = fxChainsFor(runtime).engineIdOf(bus, fxId);
+      return effect === undefined ? null : { source: runtime, bus, effect };
+    },
+    [runtime, getBusId, selectedTarget],
+  );
+
   const handleSetFxParam = useCallback(
     (fxId: FxId, paramId: string, value: number) => dispatch({ type: "SET_FX_PARAM", target: selectedTarget, fxId, paramId, value }),
     [selectedTarget],
@@ -1564,6 +1576,7 @@ export function App() {
             onAddFxLfo: handleAddFxLfo,
             onSetFxLfo: handleSetFxLfo,
             onRemoveFxLfo: handleRemoveFxLfo,
+            spectrumTapFor,
           },
           instrument: instrumentProps,
           editor: {

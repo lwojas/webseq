@@ -4,6 +4,7 @@ import { resolvedOutput, resolvedSend } from "../model/types";
 import { canRouteTo } from "../model/project";
 import { FxChainStrip } from "./FxChainStrip";
 import { ModulePanel } from "./ModulePanel";
+import type { SpectrumTap } from "../viz/useSpectrumCanvas";
 import { ModulationSlot, modulationBadges, type AutomationUi, type ModulationUi } from "./ModulationSlot";
 
 interface Props {
@@ -30,6 +31,8 @@ interface Props {
   onAddFxLfo: (fxId: FxId, param: string) => void;
   onSetFxLfo: (fxId: FxId, index: number, patch: Partial<TrackLfo>) => void;
   onRemoveFxLfo: (fxId: FxId, index: number) => void;
+  /** Live-spectrum source for an FX (its engine effect input), or null without an engine. */
+  spectrumTapFor?: (fxId: FxId) => SpectrumTap | null;
 }
 
 /** The bottom module panel, contextual to whatever is currently selected in the timeline — a
@@ -56,6 +59,7 @@ export function FxPanel({
   onAddFxLfo,
   onSetFxLfo,
   onRemoveFxLfo,
+  spectrumTapFor,
 }: Props) {
   const selectedFx = fx.find((f) => f.id === selectedFxId) ?? null;
   const title = target === "master" ? "MASTER" : `${track?.name ?? target}`;
@@ -76,6 +80,7 @@ export function FxPanel({
             onSetEnabled={(enabled) => onSetFxEnabled(selectedFx.id, enabled)}
             badges={modulationBadges(automation?.lanes ?? [], selectedFx.lfos ?? [])}
             onAutomateParam={(paramId) => automation?.onAdd(paramId)}
+            spectrumTap={spectrumTapFor ? () => spectrumTapFor(selectedFx.id) : undefined}
           >
             <ModulationSlot
               lfos={selectedFx.lfos ?? []}
