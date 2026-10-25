@@ -1,17 +1,13 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MAX_BPM, MAX_SWING, MIN_BPM, MIN_SWING } from "../model/project";
-import { GRID_RESOLUTIONS, type GridResolution } from "../model/notes";
+import type { GridResolution } from "../model/notes";
 import type { PlaybackStatus, ResampleStatus } from "../audio/transport";
 import { useRafText } from "../hooks/useRafText";
-import type { ProjectScale } from "../model/scale";
+import { formatScale, type ProjectScale } from "../model/scale";
 import { ScaleControl } from "./ScaleControl";
+import { GridZoomControls } from "./GridZoomControls";
 
 export type ResamplePhase = "idle" | "pending" | "processing" | "complete" | "error";
-
-/** Label for a toolbar grid-resolution option, e.g. 1 -> "1", 0.25 -> "1/4". */
-function gridResolutionLabel(resolution: GridResolution): string {
-  return resolution === 1 ? "1" : `1/${Math.round(1 / resolution)}`;
-}
 
 interface Props {
   status: PlaybackStatus;
@@ -30,8 +26,7 @@ interface Props {
   onBpmChange: (bpm: number) => void;
   onSwingChange: (swing: number) => void;
   onGridResolutionChange: (resolution: GridResolution) => void;
-  /** Current timeline zoom, as a percentage of the default zoom level (100% = default) — see
-   * useTimelineZoom (ECS-53). */
+  /** Timeline zoom (see GridZoomControls). */
   zoomPercent: number;
   canZoomIn: boolean;
   canZoomOut: boolean;
@@ -46,9 +41,10 @@ interface Props {
    * Transport.getResampleStatus() each frame the same way getPositionText already reads the
    * playhead, so this reflects the actual engine-armed state, not just "a click happened". */
   getResampleLabel: () => ResampleStatus;
-  /** "bar" (default): the desktop transport row, play buttons first. "settings": the phone's ⋯
-   * Settings view — only the tempo/swing/grid/zoom/resample fields, no play buttons (the phone
-   * top bar owns play/stop) and no position readout. */
+  /** "bar" (default): the desktop transport row, play buttons first; scale lives in a contextual
+   * menu and grid/zoom in the pattern strip. "settings": the phone's ⋯ Settings view — the
+   * tempo/swing/scale/grid/zoom/resample fields inline, no play buttons (the phone top bar owns
+   * play/stop) and no position readout. */
   variant?: "bar" | "settings";
 }
 
@@ -85,22 +81,30 @@ export function TransportBar({
   const getResampleText = useCallback(() => getResampleLabel().toUpperCase(), [getResampleLabel]);
   const resampleLiveRef = useRafText(getResampleText);
   const bpm = followedBpm ?? projectBpm;
+  const [scaleOpen, setScaleOpen] = useState(false);
+  useEffect(() => {
+    if (!scaleOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setScaleOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [scaleOpen]);
   const bpmDisabled = resamplePhase === "pending" || resamplePhase === "processing" || followedBpm !== null;
 
   return (
     <div className={`transport ${variant === "settings" ? "transport-settings" : ""}`}>
       {variant === "bar" && (
-      <div className="transport-buttons">
-        <button className={`btn ${status === "playing" ? "active" : ""}`} onClick={onPlay}>
-          ▶ Play
-        </button>
-        <button className={`btn ${status === "paused" ? "active" : ""}`} onClick={onPause}>
-          ❙❙ Pause
-        </button>
-        <button className={`btn danger ${status === "stopped" ? "active" : ""}`} onClick={onStop}>
-          ■ Stop
-        </button>
-      </div>
+        <div className="transport-buttons">
+          <button
+            className={`btn transport-play ${status === "playing" ? "active" : ""}`}
+            onClick={status === "playing" ? onPause : onPlay}
+            title={status === "playing" ? "Pause  [Space stops]" : status === "paused" ? "Resume" : "Play  [Space]"}
+          >
+            {status === "playing" ? "❙❙ Pause" : "▶ Play"}
+          </button>
+          <button className="btn danger" onClick={onStop} disabled={status === "stopped"} title="Stop and return to the start">
+            ■ Stop
+          </button>
+        </div>
       )}
 
       <div className="field">
@@ -136,33 +140,49 @@ export function TransportBar({
         <span>{Math.round(swing * 100)}%</span>
       </div>
 
-      <div className="field">
-        <span>Grid</span>
-        <select
-          value={gridResolution}
-          onChange={(e) => onGridResolutionChange(Number(e.target.value) as GridResolution)}
-          title="Musical grid resolution drag/resize snaps to — hold Alt/Option while dragging to override"
-        >
-          {GRID_RESOLUTIONS.map((resolution) => (
-            <option key={resolution} value={resolution}>
-              {gridResolutionLabel(resolution)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <ScaleControl scale={scale} onChange={onScaleChange} onOpenGuide={onOpenGuide} />
-
-      <div className="field zoom-control">
-        <span>Zoom</span>
-        <button className="btn small" onClick={onZoomOut} disabled={!canZoomOut} aria-label="Zoom out" title="Zoom out">
-          −
-        </button>
-        <span className="zoom-level">{zoomPercent}%</span>
-        <button className="btn small" onClick={onZoomIn} disabled={!canZoomIn} aria-label="Zoom in" title="Zoom in">
-          +
-        </button>
-      </div>
+      {variant === "bar" ? (
+        <div className="scale-menu">
+          <button
+            className={`btn ${scaleOpen ? "active" : ""}`}
+            onClick={() => setScaleOpen(!scaleOpen)}
+            aria-expanded={scaleOpen}
+            title={`Key: ${formatScale(scale)} — open the scale controls`}
+          >
+            Scales · {formatScale(scale)}
+          </button>
+          {scaleOpen && (
+            <div className="transport-popover" role="dialog" aria-label="Scales">
+              <div className="transport-popover-head">
+                <span className="transport-popover-title">Scales</span>
+                <button className="transport-popover-close" onClick={() => setScaleOpen(false)} aria-label="Close scales menu">
+                  ✕
+                </button>
+              </div>
+              <ScaleControl
+                scale={scale}
+                onChange={onScaleChange}
+                onOpenGuide={() => {
+                  setScaleOpen(false);
+                  onOpenGuide();
+                }}
+              />
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          <ScaleControl scale={scale} onChange={onScaleChange} onOpenGuide={onOpenGuide} />
+          <GridZoomControls
+            gridResolution={gridResolution}
+            onGridResolutionChange={onGridResolutionChange}
+            zoomPercent={zoomPercent}
+            canZoomIn={canZoomIn}
+            canZoomOut={canZoomOut}
+            onZoomIn={onZoomIn}
+            onZoomOut={onZoomOut}
+          />
+        </>
+      )}
 
       {variant === "bar" && <span className="position-readout" ref={positionRef} />}
 

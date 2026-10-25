@@ -151,6 +151,7 @@ select {
 /* --- transport --- */
 
 .transport {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px 16px;
@@ -281,6 +282,59 @@ select {
   color: var(--danger);
 }
 
+/* Scales menu: a button on the transport row that opens a dismissable popover over the pattern
+   strip beneath it. */
+.scale-menu {
+  position: relative;
+}
+
+.transport-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 280px;
+  padding: 8px 12px 12px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.transport-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.transport-popover-title {
+  color: var(--text-dim);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.transport-popover-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.transport-popover-close:hover {
+  color: var(--text);
+}
+
+.transport-play {
+  min-width: 7.5em;
+}
+
 /* --- pattern strip + picker --- */
 
 /* ONE fixed-height row, whatever the pattern count: it holds only what sequencing needs (step,
@@ -374,6 +428,15 @@ select {
 /* The pattern being edited, renamed in place. */
 .pattern-strip-input {
   width: 12em;
+}
+
+/* Grid / zoom: pushed to the far right so they read as view controls, apart from the pattern ones. */
+.pattern-strip-view {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
 }
 
 .pattern-strip-divider {
@@ -1582,7 +1645,9 @@ select {
    bounded box, so it never grows to push the sequencer around and never scrolls with it.
    Whichever tab is active (.fx-panel / .mixer-panel) owns the scrolling within this box. */
 .bottom-panel {
-  height: 276px;
+  /* ~46vh shows the first 8 track strips/rows clearly with more below the fold; the floor keeps
+     it useful on short laptop screens, and it keeps growing on taller ones. */
+  height: max(300px, 46vh);
   contain: layout paint;
   flex-shrink: 0;
   display: flex;
@@ -1636,7 +1701,24 @@ select {
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: 0.08em;
-  margin-bottom: 8px;
+}
+
+/* Top row of the FX / Instrument tabs: the panel title on the left, the track-level controls
+   (Output / FX send, Source / Choke group) on the right. */
+.fx-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 10px;
+}
+
+.fx-panel-head-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
 }
 
 .fx-panel-empty {
@@ -1819,11 +1901,11 @@ select {
   gap: 12px;
 }
 
+/* A section of the bottom panel, divided from the one above by a rule (like .mod-slot) rather than
+   boxed in a card, so it doesn't double the panel's own padding. */
 .module-panel {
-  background: var(--panel-alt);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  padding: 10px 14px;
+  border-top: 1px solid var(--border-strong);
+  padding-top: 10px;
   width: 100%;
 }
 
@@ -2134,7 +2216,10 @@ select {
   --fader-thumb-h: 14px;
   --fader-fill: 0%; /* set inline from the value by MixerPanel */
 
-  width: min(130px, calc(100cqh - 4px));
+  /* Fills the strip's height, so a taller dock gives a longer fader. */
+  width: min(400px, calc(100cqh - 4px));
+  /* A flex item in a narrower wrapper would otherwise shrink back to the input's ~129px default. */
+  flex-shrink: 0;
   height: var(--fader-thumb-h);
   margin: 0;
   transform: rotate(-90deg);
@@ -2701,6 +2786,10 @@ select {
     padding: 9px 12px;
   }
 
+  .transport-popover-close {
+    padding: 10px 12px;
+  }
+
   .automation-row-close {
     min-width: 36px;
     min-height: 36px;
@@ -2861,10 +2950,8 @@ select {
 
 .track-lfo {
   margin-bottom: 12px;
-  padding: 8px 10px;
-  background: var(--panel-alt);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-strong);
 }
 
 .track-lfo-head {

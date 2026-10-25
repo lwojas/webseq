@@ -1,6 +1,7 @@
 import type { Pattern, PatternId } from "../model/types";
 import { MAX_PATTERN_BARS } from "../model/notes";
 import { RafText } from "./RafText";
+import { GridZoomControls, type GridZoomProps } from "./GridZoomControls";
 
 interface StepperProps {
   bars: number;
@@ -24,7 +25,7 @@ export function BarsStepper({ bars, onSetBars }: StepperProps) {
   );
 }
 
-interface Props {
+interface Props extends GridZoomProps {
   patterns: Pattern[];
   /** The pattern open in the timeline (what you are editing). */
   selectedPatternId: PatternId;
@@ -57,6 +58,7 @@ export function PatternStrip({
   onAddPattern,
   onEditPlaying,
   getPlayingBarText,
+  ...gridZoom
 }: Props) {
   const index = patterns.findIndex((p) => p.id === selectedPatternId);
   const selected = patterns[index] ?? patterns[0];
@@ -113,6 +115,10 @@ export function PatternStrip({
           Edit this
         </button>
       )}
+
+      <div className="pattern-strip-view">
+        <GridZoomControls {...gridZoom} />
+      </div>
     </div>
   );
 }

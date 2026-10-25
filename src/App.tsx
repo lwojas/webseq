@@ -1464,6 +1464,13 @@ export function App() {
           onAddPattern: addPattern,
           onEditPlaying: () => playingPatternId && setSelectedPatternId(playingPatternId),
           getPlayingBarText,
+          gridResolution,
+          onGridResolutionChange: setGridResolution,
+          zoomPercent,
+          canZoomIn,
+          canZoomOut,
+          onZoomIn,
+          onZoomOut,
         }}
         mobileTopBar={{
           status,

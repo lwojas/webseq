@@ -68,8 +68,10 @@ export function FxPanel({
 
   return (
     <div className="fx-panel">
-      <div className="fx-panel-title">{title} — FX CHAIN</div>
-      {track && <RoutingRow track={track} tracks={tracks} onSetOutput={onSetOutput} onSetSend={onSetSend} />}
+      <div className="fx-panel-head">
+        <div className="fx-panel-title">{title} — FX CHAIN</div>
+        {track && <RoutingRow track={track} tracks={tracks} onSetOutput={onSetOutput} onSetSend={onSetSend} />}
+      </div>
       <FxChainStrip fx={fx} selectedFxId={selectedFxId} onSelectFx={onSelectFx} onAddFx={onAddFx} onRemoveFx={onRemoveFx} onMoveFx={onMoveFx} />
 
       {selectedFx && def && (
@@ -110,7 +112,7 @@ function RoutingRow({ track, tracks, onSetOutput, onSetSend }: { track: Track; t
   const send = resolvedSend(project, track);
   const incoming = tracks.filter((t) => t.id !== track.id && (resolvedOutput(project, t) === track.id || resolvedSend(project, t)?.to === track.id)).length;
   return (
-    <div className="track-mode-row">
+    <div className="fx-panel-head-controls">
       <label className="track-mode-group">
         <span className="track-mode-label">Output</span>
         <select
