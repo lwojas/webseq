@@ -1,4 +1,4 @@
-// Pushes the project's mixer, FX chains, synth instruments and sample envelopes onto the engine.
+// Pushes the project's mixer, FX chains, synth instruments and sample envelopes/gains onto the engine.
 // This is the one place that decides what the engine looks like for a given Project; App.tsx
 // calls it on every project change, so each piece below is incremental and idempotent.
 //
@@ -6,10 +6,10 @@
 // webdsp's Bus::isDormant), so an unused track costs nothing per audio block. FX are created
 // only for chains that contain FX (FxChainSync.sync is a no-op for an empty chain on an
 // untouched bus), and volume/pan don't end dormancy, so they go to every track.
-import { MASTER_BUS, NodeParam, type AudioRuntime, type BusId } from "webdsp";
+import { MASTER_BUS, NodeParam, SampleParam, type AudioRuntime, type BusId } from "webdsp";
 import { resolvedOutput, resolvedSend, type Project } from "../model/types";
 import { assetLengthFrames, cueRegions } from "../model/chop";
-import { DEFAULT_ENVELOPE } from "../model/types";
+import { DEFAULT_ENVELOPE, DEFAULT_SOURCE_GAIN_DB, dbToLinear, effectiveAssetGain } from "../model/types";
 import type { TrackBusMap } from "./buses";
 import { fxChainsFor } from "./fxChain";
 import { instrumentHostFor } from "./instruments";
@@ -32,6 +32,25 @@ function syncSampleEnvelopes(runtime: AudioRuntime, project: Project): void {
     if ((pushed.get(asset.id) ?? defaultKey) === key) continue;
     pushed.set(asset.id, key);
     runtime.setSampleEnvelope(asset.id, envelope);
+  }
+}
+
+// Last source gain (dB) pushed per asset, per runtime, like the envelopes above. The engine's
+// per-sample gain (SampleParam.Gain) is linear and applied to the sample before it reaches its
+// bus, i.e. before the track's FX chain and fader; an unseen asset is at the engine default (0 dB).
+const pushedGains = new WeakMap<AudioRuntime, Map<number, number>>();
+
+function syncSampleGains(runtime: AudioRuntime, project: Project): void {
+  let pushed = pushedGains.get(runtime);
+  if (!pushed) {
+    pushed = new Map();
+    pushedGains.set(runtime, pushed);
+  }
+  for (const asset of project.assets) {
+    const db = effectiveAssetGain(asset);
+    if ((pushed.get(asset.id) ?? DEFAULT_SOURCE_GAIN_DB) === db) continue;
+    pushed.set(asset.id, db);
+    runtime.setSampleParameter(asset.id, SampleParam.Gain, dbToLinear(db));
   }
 }
 
@@ -107,5 +126,6 @@ export function syncBuses(runtime: AudioRuntime, project: Project, buses: TrackB
   syncRoutes(runtime, project, buses);
   instrumentHostFor(runtime).sync(project, buses);
   syncSampleEnvelopes(runtime, project);
+  syncSampleGains(runtime, project);
   syncSampleRegions(runtime, project);
 }

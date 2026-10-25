@@ -11,6 +11,7 @@
 // never both; the setters here and project.ts's assignAsset keep that exclusive.
 
 import { MAX_TRACK_LFOS, withLfoAdded, withLfoPatched, withLfoRemoved } from "./lfoStack";
+import { DEFAULT_SOURCE_GAIN_DB, SOURCE_GAIN_MAX_DB, SOURCE_GAIN_MIN_DB } from "./types";
 import type { InstrumentKindId, Project, Track, TrackId, TrackInstrument, TrackLfo } from "./types";
 
 export interface InstrumentParamDef {
@@ -449,6 +450,21 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
     ],
   },
 };
+
+// Source gain: webdsp gives every instrument kind a shared "gain" control (dB, default 0 = unity)
+// applied to its output before it reaches the track's bus — before the FX chain and the mixer fader.
+// It is the first control of every kind here, so it renders, automates and pushes like any other
+// (addressed by name; src/audio/instruments.ts). Samples have the same stage via Asset.gain.
+export const SOURCE_GAIN_PARAM: InstrumentParamDef = {
+  id: "gain",
+  label: "Gain",
+  min: SOURCE_GAIN_MIN_DB,
+  max: SOURCE_GAIN_MAX_DB,
+  step: 0.1,
+  unit: "dB",
+  default: DEFAULT_SOURCE_GAIN_DB,
+};
+for (const def of Object.values(INSTRUMENT_DEFS)) def.params.unshift(SOURCE_GAIN_PARAM);
 
 export const INSTRUMENT_KINDS = Object.keys(INSTRUMENT_DEFS) as InstrumentKindId[];
 

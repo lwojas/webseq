@@ -2,7 +2,7 @@ import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/in
 import { ModBadge, ModulationSlot, modulationBadges, type AutomationUi, type ModulationUi } from "./ModulationSlot";
 import { ChopEditor } from "./ChopEditor";
 import { effectiveSampleMode } from "../model/chop";
-import { DEFAULT_ENVELOPE, effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import { DEFAULT_ENVELOPE, SOURCE_GAIN_MAX_DB, SOURCE_GAIN_MIN_DB, effectiveAssetGain, effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
 import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackLfo, VoiceMode } from "../model/types";
 
 interface Props {
@@ -21,6 +21,8 @@ interface Props {
   onSetLfo: (trackId: string, index: number, patch: Partial<TrackLfo>) => void;
   onRemoveLfo: (trackId: string, index: number) => void;
   onSetEnvelope: (assetId: number, envelope: Partial<SampleEnvelope>) => void;
+  /** Source gain of a sample in dB (Asset.gain) — before the track's FX and the mixer fader. */
+  onSetGain: (assetId: number, gainDb: number) => void;
   /** Automation of the track's source parameters (synth controls, or a sample's envelope / pitch),
    * or undefined before there is anything to automate. */
   automation?: AutomationUi;
@@ -54,7 +56,8 @@ interface SliderProps {
   onAutomate?: () => void;
 }
 
-function formatValue(value: number): string {
+function formatValue(value: number, unit?: string): string {
+  if (unit?.trim() === "dB") return value.toFixed(1);  // gain reads "0.0 dB"
   return Math.abs(value) < 10 ? value.toFixed(2) : String(Math.round(value));
 }
 
@@ -72,7 +75,7 @@ function Slider({ label, min, max, step, value, unit, onChange, badge, onAutomat
       <div className="range-row">
         <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label} />
         <span className="value">
-          {formatValue(value)}
+          {formatValue(value, unit)}
           {unit ?? ""}
         </span>
       </div>
@@ -113,6 +116,7 @@ export function InstrumentPanel({
   onSetLfo,
   onRemoveLfo,
   onSetEnvelope,
+  onSetGain,
   automation,
   onSetPlaybackMode,
   onSetVoiceMode,
@@ -298,6 +302,15 @@ export function InstrumentPanel({
               </button>
             </div>
             <div className="module-params">
+              <Slider
+                label="Gain"
+                min={SOURCE_GAIN_MIN_DB}
+                max={SOURCE_GAIN_MAX_DB}
+                step={0.1}
+                unit=" dB"
+                value={effectiveAssetGain(asset)}
+                onChange={(v) => onSetGain(asset.id, v)}
+              />
               {ENVELOPE_FIELDS.map((f) => (
                 <Slider
                   key={f.id}
@@ -315,7 +328,7 @@ export function InstrumentPanel({
             </div>
             <ModulationSlot lfos={[]} ui={null} labelFor={(id) => id} onAdd={() => {}} onChange={() => {}} onRemove={() => {}} automation={automation} />
             {assetUseCount > 1 && (
-              <div className="instrument-hint">The envelope belongs to the sample, so it applies on all {assetUseCount} tracks that play it.</div>
+              <div className="instrument-hint">The gain and envelope belong to the sample, so they apply on all {assetUseCount} tracks that play it.</div>
             )}
           </div>
         )}

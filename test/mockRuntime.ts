@@ -118,10 +118,12 @@ export function mockRuntime() {
     })),
     getInstrumentParams: vi.fn((kind: InstrumentKind) => {
       const id = KIND_IDS.find(([, k]) => k === kind)![0];
-      return INSTRUMENT_PARAM_NAMES[id].map((name, i) => ({
+      const own = INSTRUMENT_PARAM_NAMES[id].map((name, i) => ({
         id: i, name, min: 0, max: 1, default: 0, unit: "",
         modulation: MODULATABLE.has(`${id}.${name}`) ? "linear" : "none",
       }));
+      // The engine's shared source gain: the last row of every kind, id 1000, dB, not an LFO target.
+      return [...own, { id: 1000, name: "gain", min: -24, max: 12, default: 0, unit: "dB", modulation: "none" }];
     }),
     getModulationInfo: vi.fn(() => MODULATION_INFO),
     getModulationTargets: vi.fn((kind: InstrumentKind) => {

@@ -839,6 +839,10 @@ export function App() {
     (assetId: AssetId, envelope: Partial<SampleEnvelope>) => dispatch({ type: "SET_ASSET_ENVELOPE", assetId, envelope }),
     [],
   );
+  const handleSetAssetGain = useCallback(
+    (assetId: AssetId, gain: number) => dispatch({ type: "SET_ASSET_GAIN", assetId, gain }),
+    [],
+  );
   const handleSetNotePitch = useCallback(
     (noteId: NoteId, pitch: number) => dispatch({ type: "SET_NOTE_PITCH", patternId: selectedPatternId, noteId, pitch }),
     [selectedPatternId],
@@ -1377,6 +1381,7 @@ export function App() {
     onSetLfo: handleSetLfo,
     onRemoveLfo: handleRemoveLfo,
     onSetEnvelope: handleSetEnvelope,
+    onSetGain: handleSetAssetGain,
     automation: automationFor(null),
     onSetPlaybackMode: handleSetTrackPlaybackMode,
     onSetVoiceMode: handleSetTrackVoiceMode,

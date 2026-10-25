@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { EffectKind, MASTER_BUS, NodeParam } from "webdsp";
+import { EffectKind, MASTER_BUS, NodeParam, SampleParam } from "webdsp";
 import { syncBuses } from "../src/audio/busSync";
 import { fxChainsFor } from "../src/audio/fxChain";
 import { createInitialProject } from "../src/model/project";
 import { addFx, moveFx, removeFx, setFxEnabled, setFxParam } from "../src/model/fx";
-import { setAssetEnvelope, setTrackPan } from "../src/model/project";
+import { setAssetEnvelope, setAssetGain, setTrackPan } from "../src/model/project";
 import { mockRuntime } from "./mockRuntime";
 
 const buses = Object.fromEntries(Array.from({ length: 64 }, (_, i) => [`track-${i + 1}`, i + 1]));
@@ -148,5 +148,37 @@ describe("syncBuses", () => {
     syncBuses(runtime, project, buses);
     syncBuses(runtime, project, buses);
     expect(calls.setSampleEnvelope).toEqual([[8, { attack: 0.2, decay: 0, sustain: 1, release: 0.5 }]]);
+  });
+
+  it("pushes a sample's source gain as linear SampleParam.Gain only when it leaves 0 dB, and never touches the fader", () => {
+    const { runtime, calls, raw } = mockRuntime();
+    let project = createInitialProject();
+    project = {
+      ...project,
+      assets: [{ id: 7, name: "a", type: "audio", duration: 1, sampleRate: 48000, channels: 1, origin: "import" }],
+    };
+    syncBuses(runtime, project, buses);
+    expect(calls.setSampleParameter.filter(([, p]) => p === SampleParam.Gain)).toHaveLength(0);  // 0 dB: nothing sent
+
+    project = setAssetGain(project, 7, -6);
+    syncBuses(runtime, project, buses);
+    syncBuses(runtime, project, buses);
+    const sent = calls.setSampleParameter.filter(([, p]) => p === SampleParam.Gain);
+    expect(sent).toHaveLength(1);
+    expect(sent[0][0]).toBe(7);
+    expect(sent[0][2]).toBeCloseTo(0.501187, 5);
+    expect(raw.setNodeParameter).not.toHaveBeenCalledWith(expect.anything(), NodeParam.BusGain, 0.501187);
+
+    project = setAssetGain(project, 7, 0);  // back to unity is pushed too, exactly 1
+    syncBuses(runtime, project, buses);
+    expect(calls.setSampleParameter.filter(([, p]) => p === SampleParam.Gain).map((c) => c[2])).toEqual([sent[0][2], 1]);
+  });
+
+  it("clamps a sample's source gain to -24..+12 dB and ignores non-finite values", () => {
+    const base = { ...createInitialProject(), assets: [{ id: 7, name: "a", type: "audio" as const, duration: 1, sampleRate: 48000, channels: 1, origin: "import" as const }] };
+    expect(setAssetGain(base, 7, -99).assets[0].gain).toBe(-24);
+    expect(setAssetGain(base, 7, 99).assets[0].gain).toBe(12);
+    expect(setAssetGain(base, 7, Number.NaN)).toBe(base);
+    expect(base.assets[0]).not.toHaveProperty("gain");  // an untouched asset (older project) has no field: 0 dB
   });
 });

@@ -50,6 +50,7 @@ export type Action =
   | { type: "SET_ASSET_CUES"; assetId: AssetId; cues: number[] }
   | { type: "SET_ASSET_CHOP_START"; assetId: AssetId; start: number }
   | { type: "SET_ASSET_ENVELOPE"; assetId: AssetId; envelope: Partial<SampleEnvelope> }
+  | { type: "SET_ASSET_GAIN"; assetId: AssetId; gain: number }
   | { type: "SET_NOTE_PITCH"; patternId: PatternId; noteId: NoteId; pitch: number }
   | { type: "SET_NOTE_MODE"; patternId: PatternId; noteId: NoteId; mode: "note" | "chord" }
   | { type: "SET_NOTE_CHORD"; patternId: PatternId; noteId: NoteId; patch: Partial<NoteChord> }
@@ -169,6 +170,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setAssetCues(state, action.assetId, action.cues);
     case "SET_ASSET_CHOP_START":
       return project.setAssetChopStart(state, action.assetId, action.start);
+    case "SET_ASSET_GAIN":
+      return project.setAssetGain(state, action.assetId, action.gain);
     case "SET_ASSET_ENVELOPE":
       return project.setAssetEnvelope(state, action.assetId, action.envelope);
     case "SET_NOTE_PITCH":

@@ -86,6 +86,25 @@ describe("InstrumentHost", () => {
     expect(calls.setInstrumentParameter.find(([, p]) => p === 3)?.[2]).toBe(0.9);
   });
 
+  it("pushes the shared source gain to the engine's own gain control (id 1000), not to a kind control", () => {
+    const { runtime, calls } = mockRuntime();
+    let project = setTrackInstrument(createInitialProject(), "track-4", "kick");
+    expect(project.tracks[3].instrument?.params.gain).toBe(0);
+    project = setInstrumentParam(project, "track-4", "gain", -6);
+    syncBuses(runtime, project, buses);
+    expect(calls.setInstrumentParameter.filter(([, p]) => p === 1000).map((c) => c[2])).toEqual([-6]);
+    project = setInstrumentParam(project, "track-4", "gain", 99);  // clamped to +12 dB
+    syncBuses(runtime, project, buses);
+    expect(calls.setInstrumentParameter.filter(([, p]) => p === 1000).map((c) => c[2])).toEqual([-6, 12]);
+  });
+
+  it("every synth kind has the same Gain control first: dB, -24..+12, default 0", () => {
+    for (const def of Object.values(INSTRUMENT_DEFS)) {
+      expect(def.params[0]).toMatchObject({ id: "gain", label: "Gain", unit: "dB", min: -24, max: 12, default: 0 });
+      expect(def.params.filter((p) => p.id === "gain")).toHaveLength(1);
+    }
+  });
+
   it("recreates on a kind change, and removes when the synth goes away", () => {
     const { runtime, calls } = mockRuntime();
     let project = setTrackInstrument(createInitialProject(), "track-1", "kick");
@@ -155,7 +174,7 @@ describe("compileInstrumentNotes", () => {
     const [p] = compileInstrumentNotes(pad.patterns[0], pad.tracks, 120, 10);
     expect(p.params.duration).toBeCloseTo(1 * spb);
     expect(pad.tracks[0].instrument?.params).toEqual({
-      tune: 110, tone: 0.5, movement: 0.5, detune: 0.4, space: 0.6, attack: 0.8, release: 3,
+      gain: 0, tune: 110, tone: 0.5, movement: 0.5, detune: 0.4, space: 0.6, attack: 0.8, release: 3,
     });
     expect(rootMidiNote(pad.tracks[0])).toBeCloseTo(45);
   });
@@ -172,7 +191,7 @@ describe("compileInstrumentNotes", () => {
     const [p] = compileInstrumentNotes(fm.patterns[0], fm.tracks, 120, 10);
     expect(p.params.duration).toBeCloseTo(1 * spb);
     expect(fm.tracks[0].instrument?.params).toEqual({
-      tune: 110, ratio: 1, timbre: 0.35, snap: 0.6, tone: 0.75, attack: 0.003, decay: 0.3,
+      gain: 0, tune: 110, ratio: 1, timbre: 0.35, snap: 0.6, tone: 0.75, attack: 0.003, decay: 0.3,
       sustain: 0.6, release: 0.1, legato: 0, slide: 0,
     });
     expect(rootMidiNote(fm.tracks[0])).toBeCloseTo(45);
@@ -184,7 +203,7 @@ describe("compileInstrumentNotes", () => {
     const [p] = compileInstrumentNotes(hs.patterns[0], hs.tracks, 120, 10);
     expect(p.params.duration).toBeCloseTo(1 * spb);
     expect(hs.tracks[0].instrument?.params).toEqual({
-      tune: 110, detune: 25, spread: 0.8, density: 0.7, cutoff: 5000, attack: 0.01, decay: 0.5,
+      gain: 0, tune: 110, detune: 25, spread: 0.8, density: 0.7, cutoff: 5000, attack: 0.01, decay: 0.5,
       sustain: 0.8, release: 0.4,
     });
     expect(rootMidiNote(hs.tracks[0])).toBeCloseTo(45);
@@ -196,7 +215,7 @@ describe("compileInstrumentNotes", () => {
     const [p] = compileInstrumentNotes(pb.patterns[0], pb.tracks, 120, 10);
     expect(p.params.duration).toBeCloseTo(1 * spb);
     expect(pb.tracks[0].instrument?.params).toEqual({
-      tune: 55, width: 0.3, pwm: 0.5, rate: 3.5, shape: 0.35, harmonics: 0.5, drive: 0.4, cutoff: 500,
+      gain: 0, tune: 55, width: 0.3, pwm: 0.5, rate: 3.5, shape: 0.35, harmonics: 0.5, drive: 0.4, cutoff: 500,
       resonance: 0.45, envamt: 0.7, sub: 0.25, attack: 0.003, decay: 0.3, sustain: 0.6, release: 0.12,
     });
     expect(rootMidiNote(pb.tracks[0])).toBeCloseTo(33);
@@ -205,7 +224,7 @@ describe("compileInstrumentNotes", () => {
   it("lists the Percussion Synth as a one-shot with the engine's own param names, no sustain/release", () => {
     const def = INSTRUMENT_DEFS.percsynth;
     expect(def.sustained).toBe(false);
-    expect(def.params.map((p) => p.id)).toEqual(INSTRUMENT_PARAM_NAMES.percsynth.filter((n) => n !== "sustain" && n !== "release"));
+    expect(def.params.map((p) => p.id)).toEqual(["gain", ...INSTRUMENT_PARAM_NAMES.percsynth.filter((n) => n !== "sustain" && n !== "release")]);
     expect(new Set(def.params.map((p) => p.id)).size).toBe(def.params.length);
     for (const p of def.params) {
       expect(p.default).toBeGreaterThanOrEqual(p.min);
@@ -219,7 +238,7 @@ describe("compileInstrumentNotes", () => {
   it("lists Edge as sustained, with every engine param and routing/filter modes as options", () => {
     const def = INSTRUMENT_DEFS.edge;
     expect(def.sustained).toBe(true);
-    expect(def.params.map((p) => p.id)).toEqual(INSTRUMENT_PARAM_NAMES.edge);
+    expect(def.params.map((p) => p.id)).toEqual(["gain", ...INSTRUMENT_PARAM_NAMES.edge]);
     expect(new Set(def.params.map((p) => p.id)).size).toBe(def.params.length);
     for (const p of def.params) {
       expect(p.default).toBeGreaterThanOrEqual(p.min);
@@ -233,10 +252,10 @@ describe("compileInstrumentNotes", () => {
     expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeGreaterThan(0);
   });
 
-  it("lists the Digital Machines with tune/decay/depth first, one-shots unsustained and Tone/Chaos sustained", () => {
+  it("lists the Digital Machines with gain first, then tune/decay, one-shots unsustained and Tone/Chaos sustained", () => {
     const dm = ["dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos"] as const;
     for (const kind of dm) {
-      expect(INSTRUMENT_DEFS[kind].params.slice(0, 2).map((p) => p.id)).toEqual(["tune", "decay"]);
+      expect(INSTRUMENT_DEFS[kind].params.slice(1, 3).map((p) => p.id)).toEqual(["tune", "decay"]);
       for (const p of INSTRUMENT_DEFS[kind].params) {
         expect(p.default).toBeGreaterThanOrEqual(p.min);
         expect(p.default).toBeLessThanOrEqual(p.max);

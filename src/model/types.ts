@@ -311,6 +311,22 @@ export interface SampleEnvelope {
   release: number;
 }
 
+/** Source gain range (dB), shared by samples (Asset.gain) and synths (webdsp's per-instrument "gain"
+ * control, model/instruments.ts). Default 0 dB = unity. */
+export const SOURCE_GAIN_MIN_DB = -24;
+export const SOURCE_GAIN_MAX_DB = 12;
+export const DEFAULT_SOURCE_GAIN_DB = 0;
+
+/** A sample's source gain in dB, 0 when never set. */
+export function effectiveAssetGain(asset: Pick<Asset, "gain">): number {
+  return asset.gain ?? DEFAULT_SOURCE_GAIN_DB;
+}
+
+/** dB -> linear amplitude (webdsp's SampleParam.Gain is linear); 0 dB is exactly 1. */
+export function dbToLinear(db: number): number {
+  return Math.pow(10, db / 20);
+}
+
 export const DEFAULT_ENVELOPE: SampleEnvelope = { attack: 0, decay: 0, sustain: 1, release: 0.01 };
 
 export interface Asset {
@@ -332,6 +348,11 @@ export interface Asset {
    * the track, because that is where the engine keeps it — two tracks sharing an asset share
    * its envelope. Absent = the engine default (no audible envelope). */
   envelope?: SampleEnvelope;
+  /** Source gain in dB (-24..+12): the level leaving the sample into its track's FX chain and the
+   * mixer — webdsp's per-sample gain stage (SampleParam.Gain), so, like the envelope, two tracks
+   * sharing an asset share it. Not the mixer fader (Track.volume). Absent = 0 dB (unity), so older
+   * projects sound exactly as before. */
+  gain?: number;
   /** Cue points for chop playback: sorted interior slice boundaries as fractions (0..1) of the
    * sample, so N cues make N+1 contiguous slices (see model/chop.ts). Describes the audio, so it
    * lives on the Asset like webdsp's regions; whether a track uses it is Track.sampleMode.

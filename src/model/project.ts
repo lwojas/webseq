@@ -5,7 +5,7 @@
 
 import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, Track, TrackId, VoiceMode } from "./types";
 import { normalizeChopStart, normalizeCues } from "./chop";
-import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, leadsTo } from "./types";
+import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, SOURCE_GAIN_MAX_DB, SOURCE_GAIN_MIN_DB, leadsTo } from "./types";
 import * as notes from "./notes";
 
 export const MIN_BPM = 40;
@@ -178,6 +178,14 @@ export function assignAsset(project: Project, trackId: TrackId, assetId: AssetId
     ...project,
     tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, assetId, instrument: null, name: asset.name } : t)),
   };
+}
+
+/** Sets a sample's source gain in dB (clamped to the source-gain range; non-finite is ignored).
+ * Stored on the Asset because webdsp keeps the gain per sample — see Asset.gain. */
+export function setAssetGain(project: Project, assetId: AssetId, gainDb: number): Project {
+  if (!Number.isFinite(gainDb)) return project;
+  const gain = Math.min(SOURCE_GAIN_MAX_DB, Math.max(SOURCE_GAIN_MIN_DB, gainDb));
+  return { ...project, assets: project.assets.map((a) => (a.id === assetId ? { ...a, gain } : a)) };
 }
 
 /** Sets a sample's amplitude ADSR (clamped: times 0..30 s, sustain 0..1). Stored on the Asset
