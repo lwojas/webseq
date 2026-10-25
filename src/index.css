@@ -3813,3 +3813,136 @@ option.out-of-scale {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- EQ curve editor (components/EqCurveEditor.tsx) --- */
+.eq-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.eq-main {
+  flex: 1 1 460px;
+  max-width: 700px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eq-graph {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  touch-action: none;
+  user-select: none;
+}
+
+.eq-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.eq-zero {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.eq-label {
+  fill: var(--text-dim);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.eq-curve {
+  fill: none;
+  stroke: #eafffa;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.eq-handle {
+  stroke-width: 2;
+  cursor: grab;
+}
+
+.eq-handle.off {
+  stroke-dasharray: 3 2;
+  opacity: 0.8;
+}
+
+.eq-handle-num {
+  fill: var(--bg);
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.eq-hint {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.eq-band-panel {
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 300px;
+  max-width: 420px;
+}
+
+.eq-band-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.eq-band-head button {
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.eq-band-head button.active {
+  background: var(--accent-dim);
+  color: #eafffa;
+}
+
+.eq-readout {
+  color: var(--amber);
+  margin-left: 6px;
+}
+
+
+.eq-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eq-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+}
+
+.eq-field input[type="range"] {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+.eq-field .value {
+  color: var(--amber);
+  min-width: 4.5em;
+  text-align: right;
+}

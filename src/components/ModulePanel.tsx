@@ -1,5 +1,6 @@
 import { FX_DEFS } from "../model/fx";
 import type { FxInstance } from "../model/types";
+import { EqCurveEditor } from "./EqCurveEditor";
 import { ModBadge } from "./ModulationSlot";
 
 interface Props {
@@ -21,15 +22,8 @@ interface Props {
 export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomateParam, children }: Props) {
   const def = FX_DEFS[fx.type];
 
-  return (
-    <div className="module-panel">
-      <div className="module-panel-header">
-        <span className="name">{def.label}</span>
-        <button className={`btn ${fx.enabled ? "active" : ""}`} onClick={() => onSetEnabled(!fx.enabled)}>
-          {fx.enabled ? "On" : "Bypassed"}
-        </button>
-      </div>
-      <div className="module-params">
+  const paramsBlock = (
+    <div className="module-params">
         {def.params.map((param) => {
           const value = fx.params[param.id] ?? param.default;
           return (
@@ -69,7 +63,26 @@ export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomatePa
             </div>
           );
         })}
+    </div>
+  );
+
+  return (
+    <div className="module-panel">
+      <div className="module-panel-header">
+        <span className="name">{def.label}</span>
+        <button className={`btn ${fx.enabled ? "active" : ""}`} onClick={() => onSetEnabled(!fx.enabled)}>
+          {fx.enabled ? "On" : "Bypassed"}
+        </button>
       </div>
+      {fx.type === "eq" && <EqCurveEditor params={fx.params} onSetParam={onSetParam} />}
+      {fx.type === "eq" ? (
+        <details className="eq-all-params">
+          <summary>All parameters (click a name to automate)</summary>
+          {paramsBlock}
+        </details>
+      ) : (
+        paramsBlock
+      )}
       {children}
     </div>
   );
