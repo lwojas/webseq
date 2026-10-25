@@ -39,6 +39,36 @@ export interface FxDef {
 }
 
 // Values mirror webdsp's FilterMode (0 = LowPass, 1 = HighPass) — see audio/fxChain.ts.
+// Four-band parametric EQ (webdsp Eq, docs/eq.md): per band on/type/freq/gain/Q/shelfSlope/slope.
+// Ids are `b<n><Field>` and map onto NodeParam.EqBand<n>*. Bands default off, so a new EQ is neutral.
+const EQ_BAND_DEFAULTS = [
+  { type: 1, freq: 100 },
+  { type: 0, freq: 500 },
+  { type: 0, freq: 2000 },
+  { type: 2, freq: 8000 },
+];
+function eqParams(): FxParamDef[] {
+  return EQ_BAND_DEFAULTS.flatMap((d, i) => {
+    const b = `b${i + 1}`;
+    const n = `Band ${i + 1} `;
+    return [
+      { id: `${b}On`, label: `${n}On`, min: 0, max: 1, step: 1, default: 0, options: [{ label: "Off", value: 0 }, { label: "On", value: 1 }] },
+      {
+        id: `${b}Type`, label: `${n}Type`, min: 0, max: 5, step: 1, default: d.type,
+        options: [
+          { label: "Bell", value: 0 }, { label: "Low shelf", value: 1 }, { label: "High shelf", value: 2 },
+          { label: "Low-pass", value: 3 }, { label: "High-pass", value: 4 }, { label: "Notch", value: 5 },
+        ],
+      },
+      { id: `${b}Freq`, label: `${n}Freq`, min: 20, max: 20000, step: 1, unit: "Hz", default: d.freq },
+      { id: `${b}Gain`, label: `${n}Gain`, min: -18, max: 18, step: 0.1, unit: "dB", default: 0 },
+      { id: `${b}Q`, label: `${n}Q`, min: 0.1, max: 18, step: 0.01, default: 0.707 },
+      { id: `${b}ShelfSlope`, label: `${n}Shelf slope`, min: 0.1, max: 1, step: 0.01, default: 1 },
+      { id: `${b}Slope`, label: `${n}Slope`, min: 12, max: 24, step: 12, unit: "dB/oct", default: 12, options: [{ label: "12", value: 12 }, { label: "24", value: 24 }] },
+    ];
+  });
+}
+
 export const FX_DEFS: Record<FxType, FxDef> = {
   filter: {
     type: "filter",
@@ -173,6 +203,7 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
     ],
   },
+  eq: { type: "eq", label: "EQ", params: eqParams() },
   // A bare gain stage (webdsp Utility FX): the automatable per-track volume. Unity (0 dB) is
   // neutral; the bottom of the range is silence. Deliberately one parameter.
   utility: {

@@ -34,9 +34,16 @@ export const FX_KIND: Record<FxType, EffectKind> = {
   bitcrusher: EffectKind.Bitcrusher,
   utility: EffectKind.Utility,
   dubDelay: EffectKind.DubDelay,
+  eq: EffectKind.Eq,
 };
 
 /** FX param id (model/fx.ts FX_DEFS) -> the engine's NodeParam. */
+// EQ params are `b<n><Field>` -> NodeParam.EqBand<n><Field> (n = 1..4).
+const EQ_FIELDS = ["On", "Type", "Freq", "Gain", "Q", "ShelfSlope", "Slope"] as const;
+const EQ_NODE_PARAMS: Record<string, NodeParam> = Object.fromEntries(
+  [1, 2, 3, 4].flatMap((n) => EQ_FIELDS.map((f) => [`b${n}${f}`, NodeParam[`EqBand${n}${f}` as keyof typeof NodeParam]])),
+);
+
 export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
   filter: {
     mode: NodeParam.FilterMode,
@@ -84,6 +91,7 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
     tone: NodeParam.DubDelayTone,
     mix: NodeParam.DubDelayMix,
   },
+  eq: EQ_NODE_PARAMS,
 };
 
 interface LiveEffect {

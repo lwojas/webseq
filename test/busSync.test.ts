@@ -38,6 +38,20 @@ describe("syncBuses", () => {
     expect(sent).toContainEqual([NodeParam.DubDelayTone, 3000]);
   });
 
+  it("maps an EQ to the engine kind and sends band params to the EqBand NodeParams", () => {
+    const { runtime, calls, raw } = mockRuntime();
+    let project = addFx(createInitialProject(), "track-2", "eq");
+    const id = project.tracks.find((t) => t.id === "track-2")!.fx[0].id;
+    project = setFxParam(project, "track-2", id, "b2Gain", 6);
+    project = setFxParam(project, "track-2", id, "b3On", 1);
+    syncBuses(runtime, project, buses);
+    expect(calls.addEffect.map((a) => [a.bus, a.kind])).toEqual([[2, EffectKind.Eq]]);
+    const sent = raw.setEffectParameter.mock.calls.map(([, , p, v]) => [p, v]);
+    expect(sent).toContainEqual([NodeParam.EqBand2Gain, 6]);
+    expect(sent).toContainEqual([NodeParam.EqBand3On, 1]);
+    expect(sent).toContainEqual([NodeParam.EqBand4Freq, 8000]);
+  });
+
   it("stacks two filters as two engine instances and honours order changes", () => {
     const { runtime, calls, chains } = mockRuntime();
     let project = createInitialProject();

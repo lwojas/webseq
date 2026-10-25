@@ -28,6 +28,7 @@ export const FX_PARAM_NAMES: Record<number, string[]> = {
   2: ["feedback", "mix"],
   8: ["gain"],
   9: ["feedback", "tone", "mix"],
+  10: ["b1Freq", "b1Gain"],
 };
 export const MODULATION_INFO = {
   maxLfos: 4,
