@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EQ_MAX_HZ, EQ_MIN_HZ, eqBandResponseDb, eqBandUses, eqCurve } from "webdsp";
 import { EQ_VIEW_DB, bandsFromParams, dbToY, freqToX, handleDb, widenedValue, widthParam, xToFreq, yToDb } from "../model/eqGeometry";
 
@@ -65,13 +65,24 @@ export function EqCurveEditor({ params, onSetParam }: Props) {
   const onUp = () => {
     drag.current = null;
   };
-  const onWheel = (i: number) => (e: React.WheelEvent) => {
-    const b = bands[i];
-    const wp = widthParam(b.type);
-    if (!wp) return;
-    e.preventDefault();
-    set(i, wp === "q" ? "Q" : "ShelfSlope", widenedValue(b.type, b[wp], -e.deltaY / 300));
-  };
+  // Wheel over a handle edits its width. React's onWheel is passive (cannot stop the page scrolling), so this is a
+  // native non-passive listener that reads the latest bands through a ref.
+  const latest = useRef({ bands, set });
+  latest.current = { bands, set };
+  useEffect(() => {
+    const svg = svgRef.current!;
+    const onWheel = (e: WheelEvent) => {
+      const i = Number((e.target as SVGElement | null)?.dataset?.band);
+      if (!Number.isInteger(i)) return;
+      const { bands: bs, set: setParam } = latest.current;
+      const wp = widthParam(bs[i].type);
+      if (!wp) return;
+      e.preventDefault();
+      setParam(i, wp === "q" ? "Q" : "ShelfSlope", widenedValue(bs[i].type, bs[i][wp], -e.deltaY / 300));
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, []);
 
   const sel = bands[selected];
   const num = (label: string, field: string, value: number, min: number, max: number, step: number, unit = "") => (
@@ -114,7 +125,7 @@ export function EqCurveEditor({ params, onSetParam }: Props) {
             stroke={BAND_COLORS[i]}
             fill={b.enabled ? BAND_COLORS[i] : "transparent"}
             onPointerDown={onDown(i)}
-            onWheel={onWheel(i)}
+            data-band={i}
             onDoubleClick={() => set(i, "On", wasOnAtFirstClick.current ? 0 : 1)}
           >
             <title>{`Band ${i + 1} ${TYPE_NAMES[b.type]} ${Math.round(b.frequency)} Hz`}</title>
