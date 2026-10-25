@@ -11,7 +11,7 @@ const BAND_COLORS = ["#29e0e0", "#f0a83c", "#9be36b", "#e07ab8"];
 const TYPE_NAMES = ["Bell", "Low shelf", "High shelf", "Low-pass", "High-pass", "Notch"];
 const GRID_HZ = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
-// Live input spectrum behind the curve: its own dB scale (dBFS), independent of the EQ's +-dB axis.
+// Live spectrum behind the curve (the EQ's output, with its input fainter): its own dB scale (dBFS), independent of the EQ's +-dB axis.
 const SPECTRUM_MIN_DB = -90;
 const SPECTRUM_MAX_DB = -10;
 
@@ -32,7 +32,9 @@ export function EqCurveEditor({ params, onSetParam, spectrumTap, spectrumKey = "
   const spectrumRef = useRef<HTMLCanvasElement>(null);
   useSpectrumCanvas(spectrumRef, () => spectrumTap?.() ?? null, spectrumKey, {
     width: W, height: H, minDb: SPECTRUM_MIN_DB, maxDb: SPECTRUM_MAX_DB,
-    fill: "rgba(160, 190, 220, 0.16)", stroke: "rgba(160, 190, 220, 0.5)",
+    // The EQ's output is the main fill (it moves as you drag); its input sits fainter behind it.
+    main: { fill: "rgba(160, 190, 220, 0.22)", stroke: "rgba(160, 190, 220, 0.7)" },
+    input: { fill: "rgba(160, 190, 220, 0.07)", stroke: "rgba(160, 190, 220, 0.25)" },
   });
   const [selected, setSelected] = useState(1);
   const wasOnAtFirstClick = useRef(false);
