@@ -450,6 +450,14 @@ export function setNoteRatchet(project: Project, patternId: PatternId, noteId: N
   return updatePattern(project, patternId, (p) => notes.setRatchet(p, noteId, ratchet));
 }
 
+export function setNoteTie(project: Project, patternId: PatternId, noteId: NoteId, tie: boolean): Project {
+  return updatePattern(project, patternId, (p) => notes.setTie(p, noteId, tie));
+}
+
+export function setTrackNotesTie(project: Project, patternId: PatternId, trackId: TrackId, tie: boolean): Project {
+  return updatePattern(project, patternId, (p) => notes.setTrackTies(p, trackId, tie));
+}
+
 export function resizeNote(
   project: Project,
   patternId: PatternId,

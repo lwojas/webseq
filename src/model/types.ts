@@ -272,6 +272,10 @@ export interface Note {
    * RATCHET_VALUES). Absent = 1 (a normal single trigger), so older projects are byte-identical.
    * A property of the step, not extra events: the grid and the stored notes never change. */
   ratchet?: number;
+  /** Tied into the next note of the same track (a 303-style slide): this note's gate stays open through
+   * the next note's start and that note glides in with no re-attack. Only meaningful on a synth with a
+   * legato mode (supportsTie); absent = false, so older projects are byte-identical. */
+  tie?: boolean;
 }
 
 /** The ratchet counts a step can have; 1 is "normal". */

@@ -118,7 +118,7 @@ export function clearTrackNotes(pattern: Pattern, trackId: TrackId): Pattern {
  * (beats from this pattern's start), not relative to some anchor — there is no "paste cursor"
  * concept in this app (no selected empty cell, only a selected track), so pasting reproduces
  * the exact beat positions that were copied, just under the destination trackId. */
-export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch" | "chord" | "lfo" | "ratchet">;
+export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch" | "chord" | "lfo" | "ratchet" | "tie">;
 
 /** Pastes `copied` onto `trackId` in this Pattern, preserving each note's original start/
  * duration/velocity exactly (no re-quantization — unlike addNote, these values already came
@@ -147,6 +147,7 @@ export function pasteNotes(
     if (c.chord) note.chord = { root: c.chord.root, degrees: [...c.chord.degrees] };
     if (c.lfo) note.lfo = c.lfo;
     if (c.ratchet && c.ratchet > 1) note.ratchet = c.ratchet;
+    if (c.tie) note.tie = true;
     next = { ...next, notes: { ...next.notes, [id]: note } };
     pasted += 1;
   }
@@ -218,6 +219,25 @@ export function setRatchet(pattern: Pattern, noteId: NoteId, ratchet: number): P
   const { ratchet: _old, ...rest } = note;
   const r = ratchetOf({ ratchet });
   return { ...pattern, notes: { ...pattern.notes, [noteId]: r > 1 ? { ...rest, ratchet: r } : rest } };
+}
+
+/** Ties or unties one step. `false` is stored as absent so untied steps stay byte-identical to older saves. */
+export function setTie(pattern: Pattern, noteId: NoteId, tie: boolean): Pattern {
+  const note = pattern.notes[noteId];
+  if (!note) return pattern;
+  const { tie: _old, ...rest } = note;
+  return { ...pattern, notes: { ...pattern.notes, [noteId]: tie ? { ...rest, tie: true } : rest } };
+}
+
+/** Ties or unties every step of one track (the "All steps / None" buttons). */
+export function setTrackTies(pattern: Pattern, trackId: TrackId, tie: boolean): Pattern {
+  let notes = pattern.notes;
+  for (const note of Object.values(pattern.notes)) {
+    if (note.trackId !== trackId || !!note.tie === tie) continue;
+    const { tie: _old, ...rest } = note;
+    notes = { ...notes, [note.id]: tie ? { ...rest, tie: true } : rest };
+  }
+  return notes === pattern.notes ? pattern : { ...pattern, notes };
 }
 
 /** Matches the engine's own clamp on a note's pitch offset (webdsp clamps to +-48 semitones). */

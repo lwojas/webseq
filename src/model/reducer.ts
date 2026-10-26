@@ -54,6 +54,8 @@ export type Action =
   | { type: "SET_NOTE_PITCH"; patternId: PatternId; noteId: NoteId; pitch: number }
   | { type: "SET_NOTE_MODE"; patternId: PatternId; noteId: NoteId; mode: "note" | "chord" }
   | { type: "SET_NOTE_CHORD"; patternId: PatternId; noteId: NoteId; patch: Partial<NoteChord> }
+  | { type: "SET_NOTE_TIE"; patternId: PatternId; noteId: NoteId; tie: boolean }
+  | { type: "SET_TRACK_NOTES_TIE"; patternId: PatternId; trackId: TrackId; tie: boolean }
   | { type: "SET_NOTE_RATCHET"; patternId: PatternId; noteId: NoteId; ratchet: number }
   | { type: "SET_NOTE_VELOCITY"; patternId: PatternId; noteId: NoteId; velocity: number }
   | { type: "ADD_NOTE"; patternId: PatternId; trackId: TrackId; start: number }
@@ -181,6 +183,10 @@ export function projectReducer(state: Project, action: Action): Project {
       return setNoteMode(state, action.patternId, action.noteId, action.mode);
     case "SET_NOTE_CHORD":
       return setNoteChord(state, action.patternId, action.noteId, action.patch);
+    case "SET_NOTE_TIE":
+      return project.setNoteTie(state, action.patternId, action.noteId, action.tie);
+    case "SET_TRACK_NOTES_TIE":
+      return project.setTrackNotesTie(state, action.patternId, action.trackId, action.tie);
     case "SET_NOTE_RATCHET":
       return project.setNoteRatchet(state, action.patternId, action.noteId, action.ratchet);
     case "SET_NOTE_VELOCITY":

@@ -83,6 +83,7 @@ export function compileNativeSequence(project: Project, ctx: NativeSequenceConte
         ...(params.pitch ? { pitch: params.pitch } : {}),
         ...(params.duration !== undefined ? { durationBeats: params.duration * QUARTERS_PER_SECOND } : {}),
         ...(params.chokeGroup !== undefined ? { chokeGroup: params.chokeGroup } : {}),
+        ...(params.tie ? { tie: true } : {}),
       });
     }
     events.push(...ctx.automation(cycleBeats, beats));

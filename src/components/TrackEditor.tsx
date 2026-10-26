@@ -10,7 +10,7 @@ import { getScaleDegree, isChromatic, isOffsetInScale, referenceMidi, type Proje
 import { RATCHET_VALUES, notesForTrack, ratchetOf, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
 import { effectiveSampleMode, sliceCount } from "../model/chop";
-import { rootMidiNote } from "../model/instruments";
+import { rootMidiNote, supportsTie } from "../model/instruments";
 import { NoteBlock } from "./NoteBlock";
 import { TRACK_EDITOR_COLUMN_PX } from "./timelineConstants";
 
@@ -28,6 +28,8 @@ interface Props {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteRatchet: (noteId: NoteId, ratchet: number) => void;
+  onSetNoteTie: (noteId: NoteId, tie: boolean) => void;
+  onSetTrackNotesTie: (trackId: TrackId, tie: boolean) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
   onSetNoteMode: (noteId: NoteId, mode: "note" | "chord") => void;
   onSetNoteChord: (noteId: NoteId, patch: Partial<NoteChord>) => void;
@@ -107,6 +109,9 @@ interface CardProps {
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
   onSetNoteRatchet: (noteId: NoteId, ratchet: number) => void;
+  /** The synth has a legato mode, so a step can be tied. */
+  canTie: boolean;
+  onSetNoteTie: (noteId: NoteId, tie: boolean) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
   /** Chop track: how many slices its sample has (pitch picks one). null = chromatic. */
   slices: number | null;
@@ -190,6 +195,8 @@ const NoteCard = memo(function NoteCard({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteRatchet,
+  canTie,
+  onSetNoteTie,
   onSetNoteDuration,
   onSetNoteMode,
   onSetNoteChord,
@@ -280,6 +287,16 @@ const NoteCard = memo(function NoteCard({
           </option>
         ))}
       </select>
+      {canTie && (
+        <button
+          className={`te-mode-btn te-tie ${note.tie ? "active" : ""}`}
+          aria-pressed={!!note.tie}
+          onClick={() => onSetNoteTie(note.id, !note.tie)}
+          title="Tie — hold this note through the next one, which glides in with no re-attack (303-style slide)"
+        >
+          Tie ▸
+        </button>
+      )}
       <select
         value={note.duration}
         onChange={(e) => onSetNoteDuration(note.id, Number(e.target.value))}
@@ -314,6 +331,8 @@ export const TrackEditor = memo(function TrackEditor({
   onSetNotePitch,
   onSetNoteVelocity,
   onSetNoteRatchet,
+  onSetNoteTie,
+  onSetTrackNotesTie,
   onSetNoteDuration,
   onSetNoteMode,
   onSetNoteChord,
@@ -339,6 +358,8 @@ export const TrackEditor = memo(function TrackEditor({
   }
 
   const lfo = eventLfoOf(track);
+  const canTie = supportsTie(track);
+  const tied = notes.filter((n) => n.tie).length;
   const participating = notes.filter((n) => (n.lfo ?? 0) > 0).length;
   const beats = totalBeats(pattern, beatsPerBar);
   const width = beats * TRACK_EDITOR_COLUMN_PX;
@@ -350,6 +371,22 @@ export const TrackEditor = memo(function TrackEditor({
         {trackHasSource(track) ? track.name : "— empty —"} — TRACK EDITOR
       </div>
       <ArpPanel arp={arpOf(track)} noteCount={notes.length} onChange={(patch) => onSetTrackArp(track.id, patch)} />
+      {canTie && (
+        <div className="track-lfo">
+          <div className="track-lfo-head">
+            <span className="mod-slot-title">Ties</span>
+            <span className="track-lfo-steps">
+              {tied}/{notes.length} steps
+            </span>
+            <button className="btn small" disabled={notes.length === 0} onClick={() => onSetTrackNotesTie(track.id, true)} title="Tie every step of this track into the next">
+              All steps
+            </button>
+            <button className="btn small" disabled={tied === 0} onClick={() => onSetTrackNotesTie(track.id, false)} title="Remove every tie from this track">
+              None
+            </button>
+          </div>
+        </div>
+      )}
       <TrackLfoPanel
         lfo={lfo}
         participating={participating}
@@ -406,6 +443,8 @@ export const TrackEditor = memo(function TrackEditor({
               onSetNotePitch={onSetNotePitch}
               onSetNoteVelocity={onSetNoteVelocity}
               onSetNoteRatchet={onSetNoteRatchet}
+              canTie={canTie}
+              onSetNoteTie={onSetNoteTie}
               onSetNoteDuration={onSetNoteDuration}
               lfoOn={lfo.enabled}
               onSetNoteLfo={onSetNoteLfo}

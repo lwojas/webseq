@@ -480,6 +480,11 @@ export function createInstrument(kind: InstrumentKindId): TrackInstrument {
 
 /** The synth definition for `track`, or null for a sample/empty track or a kind this build
  * doesn't know (a project saved by a newer version) — callers treat null as "no synth". */
+/** Can this track's synth glide a tied note into the held one? (It has a Legato mode: Bass and FM.) */
+export function supportsTie(track: Pick<Track, "instrument">): boolean {
+  return instrumentDefFor(track)?.params.some((p) => p.id === "legato") ?? false;
+}
+
 export function instrumentDefFor(track: Pick<Track, "instrument">): InstrumentDef | null {
   const kind = track.instrument?.kind;
   return kind ? (INSTRUMENT_DEFS[kind] ?? null) : null;

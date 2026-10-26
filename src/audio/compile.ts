@@ -9,7 +9,7 @@ import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
 import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode, ratchetOf } from "../model/types";
 import { effectiveSampleMode } from "../model/chop";
-import { instrumentDefFor } from "../model/instruments";
+import { instrumentDefFor, supportsTie } from "../model/instruments";
 import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
 import { arpOf, arpTrackNotes, isArpActive } from "../model/arp";
 import { expandChordNotes, type PlayedNote } from "../model/chord";
@@ -114,6 +114,41 @@ export function compileNote(
   return event;
 }
 
+/** How a note is tied to its neighbours on the same track and voice (see Note.tie). */
+interface NoteLink {
+  /** This note is tied into: it glides into the held one instead of re-attacking. */
+  tieIn?: boolean;
+  /** This note ties into the next: its last hit holds until this absolute time (seconds). */
+  holdUntil?: number;
+}
+
+/** Ties on one synth track: per chord voice, a note with `tie` links to the next note of that voice.
+ * Nothing links across the pattern's end (no next note), under the arp (generated notes carry no tie),
+ * or on a synth without a legato mode. */
+function noteLinks(track: Track, notes: PlayedNote[], bpm: number, stepStartTime: number, swing: number): Map<PlayedNote, NoteLink> {
+  const links = new Map<PlayedNote, NoteLink>();
+  if (!supportsTie(track) || !notes.some((n) => n.tie)) return links;
+  const spb = secondsPerBeat(bpm);
+  const byVoice = new Map<number, PlayedNote[]>();
+  for (const n of notes) {
+    const list = byVoice.get(n.voice ?? 0);
+    if (list) list.push(n);
+    else byVoice.set(n.voice ?? 0, [n]);
+  }
+  for (const list of byVoice.values()) {
+    list.sort((a, b) => a.start - b.start);
+    for (let i = 0; i < list.length - 1; i++) {
+      const from = list[i];
+      const to = list[i + 1];
+      if (!from.tie || to.start <= from.start) continue;
+      // Held past the next note's start by half a step: the next note-on ends it, so the exact overshoot is inaudible.
+      links.set(from, { ...links.get(from), holdUntil: ratchetSlot(to, 0, spb, swing, stepStartTime).time + spb / 2 });
+      links.set(to, { ...links.get(to), tieIn: true });
+    }
+  }
+  return links;
+}
+
 /** Converts one note on a synth track into the arguments of AudioRuntime.instrumentNoteOn.
  * Returns null for a track with no (known) synth. `duration` is set only for sustained kinds
  * (Bass): webdsp's guide says to always pass it for sequenced bass notes and never for drums,
@@ -126,6 +161,7 @@ export function compileInstrumentNote(
   swing = 0.5,
   lfoAnchorTime?: number,
   hit = 0,
+  link?: NoteLink,
 ): InstrumentNoteParams | null {
   const def = instrumentDefFor(track);
   if (!def) return null;
@@ -138,7 +174,12 @@ export function compileInstrumentNote(
   if (note.pitch) params.pitch = note.pitch;
   const chokeGroup = effectiveChokeGroup(track);
   if (chokeGroup !== null) params.chokeGroup = chokeGroup;
-  if (def.sustained) params.duration = duration;
+  if (def.sustained) {
+    params.duration = duration;
+    // A tied note holds its gate through the start of the note it ties into (the engine ends it there).
+    if (link?.holdUntil !== undefined && hit === ratchetOf(note) - 1) params.duration = Math.max(duration, link.holdUntil - time);
+  }
+  if (link?.tieIn) params.tie = true;
   return params;
 }
 
@@ -159,9 +200,11 @@ export function compileInstrumentNotes(
   if (synthTracks.length === 0) return results;
   const byTrack = groupNotesByTrack(pattern);
   for (const track of synthTracks) {
-    for (const note of playedNotes(track, byTrack.get(track.id) ?? [], pattern, beatsPerBar, scale)) {
+    const played = playedNotes(track, byTrack.get(track.id) ?? [], pattern, beatsPerBar, scale);
+    const links = noteLinks(track, played, bpm, stepStartTime, swing);
+    for (const note of played) {
       for (let hit = 0, n = ratchetOf(note); hit < n; hit++) {
-        const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime, hit);
+        const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime, hit, links.get(note));
         if (params) results.push({ trackId: track.id, params, voice: note.voice ?? 0 });
       }
     }
