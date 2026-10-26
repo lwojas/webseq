@@ -188,7 +188,7 @@ export function buildEditPanelModel(ctx: EditPanelContext): { clipboardRows: Cli
     {
       id: "clear-sequence", label: "Clear Sequence",
       blocked: !selectedTrack ? noTrack : selectedTrackHasNotes ? null : "No steps on this track",
-      hint: selectedTrack ? "No undo" : null,
+      hint: selectedTrack ? `${trackLabel(project.tracks, selectedTrack.id)} · this pattern` : null,
       onRun: () => {
         if (!selectedTrack) return;
         handleClearTrack(selectedTrack.id);

@@ -25,6 +25,7 @@ export interface BarTool {
 }
 
 interface Props {
+  history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
   clipboard: ClipboardRow[];
   barTools: BarTool[];
   /** Transient result of the last action, cleared by App.tsx after a couple of seconds. */
@@ -33,9 +34,20 @@ interface Props {
 
 /** The Edit tab: project-level editing operations grouped by what they act on. Presentational —
  * all state and model calls live in App.tsx. */
-export function EditPanel({ clipboard, barTools, feedback }: Props) {
+export function EditPanel({ history, clipboard, barTools, feedback }: Props) {
   return (
     <div className="edit-panel">
+      <section className="edit-group">
+        <div className="edit-group-title">History</div>
+        <div className="edit-row">
+          <button className="track-copy-btn edit-history-btn" disabled={!history.canUndo} title={history.canUndo ? "Undo (Ctrl/⌘ Z)" : "Nothing to undo"} onClick={history.onUndo}>
+            Undo
+          </button>
+          <button className="track-copy-btn edit-history-btn" disabled={!history.canRedo} title={history.canRedo ? "Redo (Shift+Ctrl/⌘ Z)" : "Nothing to redo"} onClick={history.onRedo}>
+            Redo
+          </button>
+        </div>
+      </section>
       <section className="edit-group">
         <div className="edit-group-title">Clipboard</div>
         {clipboard.map((row) => (

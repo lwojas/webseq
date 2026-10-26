@@ -3071,6 +3071,10 @@ select {
   min-width: 140px;
 }
 
+.edit-history-btn {
+  min-width: 70px;
+}
+
 .track-copy-btn:disabled,
 .track-paste-btn:disabled {
   opacity: 0.4;

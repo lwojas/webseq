@@ -10,7 +10,7 @@ import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, GRID_RESOLUTIONS, t
 import { adjacentPatternId } from "./model/patternNav";
 import { chainShiftForReorder, moveChainEntry } from "./model/project";
 import { buildEditPanelModel, trackLabel, type EditClipboard } from "./app/editModel";
-import { projectReducer } from "./model/reducer";
+import { createHistory, historyReducer } from "./model/history";
 import { useAudioRuntime } from "./audio/useAudioRuntime";
 import { createHostSync } from "./audio/hostSync";
 import { compileNativeSequence } from "./audio/nativeSequence";
@@ -68,7 +68,13 @@ const NATIVE_SEQUENCE_CHECK_MS = 500;
 
 export function App() {
   const { runtime, capabilities, error, init } = useAudioRuntime();
-  const [project, dispatch] = useReducer(projectReducer, undefined, () => createInitialProject());
+  // Undo/redo wraps the project reducer (model/history.ts): `project` is still the single source of truth.
+  const [history, dispatch] = useReducer(historyReducer, undefined, () => createHistory(createInitialProject()));
+  const project = history.present;
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
+  const handleUndo = useCallback(() => dispatch({ type: "UNDO" }), []);
+  const handleRedo = useCallback(() => dispatch({ type: "REDO" }), []);
 
   // Transport (and the FX-push effect below) read project state through this ref rather than
   // a closed-over value, so the lookahead tick (running on a setInterval outside React's
@@ -655,6 +661,16 @@ export function App() {
         handleStepPattern(e.key === "[" ? -1 : 1);
         return;
       }
+      // Cmd/Ctrl+Z undo, Shift+Cmd/Ctrl+Z or Ctrl+Y redo — not while typing, so text fields keep
+      // their own undo.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
+        const target = e.target as HTMLElement | null;
+        if (target && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))) return;
+        e.preventDefault();
+        if (e.key.toLowerCase() === "y" || e.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      }
       if (e.key === "Backspace" || e.key === "Delete") {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) return;
@@ -733,6 +749,8 @@ export function App() {
     handleCopyTrack,
     handlePasteNotes,
     handleStepPattern,
+    handleUndo,
+    handleRedo,
   ]);
 
   const getPositionText = useCallback(() => {
@@ -1404,7 +1422,7 @@ export function App() {
     onAuditionSlice: handleAuditionSlice,
     getAssetBytes,
   };
-  const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus };
+  const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus, history: { canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo } };
   const trackHeaderProps = {
     track: selectedTrack ?? null,
     label: trackHeadLabel,
