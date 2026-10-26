@@ -35,6 +35,9 @@ describe("syncBuses", () => {
     expect(calls.addEffect.map((a) => [a.bus, a.kind])).toEqual([[2, EffectKind.DubDelay]]);
     const sent = raw.setEffectParameter.mock.calls.map(([, , p, v]) => [p, v]);
     expect(sent).toContainEqual([NodeParam.DubDelayDivision, 4]);
+    project = setFxParam(project, "track-2", id, "division", 7); // 1/8 triplet
+    syncBuses(runtime, project, buses);
+    expect(raw.setEffectParameter.mock.calls.map(([, , p, v]) => [p, v])).toContainEqual([NodeParam.DubDelayDivision, 7]);
     expect(sent).toContainEqual([NodeParam.DubDelayTone, 3000]);
   });
 
