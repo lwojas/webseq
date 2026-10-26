@@ -237,6 +237,7 @@ never fire in a browser, so standalone behaviour is unchanged.
   (`docs/host-state.md`); Export / Import use the host's file dialogs (`docs/project-files.md`).
 - **Moving a project between browser and plugin:** Export in one, Import in the other (`.webseq.json`, self-contained).
 - The plugin's build pipeline, protocol and day-to-day workflow live in webvst's `docs/ARCHITECTURE.md`.
+- Live visualisations (the EQ spectrum and the master meter, in `src/viz/`) are described in webdsp's `docs/visualisation.md`; keep `src/viz/` in step with webtracker's `src/ui/viz/`.
 
 ## Known limitation: Bluetooth audio on Android
 
