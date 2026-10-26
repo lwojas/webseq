@@ -4,7 +4,7 @@ import { eventLfoOf } from "../model/eventLfo";
 import { TrackLfoPanel } from "./TrackLfoPanel";
 import { ArpPanel } from "./ArpPanel";
 import { arpOf, type ArpVelocity, type TrackArp } from "../model/arp";
-import { chordMidis, chordRootOptions, midiNoteName, CHORD_SHAPES, shapeIdOf, type NoteChord } from "../model/chord";
+import { chordMidis, chordRootOptions, chordType, chordTypeId, chordTypePatch, maxInversion, midiNoteName, CHORD_SHAPES, CHORD_TYPES, type ChordVoicing, type NoteChord } from "../model/chord";
 import { degreeOfIndex } from "../model/scaleDegrees";
 import { getScaleDegree, isChromatic, isOffsetInScale, referenceMidi, type ProjectScale } from "../model/scale";
 import { RATCHET_VALUES, notesForTrack, ratchetOf, totalBeats, trackHasSource } from "../model/types";
@@ -90,7 +90,9 @@ function pitchLabel(pitch: number, root: number | null, slices: number | null, s
 /** Lane label of a chord note: its root, e.g. "A1+2" (root plus the number of added tones). */
 function chordLabel(chord: NoteChord, trackRoot: number | null, scale: ProjectScale): string {
   const [rootMidi] = chordMidis(scale, trackRoot, chord);
-  return `${midiNoteName(rootMidi)}+${chord.degrees.length - 1}`;
+  const type = chordType(chord.type);
+  const inversion = chord.inversion ? ` i${chord.inversion}` : "";
+  return `${midiNoteName(rootMidi)}${type ? ` ${type.label}` : `+${chord.degrees.length - 1}`}${inversion}${chord.voicing === "open" ? " open" : ""}`;
 }
 
 function formatLength(beats: number): string {
@@ -138,7 +140,7 @@ interface ChordFieldsProps {
 function ChordFields({ note, chord, root, scale, onSetNoteChord, onRemoveNote }: ChordFieldsProps) {
   const roots = chordRootOptions(scale, root);
   const rootsWithCurrent = roots.some((r) => r.index === chord.root) ? roots : [...roots, { index: chord.root, midi: chordMidis(scale, root, { root: chord.root, degrees: [0] })[0] }].sort((a, b) => a.index - b.index);
-  const shapeId = shapeIdOf(chord.degrees);
+  const shapeId = chordTypeId(chord);
   const tones = chordMidis(scale, root, chord).map(midiNoteName);
   return (
     <>
@@ -162,19 +164,51 @@ function ChordFields({ note, chord, root, scale, onSetNoteChord, onRemoveNote }:
       <select
         value={shapeId ?? "custom"}
         onChange={(e) => {
-          const shape = CHORD_SHAPES.find((s) => s.id === e.target.value);
-          if (shape) onSetNoteChord(note.id, { degrees: shape.degrees });
+          const patch = chordTypePatch(e.target.value);
+          if (patch) onSetNoteChord(note.id, patch);
         }}
-        aria-label="Chord size"
-        title="How many scale notes the chord stacks: every second note of the scale from the root"
+        aria-label="Chord type"
+        title="Chord type — what notes make up the chord. Named types keep their quality in any scale; In scale stacks every second note of the project scale."
       >
-        {CHORD_SHAPES.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
-          </option>
-        ))}
+        <optgroup label="Chord">
+          {CHORD_TYPES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label="In scale">
+          {CHORD_SHAPES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </optgroup>
         {shapeId === null && <option value="custom">Custom</option>}
       </select>
+      <div className="te-chord-voicing">
+        <select
+          value={chord.inversion ?? 0}
+          onChange={(e) => onSetNoteChord(note.id, { inversion: Number(e.target.value) })}
+          aria-label="Chord inversion"
+          title="Inversion — moves the lowest tones up an octave"
+        >
+          {Array.from({ length: maxInversion(chord) + 1 }, (_, i) => (
+            <option key={i} value={i}>
+              {i === 0 ? "Root" : `Inv ${i}`}
+            </option>
+          ))}
+        </select>
+        <select
+          value={chord.voicing ?? "close"}
+          onChange={(e) => onSetNoteChord(note.id, { voicing: e.target.value as ChordVoicing })}
+          aria-label="Chord voicing"
+          title="Voicing — Close keeps the tones together, Open lifts the second tone an octave"
+        >
+          <option value="close">Close</option>
+          <option value="open">Open</option>
+        </select>
+      </div>
       <div className="te-chord-tones" title="What this chord plays in the current scale">
         {tones.join(" ")}
       </div>

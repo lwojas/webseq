@@ -260,3 +260,177 @@ describe("malformed stored chords", () => {
     expect(chordVoicesNeeded(project).size).toBe(0);
   });
 });
+
+// --- chord types, inversions, voicings ---
+import { CHORD_TYPES, arrangeTones, chordTypeId, chordTypePatch, maxInversion } from "../src/model/chord";
+
+const C_MINOR: ProjectScale = { root: 0, scale: "minor", snap: false, preset: null };
+const typed = (type: string, extra: Partial<NoteChord> = {}, root = 0): NoteChord => normalizeChord({ root, ...chordTypePatch(type)!, ...extra })!;
+const midis = (c: NoteChord, scale = C_MAJOR) => chordMidis(scale, sampleTrack(), c); // C4 = 60
+
+describe("chord types", () => {
+  it("builds every named type from its intervals on C4", () => {
+    const expected: Record<string, number[]> = {
+      maj: [60, 64, 67], min: [60, 63, 67], dim: [60, 63, 66], aug: [60, 64, 68], sus2: [60, 62, 67], sus4: [60, 65, 67],
+      "6": [60, 64, 67, 69], m6: [60, 63, 67, 69], "69": [60, 64, 67, 69, 74],
+      maj7: [60, 64, 67, 71], m7: [60, 63, 67, 70], "7": [60, 64, 67, 70], dim7: [60, 63, 66, 69], m7b5: [60, 63, 66, 70],
+      maj9: [60, 64, 67, 71, 74], m9: [60, 63, 67, 70, 74], "9": [60, 64, 67, 70, 74],
+      "11": [60, 67, 70, 74, 77], m11: [60, 63, 70, 74, 77], "13": [60, 64, 70, 74, 81],
+    };
+    expect(CHORD_TYPES.map((t) => t.id).sort()).toEqual(Object.keys(expected).sort());
+    for (const [id, notes] of Object.entries(expected)) expect(midis(typed(id)), id).toEqual(notes);
+  });
+
+  it("keeps a type's quality in any scale (the root follows the scale, the intervals do not)", () => {
+    expect(midis(typed("m7"), C_MAJOR)).toEqual(midis(typed("m7"), C_MINOR));
+    // Root degree 2 of C major is D: D minor 7 = D F A C.
+    expect(names(midis(typed("m7", {}, 1)))).toEqual(["D", "F", "A", "C"]);
+    // Same stored chord on a different scale's degree 2 (C Phrygian: Db).
+    expect(names(midis(typed("m7", {}, 1), { ...C_MAJOR, scale: "phrygian" }))).toEqual(["Db", "E", "Ab", "B"]);
+  });
+
+  it("every named type fits the engine's voice budget", () => {
+    for (const t of CHORD_TYPES) expect(t.intervals.length).toBeLessThanOrEqual(5);
+  });
+
+  it("legacy scale-derived shapes still follow the scale", () => {
+    expect(midis(triad(0), C_MAJOR)).toEqual([60, 64, 67]);
+    expect(midis(triad(0), C_MINOR)).toEqual([60, 63, 67]);
+  });
+});
+
+describe("inversions", () => {
+  it("rearranges Cm7 exactly as specified", () => {
+    const m7 = (inversion: number) => midis(typed("m7", { inversion }));
+    expect(m7(0)).toEqual([60, 63, 67, 70]);
+    expect(m7(1)).toEqual([63, 67, 70, 72]);
+    expect(m7(2)).toEqual([67, 70, 72, 75]);
+    expect(m7(3)).toEqual([70, 72, 75, 79]);
+  });
+
+  it("offers one position per tone and clamps beyond that", () => {
+    expect(maxInversion(typed("maj"))).toBe(2);
+    expect(maxInversion(typed("m9"))).toBe(4);
+    expect(typed("maj", { inversion: 7 }).inversion).toBe(2);
+    expect(typed("maj", { inversion: -3 }).inversion).toBeUndefined();
+    expect(arrangeTones([0, 4, 7], 12, 9)).toEqual(arrangeTones([0, 4, 7], 12, 2));
+  });
+
+  it("inverts compound chords (Cm9 1st inversion: Eb G Bb C D)", () => {
+    expect(midis(typed("m9", { inversion: 1 }))).toEqual([63, 67, 70, 72, 74]);
+  });
+
+  it("inverts legacy scale chords by the scale's octave (pentatonic: 5 steps)", () => {
+    expect(midis({ ...triad(0), inversion: 1 }, C_MAJOR)).toEqual([64, 67, 72]);
+    const pent: ProjectScale = { ...C_MAJOR, scale: "minorPentatonic" };
+    const plain = midis(triad(0), pent);
+    expect(midis({ ...triad(0), inversion: 1 }, pent)).toEqual([plain[1], plain[2], plain[0] + 12]);
+  });
+
+  it("keeps the same pitch classes in every inversion", () => {
+    for (const t of CHORD_TYPES) for (let i = 0; i <= maxInversion(typed(t.id)); i++) {
+      const pcs = (c: NoteChord) => [...new Set(midis(c).map((m) => m % 12))].sort((a, b) => a - b);
+      expect(pcs(typed(t.id, { inversion: i })), `${t.id} inv ${i}`).toEqual(pcs(typed(t.id)));
+    }
+  });
+});
+
+describe("voicing", () => {
+  it("open lifts the second tone an octave (Cm7: C G Bb Eb)", () => {
+    expect(midis(typed("m7", { voicing: "open" }))).toEqual([60, 67, 70, 75]);
+    expect(midis(typed("min", { voicing: "open" }))).toEqual([60, 67, 75]);
+  });
+
+  it("close is the default and equals no voicing field", () => {
+    expect(midis(typed("m7", { voicing: "close" }))).toEqual(midis(typed("m7")));
+    expect(typed("m7", { voicing: "close" }).voicing).toBeUndefined();
+  });
+
+  it("combines with inversion (inversion first, then open)", () => {
+    // Cm7 1st inversion Eb G Bb C -> lift G: Eb Bb C G.
+    expect(midis(typed("m7", { inversion: 1, voicing: "open" }))).toEqual([63, 70, 72, 79]);
+  });
+
+  it("never loses or duplicates a tone", () => {
+    for (const t of CHORD_TYPES) expect(midis(typed(t.id, { voicing: "open" })).length).toBe(t.intervals.length);
+  });
+
+  it("leaves one- and two-tone stacks alone", () => {
+    expect(arrangeTones([0], 12, 0, "open")).toEqual([0]);
+    expect(arrangeTones([0, 7], 12, 0, "open")).toEqual([0, 7]);
+  });
+});
+
+describe("root, octave and range", () => {
+  it("builds every type on each of the 12 chromatic roots with the same shape", () => {
+    for (let root = 0; root < 12; root++) {
+      const ctx: ProjectScale = { ...C_MAJOR, root };
+      const m = chordMidis(ctx, sampleTrack(), typed("m7"));
+      expect(m.map((x) => x - m[0])).toEqual([0, 3, 7, 10]);
+      expect(m[0] % 12).toBe(root);
+    }
+  });
+
+  it("wraps roots past the scale into the next octave", () => {
+    expect(midis(typed("maj7", {}, 7))).toEqual(midis(typed("maj7")).map((m) => m + 12));
+  });
+
+  it("reaches the engine as clamped pitch offsets", () => {
+    const high = chordPitchOffsets(C_MAJOR, sampleTrack(), typed("13", { inversion: 4, voicing: "open" }, 28));
+    expect(Math.max(...high)).toBeLessThanOrEqual(48);
+    expect(chordPitchOffsets(C_MAJOR, sampleTrack(), typed("maj"))).toEqual([0, 4, 7]);
+  });
+
+  it("is deterministic", () => {
+    expect(midis(typed("m9", { inversion: 2, voicing: "open" }))).toEqual(midis(typed("m9", { inversion: 2, voicing: "open" })));
+  });
+});
+
+describe("persistence and compatibility", () => {
+  it("existing chords normalise to exactly their stored form (no new fields)", () => {
+    expect(normalizeChord({ root: 2, degrees: [0, 2, 4] })).toEqual({ root: 2, degrees: [0, 2, 4] });
+    expect(Object.keys(normalizeChord({ root: 2, degrees: [0, 2, 4] })!)).toEqual(["root", "degrees"]);
+  });
+
+  it("round-trips new fields through JSON and drops unknown ones", () => {
+    const c = typed("m9", { inversion: 2, voicing: "open" }, 3);
+    expect(normalizeChord(JSON.parse(JSON.stringify(c)))).toEqual(c);
+    const odd = normalizeChord({ root: 0, degrees: [0, 2, 4], type: "nope", inversion: 9, voicing: "wide" })!;
+    expect(odd).toEqual({ root: 0, degrees: [0, 2, 4], inversion: 2 });
+  });
+
+  it("names the type the menu shows", () => {
+    expect(chordTypeId(typed("m7"))).toBe("m7");
+    expect(chordTypeId(triad(0))).toBe("triad");
+    expect(chordTypeId({ root: 0, degrees: [0, 1] })).toBeNull();
+  });
+
+  it("edits type, inversion and voicing through the reducer and re-clamps on a smaller type", () => {
+    let project: Project = withChord(C_MAJOR, "bass", triad(0));
+    const patternId = project.patterns[0].id;
+    const noteId = Object.keys(project.patterns[0].notes)[0];
+    const get = () => project.patterns[0].notes[noteId].chord!;
+    project = projectReducer(project, { type: "SET_NOTE_CHORD", patternId, noteId, patch: chordTypePatch("m9")! });
+    project = projectReducer(project, { type: "SET_NOTE_CHORD", patternId, noteId, patch: { inversion: 4, voicing: "open" } });
+    expect(get()).toMatchObject({ type: "m9", inversion: 4, voicing: "open" });
+    project = projectReducer(project, { type: "SET_NOTE_CHORD", patternId, noteId, patch: chordTypePatch("sus4")! });
+    expect(get().inversion).toBe(2);
+    project = projectReducer(project, { type: "SET_NOTE_CHORD", patternId, noteId, patch: chordTypePatch("triad")! });
+    expect(get().type).toBeUndefined();
+  });
+
+  it("plays an inverted, typed chord one engine instance per tone, and counts its tones", () => {
+    const project = withChord(C_MAJOR, "bass", typed("m9", { inversion: 1, voicing: "open" }));
+    expect(chordVoicesNeeded(project).get("track-1")).toBe(5);
+    const events = compileInstrumentNotes(project.patterns[0], project.tracks, 120, 0, 0.5, undefined, 16, project.scale);
+    expect(events.map((e) => e.voice)).toEqual([0, 1, 2, 3, 4]);
+    const offsets = events.map((e) => e.params.pitch ?? 0);
+    expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
+  });
+
+  it("copy/paste carries the new fields", () => {
+    const project = withChord(C_MAJOR, "bass", typed("sus4", { inversion: 1, voicing: "open" }));
+    const clip = copyTrack(project, "track-1", project.patterns[0].id)!;
+    expect(clip.notes[0].chord).toEqual(typed("sus4", { inversion: 1, voicing: "open" }));
+  });
+});

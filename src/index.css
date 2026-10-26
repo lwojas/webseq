@@ -3661,6 +3661,16 @@ option.out-of-scale {
   color: #eafffa;
 }
 
+.te-chord-voicing {
+  display: flex;
+  gap: 2px;
+}
+
+.te-chord-voicing select {
+  flex: 1;
+  min-width: 0;
+}
+
 .te-chord-tones {
   color: var(--accent);
   font-size: 11px;

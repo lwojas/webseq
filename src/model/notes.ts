@@ -144,7 +144,7 @@ export function pasteNotes(
     const id = nextId("note");
     const note: Note = { id, trackId, start: c.start, duration: c.duration, velocity: c.velocity };
     if (c.pitch) note.pitch = c.pitch;
-    if (c.chord) note.chord = { root: c.chord.root, degrees: [...c.chord.degrees] };
+    if (c.chord) note.chord = { ...c.chord, degrees: [...c.chord.degrees] };
     if (c.lfo) note.lfo = c.lfo;
     if (c.ratchet && c.ratchet > 1) note.ratchet = c.ratchet;
     if (c.tie) note.tie = true;

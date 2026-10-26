@@ -14,15 +14,26 @@ Everything resolves through the existing `model/scale.ts` data; nothing re-deriv
 
 ## Chord mode (`model/chord.ts`, `Note.chord`)
 
-A chord is stored on an ordinary Note as `{ root, degrees }`, never as MIDI notes:
+A chord is stored on an ordinary Note as `{ root, degrees, type?, inversion?, voicing? }`, never as MIDI notes:
 
 - `root`: ladder index (which scale note it is built on).
 - `degrees`: scale-step offsets from the root, ascending. `[0,2,4]` = 1·3·5 (triad), `[0,2,4,6]` adds the
-  7th, `[0,2,4,6,8]` the 9th. Up to 5 tones. Stacked upward only; inversions would be an extra optional field
-  applied in `chordLadderIndices`.
+  7th, `[0,2,4,6,8]` the 9th. Up to 5 tones. These are the "In scale" shapes: their quality follows the project scale.
+- `type` (optional): a `CHORD_TYPES` id (maj, min, dim, aug, sus2, sus4, 6, m6, 69, maj7, m7, 7, dim7, m7b5, maj9,
+  m9, 9, 11, m11, 13). A named type is a fixed semitone table on the scale-note root, so Minor 7 is minor in any
+  scale; `degrees` then only records the tone count. 11 and 13 drop the tones players omit (5th, or 3rd of a dominant
+  11) to stay within 5 tones. An unknown type is dropped on load and the chord falls back to its `degrees`.
+- `inversion` (optional, 0 = root): moves the n lowest tones up an octave one at a time (Cm7: C Eb G Bb → Eb G Bb C →
+  G Bb C Eb → Bb C Eb G). Clamped to tones − 1. In-scale chords move by the scale's note count, so a pentatonic
+  chord inverts by its own octave.
+- `voicing` (optional, `"open"`; absent = close): applied after inversion, lifts the second-lowest tone an octave
+  (Cm7: C G Bb Eb). No effect on chords of fewer than 3 tones.
+- All three are resolved in `chordTones` / `arrangeTones`, pure functions. Absent fields mean the old behaviour, so
+  existing projects load and sound identical. Tones are always sorted ascending; tone *i* is engine instance *i*.
+  Notes are clamped to the engine's ±4 octave offset range, so an extreme root + inversion can collapse tones.
 
 A note has **either** `chord` **or** `pitch` (Note mode). The Track Editor's note card has a **Note | Chord**
-switch: Chord mode shows a root menu (scale notes only, with their degree), a size menu (Triad/Seventh/Ninth) and
+switch: Chord mode shows a root menu (scale notes only, with their degree), a Type menu (named types, plus the In-scale Triad/Seventh/Ninth), Inversion and Voicing menus, and
 the resolved tones (e.g. `A1 C2 E2`). Switching Note→Chord roots a triad on the nearest scale note to the pitch;
 Chord→Note keeps the root as the pitch. Chop tracks (pitch = slice) have no chord mode. Chromatic work stays
 possible everywhere else (plain notes, the full pitch menu).

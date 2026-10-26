@@ -16,19 +16,34 @@
 // Changing the project scale re-resolves chords (that is the point of scale-relative data) and
 // never touches plain notes.
 //
-// Inversions are a later feature: they would be an extra optional field on NoteChord applied in
-// chordLadderIndices, the single place that decides which ladder steps a chord occupies.
+// Two independent axes sit on top of that, both optional so older projects load unchanged:
+//   type       what the tones are. Absent = the legacy scale-derived stack (`degrees` alone: the
+//              chord's quality follows the project scale). A named type (min7, sus4, 6/9 ...) is a
+//              fixed interval table (CHORD_TYPES) built on the scale-note root, so "Minor 7" is
+//              minor in every scale; `degrees` then only records the tone count.
+//   inversion  0 = root position; n moves the n lowest tones up an octave, one at a time.
+//   voicing    "close" (default) or "open" (the second-lowest tone lifted an octave).
+// chordTones() is the single place that decides which pitches a chord occupies.
 
 import { effectiveSampleMode } from "./chop";
 import { rootMidiNote } from "./instruments";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "./notes";
 import { referenceMidi, scaleOf, type ProjectScale } from "./scale";
-import { ladderMidi, nearestLadderIndex, tonicAtOrBelow } from "./scaleDegrees";
+import { ladderMidi, ladderSize, nearestLadderIndex, tonicAtOrBelow } from "./scaleDegrees";
 import type { Note, NoteId, PatternId, Project, Track } from "./types";
+
+export type ChordVoicing = "close" | "open";
+export const CHORD_VOICINGS: readonly ChordVoicing[] = ["close", "open"];
 
 export interface NoteChord {
   root: number;
   degrees: number[];
+  /** CHORD_TYPES id; absent for the legacy scale-derived shapes. */
+  type?: string;
+  /** Absent = root position. */
+  inversion?: number;
+  /** Absent = close. */
+  voicing?: ChordVoicing;
 }
 
 export interface ChordShape {
@@ -42,6 +57,62 @@ export const CHORD_SHAPES: ChordShape[] = [
   { id: "seventh", label: "Seventh 1·3·5·7", degrees: [0, 2, 4, 6] },
   { id: "ninth", label: "Ninth 1·3·5·7·9", degrees: [0, 2, 4, 6, 8] },
 ];
+
+/** A fixed-quality chord: semitones above the root, ascending, at most MAX_CHORD_VOICES. Larger
+ * chords drop the tones players leave out (5th of an 11th/13th, 3rd of a dominant 11th). */
+export interface ChordType {
+  id: string;
+  label: string;
+  intervals: number[];
+}
+
+export const CHORD_TYPES: ChordType[] = [
+  { id: "maj", label: "Major", intervals: [0, 4, 7] },
+  { id: "min", label: "Minor", intervals: [0, 3, 7] },
+  { id: "dim", label: "Diminished", intervals: [0, 3, 6] },
+  { id: "aug", label: "Augmented", intervals: [0, 4, 8] },
+  { id: "sus2", label: "Sus2", intervals: [0, 2, 7] },
+  { id: "sus4", label: "Sus4", intervals: [0, 5, 7] },
+  { id: "6", label: "6", intervals: [0, 4, 7, 9] },
+  { id: "m6", label: "Minor 6", intervals: [0, 3, 7, 9] },
+  { id: "69", label: "6/9", intervals: [0, 4, 7, 9, 14] },
+  { id: "maj7", label: "Major 7", intervals: [0, 4, 7, 11] },
+  { id: "m7", label: "Minor 7", intervals: [0, 3, 7, 10] },
+  { id: "7", label: "Dominant 7", intervals: [0, 4, 7, 10] },
+  { id: "dim7", label: "Diminished 7", intervals: [0, 3, 6, 9] },
+  { id: "m7b5", label: "Half-dim 7", intervals: [0, 3, 6, 10] },
+  { id: "maj9", label: "Major 9", intervals: [0, 4, 7, 11, 14] },
+  { id: "m9", label: "Minor 9", intervals: [0, 3, 7, 10, 14] },
+  { id: "9", label: "Dominant 9", intervals: [0, 4, 7, 10, 14] },
+  { id: "11", label: "11", intervals: [0, 7, 10, 14, 17] },
+  { id: "m11", label: "Minor 11", intervals: [0, 3, 10, 14, 17] },
+  { id: "13", label: "13", intervals: [0, 4, 10, 14, 21] },
+];
+
+export function chordType(id: string | undefined): ChordType | undefined {
+  return id === undefined ? undefined : CHORD_TYPES.find((t) => t.id === id);
+}
+
+/** The chord fields that select `typeId` (a CHORD_TYPES id or a legacy CHORD_SHAPES id). `degrees`
+ * is only the tone count for a named type: that is what the instance pool and the label read. */
+export function chordTypePatch(typeId: string): Pick<NoteChord, "degrees" | "type"> | null {
+  const type = chordType(typeId);
+  if (type) return { type: type.id, degrees: stackDegrees(type.intervals.length) };
+  const shape = chordShape(typeId);
+  return shape ? { type: undefined, degrees: [...shape.degrees] } : null;
+}
+
+/** Id the type menu shows for `chord`: its named type, else its legacy shape, else null (custom). */
+export function chordTypeId(chord: NoteChord): string | null {
+  return chordType(chord.type)?.id ?? shapeIdOf(chord.degrees);
+}
+
+/** Largest valid inversion: one less than the tone count (a chord of n tones has n positions). */
+export function maxInversion(chord: NoteChord): number {
+  return Math.max(0, chord.degrees.length - 1);
+}
+
+const stackDegrees = (n: number) => [0, 2, 4, 6, 8].slice(0, n);
 
 export const DEFAULT_CHORD_DEGREES = CHORD_SHAPES[0].degrees;
 
@@ -62,16 +133,39 @@ export function shapeIdOf(degrees: readonly number[]): string | null {
  * ascending unique non-negative integer degrees. Null when nothing usable is left. */
 export function normalizeChord(raw: unknown): NoteChord | null {
   if (typeof raw !== "object" || raw === null) return null;
-  const { root, degrees } = raw as Partial<NoteChord>;
+  const { root, degrees, type, inversion, voicing } = raw as Partial<NoteChord>;
   if (!Number.isFinite(root) || !Array.isArray(degrees)) return null;
   const clean = [...new Set(degrees.filter((d) => Number.isFinite(d) && d >= 0 && d <= 24).map((d) => Math.round(d)))].sort((a, b) => a - b);
   if (clean.length === 0) return null;
-  return { root: Math.round(root as number), degrees: clean.slice(0, MAX_CHORD_VOICES) };
+  // An unknown type (a newer project, a corrupt one) is dropped: the chord falls back to its degrees.
+  const known = typeof type === "string" ? chordType(type) : undefined;
+  const tones = known ? known.intervals.length : Math.min(clean.length, MAX_CHORD_VOICES);
+  const out: NoteChord = { root: Math.round(root as number), degrees: known ? stackDegrees(tones) : clean.slice(0, MAX_CHORD_VOICES) };
+  if (known) out.type = known.id;
+  const inv = Number.isFinite(inversion) ? Math.min(tones - 1, Math.max(0, Math.round(inversion as number))) : 0;
+  if (inv > 0) out.inversion = inv;
+  if (voicing === "open") out.voicing = "open";
+  return out;
 }
 
-/** The ladder indices a chord occupies, ascending (root first). */
-export function chordLadderIndices(chord: NoteChord): number[] {
-  return chord.degrees.map((d) => chord.root + d);
+/** Moves the `inversion` lowest tones up an octave, one at a time, then (open voicing) lifts the
+ * second-lowest tone an octave, and returns the tones ascending. `octave` is the octave size in
+ * the same units as `tones` (12 semitones, or the scale's note count for ladder indices). Pure and
+ * deterministic; an inversion beyond the tone count is clamped to the last position. */
+export function arrangeTones(tones: readonly number[], octave: number, inversion = 0, voicing: ChordVoicing = "close"): number[] {
+  let t = [...tones].sort((a, b) => a - b);
+  const steps = Math.min(Math.max(0, Math.round(inversion)), Math.max(0, t.length - 1));
+  for (let i = 0; i < steps; i++) t = [...t.slice(1), t[0] + octave];
+  if (voicing === "open" && t.length >= 3) t = [t[0], ...t.slice(2), t[1] + octave];
+  return t.sort((a, b) => a - b);
+}
+
+/** The pitches a chord occupies, ascending, as ladder indices (legacy stack) or semitones above
+ * the root's pitch (named type), after inversion and voicing. Which of the two is `kind`. */
+export function chordTones(ctx: ProjectScale, chord: NoteChord): { kind: "ladder" | "semitones"; tones: number[] } {
+  const type = chordType(chord.type);
+  if (type) return { kind: "semitones", tones: arrangeTones(type.intervals, 12, chord.inversion, chord.voicing) };
+  return { kind: "ladder", tones: arrangeTones(chord.degrees.map((d) => chord.root + d), ladderSize(ctx), chord.inversion, chord.voicing) };
 }
 
 /** The tonic that ladder index 0 sits on under scale `ctx`, for a track whose root is `trackRoot`
@@ -85,10 +179,13 @@ function clampPitch(p: number): number {
   return Math.min(MAX_NOTE_PITCH, Math.max(MIN_NOTE_PITCH, p));
 }
 
-/** Concrete MIDI notes of `chord` under `ctx`, root first. */
+/** Concrete MIDI notes of `chord` under `ctx`, lowest first (the root, unless inverted). */
 export function chordMidis(ctx: ProjectScale, trackRoot: number | null, chord: NoteChord): number[] {
   const base = trackLadderBase(ctx, trackRoot);
-  return chordLadderIndices(chord).map((k) => ladderMidi(ctx, base, k));
+  const { kind, tones } = chordTones(ctx, chord);
+  if (kind === "ladder") return tones.map((k) => ladderMidi(ctx, base, k));
+  const rootMidi = ladderMidi(ctx, base, chord.root);
+  return tones.map((t) => rootMidi + t);
 }
 
 /** The same notes as Note.pitch offsets from the track's own pitch — what the engine receives. */
@@ -187,13 +284,13 @@ export function setNoteMode(project: Project, patternId: PatternId, noteId: Note
   });
 }
 
-/** Edits a chord note's root and/or degrees (normalised). A plain note is left alone. */
+/** Edits a chord note's root, degrees, type, inversion and/or voicing (normalised). A plain note is left alone. */
 export function setNoteChord(project: Project, patternId: PatternId, noteId: NoteId, patch: Partial<NoteChord>): Project {
   return updateNote(project, patternId, noteId, (note) => {
     if (!note.chord) return note;
     const next = normalizeChord({ ...note.chord, ...patch });
     if (!next) return note;
-    return next.root === note.chord.root && next.degrees.join() === note.chord.degrees.join() ? note : { ...note, chord: next };
+    return JSON.stringify(next) === JSON.stringify(note.chord) ? note : { ...note, chord: next };
   });
 }
 
