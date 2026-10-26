@@ -268,6 +268,20 @@ export interface Note {
    * own velocity). Authored, like velocity; the effective velocity is computed at playback and
    * never stored. */
   lfo?: number;
+  /** How many evenly spaced retriggers this step plays across its own length (see
+   * RATCHET_VALUES). Absent = 1 (a normal single trigger), so older projects are byte-identical.
+   * A property of the step, not extra events: the grid and the stored notes never change. */
+  ratchet?: number;
+}
+
+/** The ratchet counts a step can have; 1 is "normal". */
+export const RATCHET_VALUES = [1, 2, 3, 4, 6, 8] as const;
+
+/** A note's ratchet as playback uses it: always one of RATCHET_VALUES (a saved or recovered
+ * project is not trusted), 1 when absent or unknown. */
+export function ratchetOf(note: Pick<Note, "ratchet">): number {
+  const r = note.ratchet;
+  return r !== undefined && (RATCHET_VALUES as readonly number[]).includes(r) ? r : 1;
 }
 
 /** One arrangement of musical events. Has its own length in bars but deliberately no BPM of

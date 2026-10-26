@@ -446,6 +446,10 @@ export function setNoteVelocity(project: Project, patternId: PatternId, noteId: 
   return updatePattern(project, patternId, (p) => notes.setVelocity(p, noteId, velocity));
 }
 
+export function setNoteRatchet(project: Project, patternId: PatternId, noteId: NoteId, ratchet: number): Project {
+  return updatePattern(project, patternId, (p) => notes.setRatchet(p, noteId, ratchet));
+}
+
 export function resizeNote(
   project: Project,
   patternId: PatternId,

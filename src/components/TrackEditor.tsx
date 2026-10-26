@@ -7,7 +7,7 @@ import { arpOf, type ArpVelocity, type TrackArp } from "../model/arp";
 import { chordMidis, chordRootOptions, midiNoteName, CHORD_SHAPES, shapeIdOf, type NoteChord } from "../model/chord";
 import { degreeOfIndex } from "../model/scaleDegrees";
 import { getScaleDegree, isChromatic, isOffsetInScale, referenceMidi, type ProjectScale } from "../model/scale";
-import { notesForTrack, totalBeats, trackHasSource } from "../model/types";
+import { RATCHET_VALUES, notesForTrack, ratchetOf, totalBeats, trackHasSource } from "../model/types";
 import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
 import { effectiveSampleMode, sliceCount } from "../model/chop";
 import { rootMidiNote } from "../model/instruments";
@@ -27,6 +27,7 @@ interface Props {
   onRemoveNote: (noteId: NoteId) => void;
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
+  onSetNoteRatchet: (noteId: NoteId, ratchet: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
   onSetNoteMode: (noteId: NoteId, mode: "note" | "chord") => void;
   onSetNoteChord: (noteId: NoteId, patch: Partial<NoteChord>) => void;
@@ -105,6 +106,7 @@ interface CardProps {
   onRemoveNote: (noteId: NoteId) => void;
   onSetNotePitch: (noteId: NoteId, pitch: number) => void;
   onSetNoteVelocity: (noteId: NoteId, velocity: number) => void;
+  onSetNoteRatchet: (noteId: NoteId, ratchet: number) => void;
   onSetNoteDuration: (noteId: NoteId, duration: number) => void;
   /** Chop track: how many slices its sample has (pitch picks one). null = chromatic. */
   slices: number | null;
@@ -187,6 +189,7 @@ const NoteCard = memo(function NoteCard({
   onRemoveNote,
   onSetNotePitch,
   onSetNoteVelocity,
+  onSetNoteRatchet,
   onSetNoteDuration,
   onSetNoteMode,
   onSetNoteChord,
@@ -266,6 +269,18 @@ const NoteCard = memo(function NoteCard({
         </div>
       )}
       <select
+        value={ratchetOf(note)}
+        onChange={(e) => onSetNoteRatchet(note.id, Number(e.target.value))}
+        aria-label="Ratchet"
+        title="Ratchet — retrigger this step evenly this many times within its length"
+      >
+        {RATCHET_VALUES.map((r) => (
+          <option key={r} value={r}>
+            {r === 1 ? "Ratchet off" : `Ratchet ×${r}`}
+          </option>
+        ))}
+      </select>
+      <select
         value={note.duration}
         onChange={(e) => onSetNoteDuration(note.id, Number(e.target.value))}
         aria-label="Length"
@@ -298,6 +313,7 @@ export const TrackEditor = memo(function TrackEditor({
   onRemoveNote,
   onSetNotePitch,
   onSetNoteVelocity,
+  onSetNoteRatchet,
   onSetNoteDuration,
   onSetNoteMode,
   onSetNoteChord,
@@ -389,6 +405,7 @@ export const TrackEditor = memo(function TrackEditor({
               onRemoveNote={onRemoveNote}
               onSetNotePitch={onSetNotePitch}
               onSetNoteVelocity={onSetNoteVelocity}
+              onSetNoteRatchet={onSetNoteRatchet}
               onSetNoteDuration={onSetNoteDuration}
               lfoOn={lfo.enabled}
               onSetNoteLfo={onSetNoteLfo}

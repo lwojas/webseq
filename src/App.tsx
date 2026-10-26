@@ -479,6 +479,7 @@ export function App() {
         pitch: n.pitch,
         chord: n.chord,
         lfo: n.lfo,
+        ratchet: n.ratchet,
       }));
       if (copied.length === 0) return;
       setNoteClipboard({ sourceTrackId: trackId, notes: copied });
@@ -906,6 +907,10 @@ export function App() {
   );
   const handleSetNoteChord = useCallback(
     (noteId: NoteId, patch: Partial<NoteChord>) => dispatch({ type: "SET_NOTE_CHORD", patternId: selectedPatternId, noteId, patch }),
+    [selectedPatternId],
+  );
+  const handleSetNoteRatchet = useCallback(
+    (noteId: NoteId, ratchet: number) => dispatch({ type: "SET_NOTE_RATCHET", patternId: selectedPatternId, noteId, ratchet }),
     [selectedPatternId],
   );
   const handleSetNoteVelocity = useCallback(
@@ -1616,6 +1621,7 @@ export function App() {
             onRemoveNote: handleRemoveNote,
             onSetNotePitch: handleSetNotePitch,
             onSetNoteVelocity: handleSetNoteVelocity,
+            onSetNoteRatchet: handleSetNoteRatchet,
             onSetNoteDuration: handleSetNoteDuration,
             onSetNoteMode: handleSetNoteMode,
             onSetNoteChord: handleSetNoteChord,

@@ -7,7 +7,7 @@
 import { findLane, valueAtBeat } from "../model/automation";
 import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
 import type { Note, Pattern, Track, TrackId } from "../model/types";
-import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
+import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode, ratchetOf } from "../model/types";
 import { effectiveSampleMode } from "../model/chop";
 import { instrumentDefFor } from "../model/instruments";
 import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
@@ -42,6 +42,18 @@ export function swingOffsetSeconds(sixteenthIndex: number, swing: number, sixtee
   return sixteenthDuration * (swing - 0.5);
 }
 
+/** Where retrigger `hit` of a note (0-based) sounds and how long it lasts, in seconds. A ratchet
+ * of n splits the note's own length into n equal slots and starts one real trigger at the front of
+ * each (nothing is gated out of a single sustained voice). The swing offset is the whole note's, added
+ * to the unswung start, so a ratcheted step never drifts against its neighbours. With ratchet 1 this
+ * is exactly the note's own time and length. */
+function ratchetSlot(note: Note, hit: number, spb: number, swing: number, stepStartTime: number): { time: number; duration: number } {
+  const n = ratchetOf(note);
+  const length = note.duration * spb;
+  const slot = n > 1 ? length / n : length;
+  return { time: stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb) + hit * slot, duration: slot };
+}
+
 /** Converts one note into a webdsp ScheduledEvent for one playthrough of its pattern,
  * starting at `stepStartTime` (absolute engine time). Returns null if the track has no
  * sample assigned yet (nothing to play). `busId` routes the voice into that track's own FX
@@ -58,7 +70,10 @@ export function swingOffsetSeconds(sixteenthIndex: number, swing: number, sixtee
  *
  * `lfoAnchorTime` (the transport anchor) enables the track's event LFO: the note's velocity is
  * modulated by the LFO value at this event's own scheduled time (swing included). Omitted = no
- * modulation. The stored Note is never changed; only the event's gain differs. */
+ * modulation. The stored Note is never changed; only the event's gain differs.
+ *
+ * `hit` (default 0) is which retrigger of a ratcheted note this event is (Note.ratchet): the event
+ * starts that many slots into the note and lasts one slot. Callers play every hit 0..ratchetOf(note)-1. */
 export function compileNote(
   track: Track,
   note: Note,
@@ -67,14 +82,15 @@ export function compileNote(
   busId?: BusId,
   swing = 0.5,
   lfoAnchorTime?: number,
+  hit = 0,
 ): ScheduledEvent | null {
   if (track.assetId == null) return null;
   const spb = secondsPerBeat(bpm);
-  const time = stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb);
+  const { time, duration } = ratchetSlot(note, hit, spb, swing, stepStartTime);
   const event: ScheduledEvent = {
     sampleId: track.assetId,
     time,
-    duration: note.duration * spb,
+    duration,
     gain: effectiveVelocity(track, note, time, lfoClock(bpm, lfoAnchorTime)),
   };
   if (busId !== undefined) event.bus = busId;
@@ -109,11 +125,12 @@ export function compileInstrumentNote(
   stepStartTime: number,
   swing = 0.5,
   lfoAnchorTime?: number,
+  hit = 0,
 ): InstrumentNoteParams | null {
   const def = instrumentDefFor(track);
   if (!def) return null;
   const spb = secondsPerBeat(bpm);
-  const time = stepStartTime + note.start * spb + swingOffsetSeconds(note.start, swing, spb);
+  const { time, duration } = ratchetSlot(note, hit, spb, swing, stepStartTime);
   const params: InstrumentNoteParams = {
     time,
     velocity: effectiveVelocity(track, note, time, lfoClock(bpm, lfoAnchorTime)),
@@ -121,7 +138,7 @@ export function compileInstrumentNote(
   if (note.pitch) params.pitch = note.pitch;
   const chokeGroup = effectiveChokeGroup(track);
   if (chokeGroup !== null) params.chokeGroup = chokeGroup;
-  if (def.sustained) params.duration = note.duration * spb;
+  if (def.sustained) params.duration = duration;
   return params;
 }
 
@@ -143,8 +160,10 @@ export function compileInstrumentNotes(
   const byTrack = groupNotesByTrack(pattern);
   for (const track of synthTracks) {
     for (const note of playedNotes(track, byTrack.get(track.id) ?? [], pattern, beatsPerBar, scale)) {
-      const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime);
-      if (params) results.push({ trackId: track.id, params, voice: note.voice ?? 0 });
+      for (let hit = 0, n = ratchetOf(note); hit < n; hit++) {
+        const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime, hit);
+        if (params) results.push({ trackId: track.id, params, voice: note.voice ?? 0 });
+      }
     }
   }
   return results;
@@ -200,10 +219,18 @@ export function compilePatternIterationTracked(
   for (const track of tracks) {
     const busId = busIdFor(track.id);
     const trackEvents: ScheduledEvent[] = [];
+    let ratcheted = false;
     for (const note of playedNotes(track, notesByTrack.get(track.id) ?? [], pattern, beatsPerBar, scale)) {
-      const event = compileNote(track, note, bpm, stepStartTime, busId, swing, lfoAnchorTime);
-      if (event) trackEvents.push(event);
+      const n = ratchetOf(note);
+      if (n > 1) ratcheted = true;
+      for (let hit = 0; hit < n; hit++) {
+        const event = compileNote(track, note, bpm, stepStartTime, busId, swing, lfoAnchorTime, hit);
+        if (event) trackEvents.push(event);
+      }
     }
+    // Ratchet hits of a chord interleave with the next tone's; the mono pass below wants time order
+    // (stable, so tones that share a start keep their order). Tracks without a ratchet keep their order untouched.
+    if (ratcheted) trackEvents.sort((a, b) => a.time - b.time);
     if (effectiveVoiceMode(track) === "mono") {
       for (let i = 0; i < trackEvents.length - 1; i++) {
         const current = trackEvents[i];

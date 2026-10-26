@@ -6,7 +6,7 @@
 // entire sequencer state.
 
 import type { Note, NoteId, Pattern, TrackId } from "./types";
-import { notesForTrack, totalBeats } from "./types";
+import { notesForTrack, ratchetOf, totalBeats } from "./types";
 
 /** Snap resolutions a user can pick in the toolbar, in steps (a step = one 16th note — see
  * Project.beatsPerBar). Power-of-two fractions only, so quantizing to any of them and back is
@@ -118,7 +118,7 @@ export function clearTrackNotes(pattern: Pattern, trackId: TrackId): Pattern {
  * (beats from this pattern's start), not relative to some anchor — there is no "paste cursor"
  * concept in this app (no selected empty cell, only a selected track), so pasting reproduces
  * the exact beat positions that were copied, just under the destination trackId. */
-export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch" | "chord" | "lfo">;
+export type CopiedNote = Pick<Note, "start" | "duration" | "velocity" | "pitch" | "chord" | "lfo" | "ratchet">;
 
 /** Pastes `copied` onto `trackId` in this Pattern, preserving each note's original start/
  * duration/velocity exactly (no re-quantization — unlike addNote, these values already came
@@ -146,6 +146,7 @@ export function pasteNotes(
     if (c.pitch) note.pitch = c.pitch;
     if (c.chord) note.chord = { root: c.chord.root, degrees: [...c.chord.degrees] };
     if (c.lfo) note.lfo = c.lfo;
+    if (c.ratchet && c.ratchet > 1) note.ratchet = c.ratchet;
     next = { ...next, notes: { ...next.notes, [id]: note } };
     pasted += 1;
   }
@@ -207,6 +208,16 @@ export function setVelocity(pattern: Pattern, noteId: NoteId, velocity: number):
   if (!note) return pattern;
   const clamped = Math.min(1, Math.max(0, velocity));
   return { ...pattern, notes: { ...pattern.notes, [noteId]: { ...note, velocity: clamped } } };
+}
+
+/** Sets a step's ratchet. Anything that is not one of RATCHET_VALUES, and 1, is stored as "absent" so
+ * ordinary steps stay byte-identical to steps saved before ratchets existed. */
+export function setRatchet(pattern: Pattern, noteId: NoteId, ratchet: number): Pattern {
+  const note = pattern.notes[noteId];
+  if (!note) return pattern;
+  const { ratchet: _old, ...rest } = note;
+  const r = ratchetOf({ ratchet });
+  return { ...pattern, notes: { ...pattern.notes, [noteId]: r > 1 ? { ...rest, ratchet: r } : rest } };
 }
 
 /** Matches the engine's own clamp on a note's pitch offset (webdsp clamps to +-48 semitones). */

@@ -46,7 +46,7 @@ export function createHistory(present: Project): History {
  * passes straight through and is not undoable. */
 const UNDOABLE = new Set<Action["type"]>([
   "ADD_NOTE", "REMOVE_NOTE", "CLEAR_TRACK_NOTES", "PASTE_NOTES", "MOVE_NOTE", "RESIZE_NOTE",
-  "SET_NOTE_PITCH", "SET_NOTE_MODE", "SET_NOTE_CHORD", "SET_NOTE_VELOCITY", "SET_NOTE_LFO", "SET_TRACK_NOTES_LFO",
+  "SET_NOTE_PITCH", "SET_NOTE_MODE", "SET_NOTE_CHORD", "SET_NOTE_VELOCITY", "SET_NOTE_RATCHET", "SET_NOTE_LFO", "SET_TRACK_NOTES_LFO",
   "EXTEND_TRACK", "DUPLICATE_SEQUENCE", "DUPLICATE_BAR", "SET_PATTERN_BARS",
   "PASTE_TRACK", "PASTE_TRACK_CONFIG", "PASTE_INSTRUMENT", "PASTE_FX", "PASTE_MODULATION", "PASTE_BANK",
 ]);
@@ -55,7 +55,7 @@ const UNDOABLE = new Set<Action["type"]>([
 function coalesceKey(action: Action): string | null {
   switch (action.type) {
     case "MOVE_NOTE": case "RESIZE_NOTE": case "SET_NOTE_PITCH": case "SET_NOTE_MODE":
-    case "SET_NOTE_CHORD": case "SET_NOTE_VELOCITY": case "SET_NOTE_LFO":
+    case "SET_NOTE_CHORD": case "SET_NOTE_VELOCITY": case "SET_NOTE_RATCHET": case "SET_NOTE_LFO":
       return `${action.type}:${action.patternId}:${action.noteId}`;
     case "SET_TRACK_NOTES_LFO":
       return `${action.type}:${action.patternId}:${action.trackId}`;

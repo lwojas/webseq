@@ -332,6 +332,7 @@ export function arpTrackNotes(notes: Note[], arp: TrackArp, beatsPerBar: number,
       const pitch = Math.max(-48, Math.min(48, step.pitch));
       if (pitch) note.pitch = pitch;
       if (src.lfo) note.lfo = src.lfo;
+      if (src.ratchet) note.ratchet = src.ratchet;
       out.push(note);
     }
   }
