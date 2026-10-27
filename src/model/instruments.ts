@@ -112,6 +112,7 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "bite", label: "Bite", min: 0, max: 1, step: 0.01, default: 0.4 },
       { id: "cutoff", label: "Cutoff", min: 40, max: 4000, step: 1, unit: "Hz", default: 400 },
       { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.25 },
+      { id: "envmod", label: "Env Mod", min: 0, max: 1, step: 0.01, default: 0.4 },
       { id: "attack", label: "Attack", min: 0.001, max: 0.25, step: 0.001, unit: "s", default: 0.003 },
       { id: "decay", label: "Decay", min: 0.03, max: 2, step: 0.01, unit: "s", default: 0.35 },
       { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0.6 },
