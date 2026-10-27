@@ -4,6 +4,7 @@ import type { GridResolution } from "../model/notes";
 import type { PlaybackStatus, ResampleStatus } from "../audio/transport";
 import { useRafText } from "../hooks/useRafText";
 import { formatScale, type ProjectScale } from "../model/scale";
+import type { PlaybackSource } from "../model/composer";
 import { ScaleControl } from "./ScaleControl";
 import { GridZoomControls } from "./GridZoomControls";
 
@@ -33,6 +34,9 @@ interface Props {
   onZoomIn: () => void;
   onZoomOut: () => void;
   getPositionText: () => string;
+  /** What Play plays: the launcher's pattern queue or the Composer song. */
+  source: PlaybackSource;
+  onSourceChange: (source: PlaybackSource) => void;
   canResample: boolean;
   onResample: () => void;
   resamplePhase: ResamplePhase;
@@ -69,6 +73,8 @@ export function TransportBar({
   onZoomIn,
   onZoomOut,
   getPositionText,
+  source,
+  onSourceChange,
   canResample,
   onResample,
   resamplePhase,
@@ -106,6 +112,20 @@ export function TransportBar({
           </button>
         </div>
       )}
+
+      <div className="source-toggle" role="group" aria-label="Playback source">
+        {(["pattern", "song"] as const).map((id) => (
+          <button
+            key={id}
+            className={`btn small ${source === id ? "active" : ""}`}
+            aria-pressed={source === id}
+            title={id === "pattern" ? "Play the pattern queue (the launcher)" : "Play the Composer timeline, left to right"}
+            onClick={() => source !== id && onSourceChange(id)}
+          >
+            {id === "pattern" ? "Pattern" : "Song"}
+          </button>
+        ))}
+      </div>
 
       <div className="field">
         <span>{followedBpm !== null ? "BPM · host" : "BPM"}</span>

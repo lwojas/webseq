@@ -46,6 +46,8 @@ import { blockWhileGuideOpen, pauseForGuide } from "./guide/session";
 import { Workspace } from "./app/Workspace";
 import { PatternsView } from "./app/PatternsView";
 import { MobileTabBar } from "./app/MobileTabBar";
+import { automationSpans, describeSongPosition, launcherPatterns, maxSequenceBars, type PlaybackSource } from "./model/composer";
+import { useComposer } from "./app/useComposer";
 import { deriveLayout, effectiveSideView, useLayout, type BottomPanelView, type LibraryView, type MainView, type MobileTab, type SidePanelView, type Takeover, type TrackSubTab } from "./app/layout";
 import { useMidiControls } from "./midi/useMidiControls";
 import { scaleOf, type ProjectScale } from "./model/scale";
@@ -59,6 +61,7 @@ function releaseEngineSamples(rt: AudioRuntime): void {
 }
 
 /** What the Edit panel gets while it isn't showing: shared empties, so nothing is allocated. */
+const NO_SPANS: { startBeat: number; beats: number }[] = [];
 const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[] } = { clipboardRows: [], barTools: [] };
 
 /** How long the song must be unchanged before it is sent to a host that plays it natively. */
@@ -71,6 +74,8 @@ export function App() {
   // Undo/redo wraps the project reducer (model/history.ts): `project` is still the single source of truth.
   const [history, dispatch] = useReducer(historyReducer, undefined, () => createHistory(createInitialProject()));
   const project = history.present;
+  // What the launcher, queue and pickers list: Composer-owned patterns are not part of it.
+  const launcher = useMemo(() => launcherPatterns(project.patterns), [project.patterns]);
   const canUndo = history.past.length > 0;
   const canRedo = history.future.length > 0;
   const handleUndo = useCallback(() => dispatch({ type: "UNDO" }), []);
@@ -86,6 +91,11 @@ export function App() {
   const trackBusesRef = useRef<TrackBusMap>({});
   const assetDataRef = useRef<Map<AssetId, ArrayBuffer>>(new Map());
   const transportRef = useRef<Transport | null>(null);
+  // What Play plays (model/composer.ts): the pattern queue, or the Composer song. A ref as well as state because
+  // the Transport reads it on every tick; the state is what re-renders the toggle. Only changed through
+  // handleSetSource, which stops the transport first.
+  const [playbackSource, setPlaybackSourceState] = useState<PlaybackSource>("pattern");
+  const playbackSourceRef = useRef<PlaybackSource>("pattern");
   const playbackRef = useRef<Playback | null>(null);
 
   const [status, setStatus] = useState<PlaybackStatus>("stopped");
@@ -158,7 +168,7 @@ export function App() {
     if (!runtime) return;
     trackBusesRef.current = ensureTrackBuses(runtime, project.tracks.map((t) => t.id), trackBusesRef.current);
     if (!transportRef.current) {
-      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId, ensurePlayback(runtime), createSmoothClock(() => runtime.getCurrentTime(), () => performance.now() / 1000));
+      transportRef.current = new Transport(runtime, () => projectRef.current, getBusId, ensurePlayback(runtime), createSmoothClock(() => runtime.getCurrentTime(), () => performance.now() / 1000), () => playbackSourceRef.current);
     }
   }, [runtime, project.tracks, getBusId, ensurePlayback]);
 
@@ -246,7 +256,7 @@ export function App() {
     // What the engine can play right now; a change here is a reason to compile again even if the project is the same object.
     const ready = current.tracks
       .map((t) => `${runtime.getSample(t.assetId ?? -1) ? 1 : 0}${instruments.instrumentIdFor(t.id, 0) ?? "-"}${getBusId(t.id) ?? "-"}`)
-      .join(",");
+      .join(",") + playbackSourceRef.current;
     const sent = sentSequenceRef.current;
     if (sent.project === current && sent.ready === ready) return;
     const sequence = compileNativeSequence(current, {
@@ -254,6 +264,7 @@ export function App() {
       instrumentIdFor: (trackId, voice) => instruments.instrumentIdFor(trackId, voice),
       hasSample: (id) => runtime.getSample(id) !== undefined,
       automation: (start, beats) => automationSequenceEvents(runtime, current, getBusId, start, beats),
+      source: playbackSourceRef.current,
     });
     const json = JSON.stringify(sequence);
     sentSequenceRef.current = { project: current, ready, json: json === sent.json ? sent.json : json };
@@ -269,7 +280,7 @@ export function App() {
     if (!runtime || !capabilities?.nativeSequence) return;
     const timer = setTimeout(pushSequence, NATIVE_SEQUENCE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [runtime, capabilities, project, pushSequence]);
+  }, [runtime, capabilities, project, playbackSource, pushSequence]);
 
   // Manual voices whose track or asset changed under them (reassigned, removed) are released
   // here. Cheap: it scans at most one entry per track.
@@ -292,8 +303,10 @@ export function App() {
   useEffect(() => {
     const ids = project.patterns.map((p) => p.id);
     const added = ids.find((id) => !prevPatternIds.current.includes(id));
-    if (added) setSelectedPatternId(added);
-    else if (!ids.includes(selectedPatternId)) setSelectedPatternId(ids[0]);
+    if (added) {
+      setSelectedPatternId(added);
+      composer.onPatternAdded(added); // a new Composer sequence (added, duplicated, pasted) becomes the selected one
+    } else if (!ids.includes(selectedPatternId)) setSelectedPatternId(launcherPatterns(projectRef.current.patterns)[0].id);
     prevPatternIds.current = ids;
   }, [project.patterns, selectedPatternId]);
 
@@ -312,7 +325,7 @@ export function App() {
     if (!rt) return null;
     trackBusesRef.current = ensureTrackBuses(rt, projectRef.current.tracks.map((t) => t.id), trackBusesRef.current);
     syncBuses(rt, projectRef.current, trackBusesRef.current);
-    const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt), createSmoothClock(() => rt.getCurrentTime(), () => performance.now() / 1000));
+    const t = new Transport(rt, () => projectRef.current, getBusId, ensurePlayback(rt), createSmoothClock(() => rt.getCurrentTime(), () => performance.now() / 1000), () => playbackSourceRef.current);
     transportRef.current = t;
     return t;
   }, [init, getBusId, ensurePlayback]);
@@ -332,6 +345,17 @@ export function App() {
     transportRef.current?.stop();
     setStatus(transportRef.current?.getStatus() ?? "stopped");
   }, []);
+
+  // Switching what Play plays stops the transport first: a position in the queue means nothing in the song.
+  const handleSetSource = useCallback(
+    (source: PlaybackSource) => {
+      if (playbackSourceRef.current === source) return;
+      handleStop();
+      playbackSourceRef.current = source;
+      setPlaybackSourceState(source);
+    },
+    [handleStop],
+  );
 
   // Queuing/removing a pattern is an ordinary project edit (model/project.ts's
   // queuePatternNext/removeChainEntry) — "after whatever's currently playing" comes from
@@ -639,7 +663,7 @@ export function App() {
   // Pattern navigation. ◀ ▶ and the [ ] keys step without opening the picker; picking from the
   // picker selects AND closes it.
   const handleStepPattern = useCallback(
-    (direction: -1 | 1) => setSelectedPatternId((current) => adjacentPatternId(projectRef.current.patterns, current, direction)),
+    (direction: -1 | 1) => setSelectedPatternId((current) => adjacentPatternId(launcherPatterns(projectRef.current.patterns), current, direction)),
     [],
   );
   const handlePickPattern = useCallback((id: PatternId) => {
@@ -657,7 +681,10 @@ export function App() {
         return;
       }
       // [ and ] step to the previous/next pattern. Not while typing (the rename field etc.).
-      if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // In the Composer the keys below act on the selected track or pattern, which the Composer does not show: leave them off
+      // there (a sequence block handles its own Delete).
+      const inComposer = mainView === "composer";
+      if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey && !inComposer) {
         const target = e.target as HTMLElement | null;
         if (target && (target.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName))) return;
         handleStepPattern(e.key === "[" ? -1 : 1);
@@ -673,7 +700,7 @@ export function App() {
         else handleUndo();
         return;
       }
-      if (e.key === "Backspace" || e.key === "Delete") {
+      if ((e.key === "Backspace" || e.key === "Delete") && !inComposer) {
         const target = e.target as HTMLElement | null;
         if (target && (target.tagName === "INPUT" || target.tagName === "SELECT")) return;
         // ECS-107: an individually selected step always takes precedence over whole-track
@@ -720,7 +747,7 @@ export function App() {
       // key doesn't re-copy/re-paste every repeat event. Only preventDefault once a track is
       // actually selected and there's something to do, so a plain Cmd+C/V elsewhere on the page
       // (no track selected, or copying real text in a focused field) is left alone.
-      if ((e.key === "c" || e.key === "C" || e.key === "v" || e.key === "V") && (e.metaKey || e.ctrlKey) && !e.repeat) {
+      if ((e.key === "c" || e.key === "C" || e.key === "v" || e.key === "V") && (e.metaKey || e.ctrlKey) && !e.repeat && !inComposer) {
         const target = e.target as HTMLElement | null;
         if (
           target &&
@@ -753,9 +780,17 @@ export function App() {
     handleStepPattern,
     handleUndo,
     handleRedo,
+    mainView,
   ]);
 
   const getPositionText = useCallback(() => {
+    if (playbackSourceRef.current === "song") {
+      const song = transportRef.current?.getSongPosition();
+      if (!song) return "— —";
+      const bar = Math.floor(song.songBeat / project.beatsPerBar) + 1;
+      const beatInBar = Math.floor(song.songBeat % project.beatsPerBar) + 1;
+      return `SONG  BAR ${bar}  BEAT ${String(beatInBar).padStart(2, "0")}`;
+    }
     const info = transportRef.current?.getPlayheadInfo();
     const pattern = project.patterns.find((p) => p.id === info?.patternId);
     if (!info || !pattern) return "— —";
@@ -764,11 +799,14 @@ export function App() {
     return `${pattern.name}  BAR ${bar}  BEAT ${String(beatInBar).padStart(2, "0")}`;
   }, [project.patterns, project.beatsPerBar]);
 
-  const getPlayheadBeat = useCallback((): number | null => {
-    const info = transportRef.current?.getPlayheadInfo();
-    if (!info || info.patternId !== selectedPatternId) return null;
-    return info.beat;
-  }, [selectedPatternId]);
+  // The Composer's playhead and readout, from the same transport position (Song mode only).
+  const getSongBeat = useCallback(() => transportRef.current?.getSongPosition()?.songBeat ?? null, []);
+  const getSongText = useCallback(() => {
+    const song = transportRef.current?.getSongPosition();
+    return song ? describeSongPosition(projectRef.current, song.songBeat) : "stopped";
+  }, []);
+
+  const getPlayheadBeat = useCallback((): number | null => transportRef.current?.getPlayheadBeatFor(selectedPatternId) ?? null, [selectedPatternId]);
 
   const getResampleLabel = useCallback(() => transportRef.current?.getResampleStatus() ?? "idle", []);
 
@@ -1307,7 +1345,8 @@ export function App() {
   // Project.patternChain's doc comment), so PatternStrip/PatternList/PatternQueue's highlighting
   // needs a real state update on a boundary crossing even when nothing else re-renders the
   // app (see usePlayingPosition's doc comment).
-  const { patternId: playingPatternId, chainEntryId: playingChainEntryId } = usePlayingPosition(transportRef, status === "playing");
+  const { patternId: playingPatternId, chainEntryId: playingChainEntryId, sequenceIds: playingSequenceKey } = usePlayingPosition(transportRef, status === "playing");
+  const playingSequenceIds = useMemo(() => new Set(playingSequenceKey ? playingSequenceKey.split(",") : []), [playingSequenceKey]);
 
   // --- layout ---
   // What is showing where is decided by deriveLayout (and rendered by Chrome / Workspace); App only
@@ -1345,6 +1384,45 @@ export function App() {
   const handleSelectMainView = (view: MainView) => {
     setMainView(view);
     setTakeover("none");
+    // Entering the Composer: the selected sequence is the pattern the dock and automation follow, and an idle
+    // transport switches to the song (a running one is left alone; the Song/Pattern toggle changes it).
+    if (view === "composer") {
+      if (composer.sequence) setSelectedPatternId(composer.sequence.patternId);
+      if (status === "stopped") handleSetSource("song");
+      if (!layout.isPhone) setSidePanelView("edit"); // the Composer's detail controls live in the Edit panel
+    }
+  };
+
+  // --- Composer (model/composer.ts, app/useComposer.ts) ---
+  // The Composer replaces the grid (see Workspace) and is another view of the same project: selecting a sequence selects
+  // its pattern and its lane's FX, and "Edit Sequence" switches to the Sequencer on that same pattern — there is no
+  // second editing path.
+  // "Play from here": the song from a beat, whatever was playing before.
+  const handlePlaySongFrom = async (beat: number) => {
+    handleSetSource("song");
+    const transport = await ensureTransport();
+    transport?.playFromBeat(beat);
+    setStatus(transport?.getStatus() ?? "stopped");
+  };
+  // Where the focused automation lane plays in the song (the same lane the grid shows) -- for the Composer to draw it over.
+  const composerAutomationSpans = useMemo(
+    () => (mainView === "composer" && automationRow ? automationSpans(project, selectedTarget) : NO_SPANS),
+    [mainView, automationRow, project, selectedTarget],
+  );
+  const composer = useComposer({
+    project,
+    dispatch,
+    launcher,
+    selectedPatternId,
+    setSelectedPatternId,
+    setMainView,
+    playSongFrom: (beat) => void handlePlaySongFrom(beat),
+  });
+  // "+ Composer" (pattern strip, Patterns page): copy the pattern onto the selected lane and go to the Composer. The new
+  // sequence is selected by the pattern-added effect above, and the timeline scrolls it into view when that selection lands.
+  const handleAddToComposer = (patternId: PatternId) => {
+    dispatch({ type: "COMPOSER_ADD_PATTERN", patternId, laneId: composer.lane?.id });
+    handleSelectMainView("composer");
   };
   // "Edit ▸" on the Patterns page: open that pattern in the timeline (Sequencer view / Timeline tab).
   const handleEditPattern = (id: PatternId) => {
@@ -1408,6 +1486,8 @@ export function App() {
     onZoomIn,
     onZoomOut,
     getPositionText,
+    source: playbackSource,
+    onSourceChange: handleSetSource,
     canResample: status === "playing" && playheadInfo?.patternId != null && resamplePhase !== "pending" && resamplePhase !== "processing",
     onResample: handleResample,
     resamplePhase,
@@ -1436,7 +1516,7 @@ export function App() {
     onAuditionSlice: handleAuditionSlice,
     getAssetBytes,
   };
-  const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus, history: { canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo } };
+  const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus, composer: mainView === "composer" ? composer.details : undefined, history: { canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo } };
   const trackHeaderProps = {
     track: selectedTrack ?? null,
     label: trackHeadLabel,
@@ -1486,7 +1566,10 @@ export function App() {
         projectBar={projectBarProps}
         transport={transportProps}
         patternStrip={{
-          patterns: project.patterns,
+          patterns: composer.editingSequence ? [selectedPattern] : launcher,
+          composer: composer.editingSequence ? { onReturn: composer.returnToComposer } : undefined,
+          maxBars: composer.editingSequence ? maxSequenceBars(project, composer.editingSequence) : undefined,
+          onAddToComposer: () => handleAddToComposer(selectedPatternId),
           selectedPatternId,
           playingPatternId,
           onStep: handleStepPattern,
@@ -1508,7 +1591,7 @@ export function App() {
           status,
           onPlay: () => void handlePlay(),
           onStop: handleStop,
-          patterns: project.patterns,
+          patterns: launcher,
           selectedPatternId,
           bpm: project.bpm,
           pickerOpen: derived.takeover === "picker",
@@ -1516,6 +1599,8 @@ export function App() {
           onStep: handleStepPattern,
           onTogglePicker: handleTogglePicker,
           onToggleSettings: handleToggleSettings,
+          composerOpen: mainView === "composer",
+          onToggleComposer: () => handleSelectMainView(mainView === "composer" ? "sequencer" : "composer"),
         }}
       />
 
@@ -1523,6 +1608,24 @@ export function App() {
         layout={layout}
         derived={derived}
         mobileTab={mobileTab}
+        composer={{
+          project,
+          scrollMemory: composer.scrollMemory,
+          marker: composer.marker,
+          onSetMarker: composer.setMarker,
+          getSongBeat,
+          playingSequenceIds,
+          getSongText,
+          selectedSequenceId: composer.sequence?.id ?? null,
+          selectedLaneId: composer.lane?.id ?? null,
+          onSelectSequence: composer.selectSequence,
+          onSelectLane: composer.selectLane,
+          onMove: composer.onMove,
+          onResize: composer.onResize,
+          ...composer.laneHandlers,
+          automation: { row: automationRow, spans: composerAutomationSpans },
+          toolbar: composer.toolbar,
+        }}
         sidePanel={{
           view: effectiveSideView(layout, sidePanelView),
           onSelectView: setSidePanelView,
@@ -1577,7 +1680,7 @@ export function App() {
           bankPlacement: layout.isPhone ? "row" : "corner",
         }}
         picker={{
-          patterns: project.patterns,
+          patterns: launcher,
           selectedPatternId,
           playingPatternId,
           onPick: handlePickPattern,
@@ -1668,10 +1771,11 @@ export function App() {
           backLabel: layout.isPhone ? "back to timeline" : "back to sequencer",
         }}
         list={{
-          patterns: project.patterns,
+          patterns: launcher,
           selectedPatternId,
           playingPatternId,
           onSelect: setSelectedPatternId,
+          onAddToComposer: handleAddToComposer,
           onEdit: handleEditPattern,
           onDuplicate: duplicatePattern,
           onRemove: removePattern,
@@ -1681,7 +1785,7 @@ export function App() {
         }}
         queue={{
           patternChain: project.patternChain,
-          patterns: project.patterns,
+          patterns: launcher,
           playingChainEntryId,
           onRemoveEntry: handleRemoveChainEntry,
           onMoveEntry: handleMoveChainEntry,

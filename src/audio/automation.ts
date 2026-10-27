@@ -22,7 +22,7 @@
 // lane's next event.
 import { SampleParam, type AudioRuntime, type BusId, type ScheduledParam, type SequenceParamEvent } from "webdsp";
 import { valueAtBeat } from "../model/automation";
-import type { AutomationLane, FxTarget, Project, Track } from "../model/types";
+import type { AutomationLane, FxTarget, Project, Track, TrackId } from "../model/types";
 import { DEFAULT_ENVELOPE } from "../model/types";
 import { fxChainsFor } from "./fxChain";
 import { instrumentHostFor } from "./instruments";
@@ -89,7 +89,23 @@ interface StepWindowLike {
   endTime: number;
 }
 
+/** Who owns an automation lane: the master or a track. Their lanes are pattern-local (they replay from the start of
+ * each sequence/step they play in). */
+export type AutomationOwner = { kind: "master" } | { kind: "track"; id: TrackId };
+
+/** The windows an owner's lanes are replayed over. Pattern mode replays every owner over every step; Song mode, where
+ * several sequences play at once, gives each owner the sequences it applies to (model/composer.ts automationAppliesTo). */
+export type WindowsFor = (owner: AutomationOwner) => readonly StepWindowLike[];
+
+/** Which owners a native sequence's automation covers (see automationSequenceEvents). */
+export interface AutomationScope {
+  master: boolean;
+  /** Track ids whose lanes are included; null = every track. */
+  tracks: ReadonlySet<TrackId> | null;
+}
+
 interface LaneRef {
+  owner: AutomationOwner;
   key: string;
   lane: AutomationLane;
   /** Resolves the engine target for this lane, or undefined if it is not live (yet). */
@@ -118,6 +134,7 @@ function lanesOf(
   runtime: AudioRuntime,
   owner: { fx: { id: string; enabled: boolean }[]; automation: AutomationLane[] },
   ownerKey: string,
+  ownerRef: AutomationOwner,
   track: Track | null,
   busId: BusId | undefined,
   state: AutomationState,
@@ -130,6 +147,7 @@ function lanesOf(
       const fxId = lane.fxId;
       if (busId === undefined) continue;
       out.push({
+        owner: ownerRef,
         key,
         lane,
         target: () => {
@@ -140,6 +158,7 @@ function lanesOf(
     } else if (track?.instrument) {
       const host = instrumentHostFor(runtime);
       out.push({
+        owner: ownerRef,
         key,
         lane,
         target: () => {
@@ -151,6 +170,7 @@ function lanesOf(
     } else if (track?.assetId != null && lane.parameter in ENVELOPE_PARAMS) {
       const assetId = track.assetId;
       out.push({
+        owner: ownerRef,
         key,
         lane,
         target: () => ({
@@ -172,6 +192,23 @@ export function startAutomation(runtime: AudioRuntime, from: number): void {
   s.seen.clear();
 }
 
+/** The lanes of the owners in `scope`: the master's and the chosen tracks'. */
+function automationRefs(
+  runtime: AudioRuntime,
+  project: Project,
+  getBusId: (target: FxTarget) => BusId | undefined,
+  state: AutomationState,
+  scope: AutomationScope,
+): LaneRef[] {
+  const refs: LaneRef[] = [];
+  if (scope.master) refs.push(...lanesOf(runtime, project.master, "master", { kind: "master" }, null, getBusId("master"), state));
+  for (const track of project.tracks) {
+    if (scope.tracks && !scope.tracks.has(track.id)) continue;
+    refs.push(...lanesOf(runtime, track, track.id, { kind: "track", id: track.id }, track, getBusId(track.id), state));
+  }
+  return refs;
+}
+
 /** Schedules the lane events of the window [cursor, horizon). `windows` are the step iterations the
  * transport has compiled (start/end engine times); `spb` is seconds per beat. `now` is the engine
  * time, for refreshing lanes edited since the last call. */
@@ -179,7 +216,7 @@ export function scheduleAutomation(
   runtime: AudioRuntime,
   project: Project,
   getBusId: (target: FxTarget) => BusId | undefined,
-  windows: readonly StepWindowLike[],
+  windows: readonly StepWindowLike[] | WindowsFor,
   spb: number,
   now: number,
   horizon: number,
@@ -189,14 +226,16 @@ export function scheduleAutomation(
   if (horizon <= lo) return;
   state.cursor = horizon;
 
-  const refs: LaneRef[] = [
-    ...lanesOf(runtime, project.master, "master", null, getBusId("master"), state),
-    ...project.tracks.flatMap((track) => lanesOf(runtime, track, track.id, track, getBusId(track.id), state)),
-  ];
+  // A plain window list is Pattern mode: every lane replays over every step. A WindowsFor is Song mode, where each
+  // owner has its own windows.
+  const windowsFor: WindowsFor = typeof windows === "function" ? windows : () => windows;
+  const refs = automationRefs(runtime, project, getBusId, state, { master: true, tracks: null });
   const events: ScheduledParam[] = [];
-  const current = windows.find((w) => w.startTime <= now && now < w.endTime);
 
   for (const ref of refs) {
+    const windows = windowsFor(ref.owner);
+    if (windows.length === 0) continue;
+    const current = windows.find((w) => w.startTime <= now && now < w.endTime);
     const resolved = ref.target();
     if (!resolved) continue;
     const emit = (time: number, e: { value: number; from?: number; ramp?: number }) => {
@@ -240,12 +279,10 @@ export function automationSequenceEvents(
   getBusId: (target: FxTarget) => BusId | undefined,
   stepStartBeats: number,
   stepBeats: number,
+  scope: AutomationScope = { master: true, tracks: null },
 ): SequenceParamEvent[] {
   const state = stateFor(runtime);
-  const refs: LaneRef[] = [
-    ...lanesOf(runtime, project.master, "master", null, getBusId("master"), state),
-    ...project.tracks.flatMap((track) => lanesOf(runtime, track, track.id, track, getBusId(track.id), state)),
-  ];
+  const refs = automationRefs(runtime, project, getBusId, state, scope);
   const out: SequenceParamEvent[] = [];
   for (const ref of refs) {
     const resolved = ref.target();

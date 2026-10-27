@@ -267,6 +267,26 @@ export function setBars(pattern: Pattern, beatsPerBar: number, bars: number): Pa
   return { ...pattern, bars: clampedBars, notes };
 }
 
+/** Grows a pattern to `bars` bars by repeating what it already has: the new bars are filled with copies of the pattern's own
+ * bars, from its start, as many times as it takes (a last partial repeat takes only the notes that start inside it, with
+ * lengths cut at the end). Every copied note has a fresh id; the original notes are untouched. A pattern asked to be
+ * no longer than it is, or longer than MAX_PATTERN_BARS, comes back unchanged. */
+export function extendBarsByRepeat(pattern: Pattern, beatsPerBar: number, bars: number): Pattern {
+  const original = pattern.bars;
+  if (!Number.isInteger(bars) || bars <= original || bars > MAX_PATTERN_BARS || original < 1) return pattern;
+  const source = Object.values(pattern.notes);
+  const added: Pattern["notes"] = {};
+  for (let from = original; from < bars; from += original) {
+    const take = Math.min(original, bars - from) * beatsPerBar; // beats of the source this repeat uses
+    for (const note of source) {
+      if (note.start >= take) continue;
+      const id = nextId("note");
+      added[id] = { ...note, id, start: note.start + from * beatsPerBar, duration: Math.min(note.duration, take - note.start) };
+    }
+  }
+  return { ...pattern, bars, notes: { ...pattern.notes, ...added } };
+}
+
 /** Longest pattern the UI offers (PatternBar's bars input) — the cap Bar Tools respect. */
 export const MAX_PATTERN_BARS = 64;
 

@@ -82,7 +82,8 @@ export function Chrome({
         </div>
       </div>
       <TransportBar {...transport} variant="bar" />
-      <PatternStrip {...patternStrip} />
+      {/* The strip is about the pattern open in the grid; the Composer replaces the grid, so it has no strip. */}
+      {mainView !== "composer" && <PatternStrip {...patternStrip} />}
     </>
   );
 }

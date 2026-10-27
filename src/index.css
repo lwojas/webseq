@@ -715,6 +715,447 @@ select {
   display: none;
 }
 
+/* --- composer (the song: lanes of sequence blocks on one timeline; replaces the grid) --- */
+
+/* The Composer takes the sequencer grid's slot in .main (see Workspace) -- same flex role as
+   .sequencer, so the dock, side panel and mixer around it are untouched. --header-width is the lane
+   header column (COMPOSER_HEADER_PX), so the automation row and every lane share one left edge. */
+.composer {
+  --header-width: 168px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.composer-toolbar-spacer {
+  flex: 1;
+}
+
+.composer-status-label {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.composer-status-text {
+  color: var(--amber);
+}
+
+/* The Sequencer <-> Composer switch: "Edit Sequence ▸" at the right end of the Composer toolbar, "◂ Composer" / "+ Composer"
+   at the right end of the pattern strip. Same look, same width, same place, so it reads as one toggle. */
+.view-switch-btn {
+  min-width: 124px;
+  border-color: var(--accent);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.view-switch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ONE scroller for the whole timeline: ruler, lane headers, blocks and automation scroll together, and
+   a sideways swipe is the timeline's (overscroll-behavior stops it chaining to the browser's back/forward
+   gesture; ComposerTimeline also consumes mostly-horizontal wheel events itself for browsers that ignore
+   it). Only this element -- the rest of the app keeps its normal browser gestures. */
+.composer-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.composer-canvas {
+  position: relative;
+  min-width: 100%;
+}
+
+.composer-ruler {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  height: 22px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.composer-corner {
+  position: sticky;
+  left: 0;
+  z-index: 7;
+  width: var(--header-width);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--panel);
+  border-right: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.composer-ruler-marks {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.composer-bar-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: 4px;
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 22px;
+}
+
+.composer-lane {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.composer-lane-header {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  width: var(--header-width);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--panel-alt);
+  border-right: 1px solid var(--border-strong);
+}
+
+.composer-lane.selected .composer-lane-header {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.composer-lane-name {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+.composer-lane-name:hover,
+.composer-lane-name:focus {
+  border-color: var(--border-strong);
+  outline: none;
+}
+
+.composer-lane-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.composer-lane-btn {
+  padding: 1px 6px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.composer-lane-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.composer-lane-btn.danger {
+  color: var(--danger);
+}
+
+.composer-lane-meta {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* One bar-grid line per bar, drawn by the background (positioned by the inset, see ComposerTimeline) -- static,
+   no per-bar elements. */
+.composer-lane-track {
+  position: relative;
+  flex-shrink: 0;
+  height: 64px;
+  background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+  background-repeat: repeat-x;
+}
+
+.composer-lane.selected .composer-lane-track {
+  background-color: rgba(41, 224, 224, 0.03);
+}
+
+.composer-seq {
+  position: absolute;
+  top: 14px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px 0 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  color: var(--bg);
+  cursor: grab;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+.composer-seq.selected {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.composer-seq.playing {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+}
+
+.composer-seq.dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+/* Where a dragged block would land, in the lane under the pointer; red when it would overlap. */
+.composer-seq.ghost {
+  background: transparent;
+  border: 2px dashed var(--accent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.composer-seq.ghost.invalid {
+  border-color: var(--danger);
+}
+
+.composer-seq-name {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-seq-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  background: var(--bg);
+  opacity: 0.35;
+}
+
+.composer-empty {
+  position: sticky;
+  left: 0;
+  width: max-content;
+  padding: 16px 24px;
+  color: var(--text-dim);
+}
+
+.composer-lane-auto {
+  background: var(--panel-alt);
+}
+
+.composer-lane-auto .composer-lane-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.composer-auto-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-auto-track {
+  height: 72px;
+  background-image: none;
+}
+
+.composer-auto-lane {
+  position: absolute;
+  top: 4px;
+}
+
+.composer-auto-hint {
+  position: sticky;
+  left: calc(var(--header-width) + 16px);
+  display: inline-block;
+  padding-top: 28px;
+  color: var(--text-dim);
+}
+
+/* The playhead is one element over the whole canvas, starting where bar 1 starts. */
+.composer-playhead-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.composer-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--amber);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* The marker: a bar line set by clicking the ruler, apart from the playhead. A flag in the ruler and a line down the lanes. */
+.composer-ruler-marks {
+  cursor: pointer;
+}
+
+.composer-marker-flag {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 0;
+  margin-left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 8px solid var(--accent);
+  pointer-events: none;
+}
+
+.composer-marker {
+  position: absolute;
+  top: 22px;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed var(--accent);
+  margin-left: -1px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* Lane modifier rows in the Edit panel: label left, [ - value + ] right, whatever the label or value. */
+.composer-mod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.composer-mod-label {
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.composer-mod-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-mod-value {
+  min-width: 56px;
+  text-align: center;
+  color: var(--amber);
+}
+
+.composer-mod-reset {
+  justify-content: flex-end;
+}
+
+.composer-name-input {
+  width: 100%;
+}
+
+.composer-swatches {
+  display: flex;
+  gap: 4px;
+}
+
+.composer-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+}
+
+.composer-swatch.active {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.composer-add-select {
+  background: var(--panel-alt);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 3px 6px;
+}
+
+.source-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+/* Touch: bigger targets for the block edge, the lane buttons and the swatches. */
+@media (pointer: coarse) {
+  .composer-seq-handle {
+    width: 16px;
+  }
+
+  .composer-lane-btn {
+    padding: 6px 10px;
+  }
+
+  .composer-swatch {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Phone: tighter toolbar; the timeline scrolls sideways under the sticky lane headers, so blocks keep their size. */
+@media (max-width: 768px) {
+  .composer-toolbar {
+    padding: 6px 8px;
+  }
+}
+
 .pattern-list-column,
 .pattern-queue-column {
   flex: 1;
@@ -2618,6 +3059,7 @@ select {
   .side-panel,
   .main,
   .sequencer,
+  .composer,
   .bottom-panel,
   .patterns-view {
     display: none;
@@ -2631,7 +3073,8 @@ select {
     flex: 1;
   }
 
-  .app[data-mobile-tab="timeline"] .sequencer {
+  .app[data-mobile-tab="timeline"] .sequencer,
+  .app[data-mobile-tab="timeline"] .composer {
     display: flex;
     flex: 1;
   }
@@ -3277,6 +3720,7 @@ select {
    loops are paused separately via its `active` prop. Last in the file so these win over the phone
    section's per-tab visibility rules (same specificity, later wins). */
 .app:not([data-takeover="none"]) .sequencer,
+.app:not([data-takeover="none"]) .composer,
 .app:not([data-takeover="none"]) .bottom-panel {
   display: none;
 }

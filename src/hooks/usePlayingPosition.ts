@@ -22,9 +22,12 @@ const POLL_INTERVAL_MS = 150; // matches Transport's own scheduling lookahead wi
 export interface PlayingPosition {
   patternId: PatternId | null;
   chainEntryId: ChainEntryId | null;
+  /** Song mode: the ids of the Composer sequences sounding now, comma-joined (one per lane at most; "" = none). A string
+   * so that a poll with nothing changed compares equal and causes no render. */
+  sequenceIds: string;
 }
 
-const NOTHING_PLAYING: PlayingPosition = { patternId: null, chainEntryId: null };
+const NOTHING_PLAYING: PlayingPosition = { patternId: null, chainEntryId: null, sequenceIds: "" };
 
 export function usePlayingPosition(transportRef: React.RefObject<Transport | null>, isPlaying: boolean): PlayingPosition {
   const [position, setPosition] = useState<PlayingPosition>(NOTHING_PLAYING);
@@ -41,9 +44,10 @@ export function usePlayingPosition(transportRef: React.RefObject<Transport | nul
       const next: PlayingPosition = {
         patternId: transport?.getPlayheadInfo().patternId ?? null,
         chainEntryId: transport?.getCurrentChainEntryId() ?? null,
+        sequenceIds: transport?.getSongPosition()?.active.map((a) => a.sequenceId).join(",") ?? "",
       };
       const last = lastRef.current;
-      if (next.patternId !== last.patternId || next.chainEntryId !== last.chainEntryId) {
+      if (next.patternId !== last.patternId || next.chainEntryId !== last.chainEntryId || next.sequenceIds !== last.sequenceIds) {
         lastRef.current = next;
         setPosition(next);
       }

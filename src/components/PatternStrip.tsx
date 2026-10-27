@@ -6,11 +6,13 @@ import { GridZoomControls, type GridZoomProps } from "./GridZoomControls";
 interface StepperProps {
   bars: number;
   onSetBars: (bars: number) => void;
+  /** Longest length on offer (default: the pattern cap). */
+  max?: number;
 }
 
 /** − n + control for a pattern's bar count. Shared by the strip, the Patterns page rows and the
  * phone's picker footer. */
-export function BarsStepper({ bars, onSetBars }: StepperProps) {
+export function BarsStepper({ bars, onSetBars, max = MAX_PATTERN_BARS }: StepperProps) {
   return (
     <div className="bars-stepper" role="group" aria-label="Pattern length in bars">
       <span className="bars-stepper-label">Bars</span>
@@ -18,7 +20,7 @@ export function BarsStepper({ bars, onSetBars }: StepperProps) {
         −
       </button>
       <span className="bars-stepper-value">{bars}</span>
-      <button className="btn small" onClick={() => onSetBars(bars + 1)} disabled={bars >= MAX_PATTERN_BARS} aria-label="More bars">
+      <button className="btn small" onClick={() => onSetBars(bars + 1)} disabled={bars >= max} aria-label="More bars">
         +
       </button>
     </div>
@@ -41,6 +43,13 @@ interface Props extends GridZoomProps {
   onEditPlaying: () => void;
   /** "bar 2 / 4" for the playing pattern, read per frame (see RafText). */
   getPlayingBarText: () => string;
+  /** Set while the edited pattern is a Composer sequence: the strip then drops launcher stepping / duplicating (a sequence is
+   * not a launcher pattern) and the button at its right end returns to the Composer. */
+  composer?: { onReturn: () => void };
+  /** For a launcher pattern, that same button adds a copy of it to the Composer and goes there. */
+  onAddToComposer: () => void;
+  /** Longest length the edited pattern may have right now (a Composer sequence stops at its neighbour). */
+  maxBars?: number;
 }
 
 /** The desktop pattern row: ONE fixed-height strip about *the pattern being edited* and nothing
@@ -58,6 +67,9 @@ export function PatternStrip({
   onAddPattern,
   onEditPlaying,
   getPlayingBarText,
+  composer,
+  onAddToComposer,
+  maxBars,
   ...gridZoom
 }: Props) {
   const index = patterns.findIndex((p) => p.id === selectedPatternId);
@@ -66,10 +78,12 @@ export function PatternStrip({
 
   return (
     <div className="pattern-strip">
-      <span className="pattern-strip-label editing">Editing</span>
-      <button className="btn small pattern-step" onClick={() => onStep(-1)} disabled={index <= 0} aria-label="Previous pattern" title="Previous pattern  [">
-        ◀
-      </button>
+      <span className="pattern-strip-label editing">{composer ? "Sequence" : "Editing"}</span>
+      {!composer && (
+        <button className="btn small pattern-step" onClick={() => onStep(-1)} disabled={index <= 0} aria-label="Previous pattern" title="Previous pattern  [">
+          ◀
+        </button>
+      )}
       {selected && (
         <input
           className="pattern-name-input pattern-strip-input"
@@ -79,24 +93,30 @@ export function PatternStrip({
           onChange={(e) => onRename(selected.id, e.target.value)}
         />
       )}
-      <button
-        className="btn small pattern-step"
-        onClick={() => onStep(1)}
-        disabled={index >= patterns.length - 1}
-        aria-label="Next pattern"
-        title="Next pattern  ]"
-      >
-        ▶
-      </button>
-      {selected && <BarsStepper bars={selected.bars} onSetBars={(bars) => onSetBars(selected.id, bars)} />}
-      {selected && (
+      {!composer && (
+        <button
+          className="btn small pattern-step"
+          onClick={() => onStep(1)}
+          disabled={index >= patterns.length - 1}
+          aria-label="Next pattern"
+          title="Next pattern  ]"
+        >
+          ▶
+        </button>
+      )}
+      {selected && <BarsStepper bars={selected.bars} max={maxBars} onSetBars={(bars) => onSetBars(selected.id, bars)} />}
+      {selected && !composer && (
         <button className="btn small" onClick={() => onDuplicate(selected.id)} title="Duplicate this pattern and open the copy">
           Duplicate
         </button>
       )}
-      <button className="btn small" onClick={onAddPattern} title="Add an empty pattern">
-        + New
-      </button>
+      {!composer && (
+        <>
+          <button className="btn small" onClick={onAddPattern} title="Add an empty pattern">
+            + New
+          </button>
+        </>
+      )}
 
       <span className="pattern-strip-divider" aria-hidden="true" />
 
@@ -119,6 +139,17 @@ export function PatternStrip({
       <div className="pattern-strip-view">
         <GridZoomControls {...gridZoom} />
       </div>
+      {/* The one way into the Composer, always at the strip's right end: the Sequencer's half of the Composer's own
+          "Edit Sequence ▸" button, which sits at the right end of its toolbar. */}
+      {composer ? (
+        <button className="btn small view-switch-btn" onClick={composer.onReturn} title="Back to the Composer timeline, this sequence still selected">
+          ◂ Composer
+        </button>
+      ) : (
+        <button className="btn small view-switch-btn" onClick={onAddToComposer} title="Add a copy of this pattern to the Composer timeline and go there">
+          + Composer
+        </button>
+      )}
     </div>
   );
 }

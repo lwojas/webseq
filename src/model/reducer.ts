@@ -1,8 +1,9 @@
-import type { AutomationEvent, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
+import type { AutomationEvent, AssetId, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, Project, SampleEnvelope, SampleMode, LaneId, LaneModifiers, SequenceId, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./types";
 import type { CopiedNote } from "./notes";
 import type { CopiedTrackConfig } from "./trackConfig";
 import type { Asset } from "./types";
 import * as project from "./project";
+import * as composer from "./composer";
 import * as fx from "./fx";
 import * as instruments from "./instruments";
 import * as eventLfo from "./eventLfo";
@@ -75,6 +76,21 @@ export type Action =
   | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
   | { type: "SET_PATTERN_BARS"; patternId: PatternId; bars: number }
   | { type: "ADD_PATTERN" }
+  // Composer (model/composer.ts). Sequence length is its pattern's bars, edited here or in the sequencer.
+  // A missing laneId means "the first lane" (created if there is none).
+  | { type: "COMPOSER_ADD_PATTERN"; patternId: PatternId; laneId?: LaneId; at?: number }
+  | { type: "COMPOSER_ADD_BLANK"; laneId?: LaneId; at?: number }
+  | { type: "COMPOSER_DUPLICATE"; sequenceId: SequenceId }
+  | { type: "COMPOSER_PASTE"; clip: composer.SequenceClip; laneId?: LaneId; at: number; exact?: boolean }
+  | { type: "COMPOSER_MOVE"; sequenceId: SequenceId; start: number; laneId?: LaneId }
+  | { type: "COMPOSER_RESIZE"; sequenceId: SequenceId; bars: number }
+  | { type: "COMPOSER_SET_COLOR"; sequenceId: SequenceId; color: string }
+  | { type: "COMPOSER_REMOVE"; sequenceId: SequenceId }
+  | { type: "COMPOSER_ADD_LANE"; name?: string }
+  | { type: "COMPOSER_REMOVE_LANE"; laneId: LaneId }
+  | { type: "COMPOSER_RENAME_LANE"; laneId: LaneId; name: string }
+  | { type: "COMPOSER_MOVE_LANE"; laneId: LaneId; index: number }
+  | { type: "COMPOSER_SET_LANE_MODIFIERS"; laneId: LaneId; patch: Partial<LaneModifiers> }
   | { type: "DUPLICATE_PATTERN"; patternId: PatternId }
   | { type: "REMOVE_PATTERN"; patternId: PatternId }
   | { type: "RENAME_PATTERN"; patternId: PatternId; name: string }
@@ -229,6 +245,32 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setPatternBars(state, action.patternId, action.bars);
     case "ADD_PATTERN":
       return project.addPattern(state);
+    case "COMPOSER_ADD_PATTERN":
+      return composer.addPatternToComposer(state, action.patternId, action.laneId, action.at);
+    case "COMPOSER_ADD_BLANK":
+      return composer.addBlankSequence(state, action.laneId, action.at);
+    case "COMPOSER_DUPLICATE":
+      return composer.duplicateSequence(state, action.sequenceId);
+    case "COMPOSER_PASTE":
+      return composer.pasteSequence(state, action.clip, action.laneId, action.at, action.exact);
+    case "COMPOSER_MOVE":
+      return composer.moveSequence(state, action.sequenceId, action.start, action.laneId);
+    case "COMPOSER_RESIZE":
+      return composer.resizeSequence(state, action.sequenceId, action.bars);
+    case "COMPOSER_SET_COLOR":
+      return composer.setSequenceColor(state, action.sequenceId, action.color);
+    case "COMPOSER_REMOVE":
+      return composer.removeSequence(state, action.sequenceId);
+    case "COMPOSER_ADD_LANE":
+      return composer.addLane(state, action.name);
+    case "COMPOSER_REMOVE_LANE":
+      return composer.removeLane(state, action.laneId);
+    case "COMPOSER_RENAME_LANE":
+      return composer.renameLane(state, action.laneId, action.name);
+    case "COMPOSER_MOVE_LANE":
+      return composer.moveLane(state, action.laneId, action.index);
+    case "COMPOSER_SET_LANE_MODIFIERS":
+      return composer.setLaneModifiers(state, action.laneId, action.patch);
     case "DUPLICATE_PATTERN":
       return project.duplicatePattern(state, action.patternId);
     case "REMOVE_PATTERN":
@@ -268,6 +310,6 @@ export function projectReducer(state: Project, action: Action): Project {
     case "CLEAR_AUTOMATION_LANE":
       return automation.clearAutomationLane(state, action.target, action.fxId, action.parameter);
     case "LOAD_PROJECT":
-      return action.project;
+      return composer.migrateComposer(action.project); // a project saved by the single-timeline Composer gets a lane
   }
 }

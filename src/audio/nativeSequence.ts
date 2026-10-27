@@ -7,8 +7,10 @@
 // time in quarter notes / 2; the result is converted to beats, so the host plays what Transport would have scheduled. What differs is
 // only where tempo comes from: the DAW's, per block, not baked into the events.
 import type { BusId, InstrumentId, Sequence, SequenceEvent, SequenceParamEvent } from "webdsp";
-import type { FxTarget, Project, TrackId } from "../model/types";
+import type { FxTarget, Pattern, Project, TrackId } from "../model/types";
 import { effectiveVoiceMode, resolveChainStep, totalBeats } from "../model/types";
+import { applyLaneModifiers, automationAppliesTo, masterLaneIndex, songBeats, songInstances, type PlaybackSource } from "../model/composer";
+import type { AutomationScope } from "./automation";
 import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat, simultaneousChokeLosers } from "./compile";
 
 /** webseq beats are sixteenth steps; the host's positions are quarter notes. */
@@ -23,22 +25,53 @@ export interface NativeSequenceContext {
   instrumentIdFor: (trackId: TrackId, voice: number) => InstrumentId | undefined;
   /** Is this sample loaded in the engine? Events for a sample it does not have are left out (the sequence is sent again when it does). */
   hasSample: (sampleId: number) => boolean;
-  /** Lane events for one step iteration (webseq beats from the cycle start); see automation.ts's automationSequenceEvents. */
-  automation: (stepStartBeats: number, stepBeats: number) => SequenceParamEvent[];
+  /** Lane events for one step iteration (webseq beats from the cycle start) of the owners in `scope` (default: master and
+   * every track); see automation.ts's automationSequenceEvents. */
+  automation: (stepStartBeats: number, stepBeats: number, scope?: AutomationScope) => SequenceParamEvent[];
+  /** What the sequence is of: the pattern queue (default) or the Composer song. In Song mode every lane's sequences are
+   * laid out at their song positions, overlapping across lanes, and a gap is just the absence of events. */
+  source?: PlaybackSource;
 }
 
 /** One cycle of the pattern queue as a Sequence, or null when there is nothing to play (no queue, no notes). Pure. */
 export function compileNativeSequence(project: Project, ctx: NativeSequenceContext): Sequence | null {
   const trackIndex = new Map(project.tracks.map((t, i) => [t.id, i] as const));
   const events: SequenceEvent[] = [];
-  let cycleBeats = 0; // webseq beats
 
-  for (let i = 0; i < project.patternChain.length; i++) {
-    const step = resolveChainStep(project, i);
-    if (!step) continue; // a dangling entry (deleted pattern): Transport skips it too
-    const beats = totalBeats(step.pattern, project.beatsPerBar);
-    if (beats <= 0) continue;
-    const startSeconds = cycleBeats * secondsPerBeat(REFERENCE_BPM);
+  // The steps of one cycle, the same ones Transport schedules: the queue's, one after another (a dangling entry,
+  // whose pattern was deleted, is skipped as Transport skips it), or the song's sequences at their positions.
+  interface Step {
+    pattern: Pattern;
+    startBeat: number;
+    beats: number;
+    scope?: AutomationScope;
+  }
+  const steps: Step[] = [];
+  let cycleBeats = 0; // webseq beats
+  if (ctx.source === "song") {
+    const instances = songInstances(project);
+    const masterLane = masterLaneIndex(instances);
+    for (const i of instances) {
+      // The lane's modifiers are applied to the notes here, as Transport does, before the ordinary compile below. Track and
+      // master automation replay from the start of each sequence they apply to, as in Transport.
+      const tracks = new Set(project.tracks.map((t) => t.id).filter((id) => automationAppliesTo(i, id, masterLane)));
+      steps.push({ pattern: applyLaneModifiers(i.pattern, i.modifiers), startBeat: i.startBeat, beats: i.beats, scope: { master: automationAppliesTo(i, "master", masterLane), tracks } });
+    }
+    cycleBeats = songBeats(project);
+  } else {
+    for (let i = 0; i < project.patternChain.length; i++) {
+      const step = resolveChainStep(project, i);
+      if (!step) continue;
+      const beats = totalBeats(step.pattern, project.beatsPerBar);
+      if (beats <= 0) continue;
+      steps.push({ pattern: step.pattern, startBeat: cycleBeats, beats });
+      cycleBeats += beats;
+    }
+  }
+
+  for (const step of steps) {
+    const { beats } = step;
+    const startSeconds = step.startBeat * secondsPerBeat(REFERENCE_BPM);
 
     let samples = compilePatternIterationTracked(step.pattern, project.tracks, REFERENCE_BPM, startSeconds, (id) => ctx.getBusId(id), project.swing, 0, project.beatsPerBar, project.scale);
     let notes = compileInstrumentNotes(step.pattern, project.tracks, REFERENCE_BPM, startSeconds, project.swing, 0, project.beatsPerBar, project.scale);
@@ -86,8 +119,7 @@ export function compileNativeSequence(project: Project, ctx: NativeSequenceConte
         ...(params.tie ? { tie: true } : {}),
       });
     }
-    events.push(...ctx.automation(cycleBeats, beats));
-    cycleBeats += beats;
+    events.push(...ctx.automation(step.startBeat, beats, step.scope));
   }
 
   if (cycleBeats <= 0 || events.length === 0) return null;

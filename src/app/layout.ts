@@ -68,13 +68,16 @@ export const LIBRARY_VIEWS: { id: LibraryView; label: string }[] = [
  * index.css's `data-takeover` rules. (Desktop has none: its pattern list is the Patterns view.) */
 export type Takeover = "none" | "picker" | "settings";
 
-/** Top-level toggle between the Sequencer workspace and the Patterns view (pattern library +
- * queue) — see index.css's `data-main-view` rules. The sequencer workspace stays mounted while the
- * Patterns view shows (only CSS `display` toggles), so switching never loses SequencerGrid's
- * scroll position/virtualization state. */
-export type MainView = "sequencer" | "patterns";
+/** Top-level toggle between the Sequencer workspace, the Composer and the Patterns view (pattern
+ * library + queue) — see index.css's `data-main-view` rules. Sequencer and Composer are two views
+ * of the same workspace: the Composer takes the grid's place (see Workspace) and the dock and side
+ * panel stay. Only the Patterns view is a CSS display toggle over the mounted workspace. On a phone
+ * the Timeline tab shows whichever of Sequencer / Composer is chosen (Patterns is its Library
+ * sub-tab there). */
+export type MainView = "sequencer" | "composer" | "patterns";
 export const MAIN_VIEWS: { id: MainView; label: string }[] = [
   { id: "sequencer", label: "Sequencer" },
+  { id: "composer", label: "Composer" },
   { id: "patterns", label: "Patterns" },
 ];
 
@@ -117,6 +120,8 @@ export interface DerivedLayout {
   dockViews: BottomPanelView[];
   /** The panel the dock is showing. */
   activeDockView: BottomPanelView;
+  /** The Composer takes the sequencer grid's place (same slot, never both). */
+  composerVisible: boolean;
   /** The Patterns page is on screen (desktop: its top tab; phone: the Library's Patterns sub-tab). It
    * is mounted only then. */
   patternsVisible: boolean;
@@ -130,7 +135,7 @@ export function deriveLayout(env: LayoutEnv, state: LayoutState): DerivedLayout 
   const { isPhone } = env;
   // Only a phone's Timeline tab has a takeover; desktop has none.
   const takeover: Takeover = isPhone && state.mobileTab === "timeline" ? state.takeover : "none";
-  const timelineVisible = takeover === "none" && (isPhone ? state.mobileTab === "timeline" : state.mainView === "sequencer");
+  const timelineVisible = takeover === "none" && (isPhone ? state.mobileTab === "timeline" : state.mainView !== "patterns");
   const dockViews: BottomPanelView[] = isPhone
     ? state.mobileTab === "mixer"
       ? NO_VIEWS
@@ -144,7 +149,8 @@ export function deriveLayout(env: LayoutEnv, state: LayoutState): DerivedLayout 
       ? state.bottomPanelView
       : "instrument";
   const patternsVisible = isPhone ? state.mobileTab === "library" && state.libraryView === "patterns" : state.mainView === "patterns";
-  return { takeover, timelineVisible, dockViews, activeDockView, patternsVisible };
+  const composerVisible = takeover === "none" && state.mainView === "composer" && (isPhone ? state.mobileTab === "timeline" : true);
+  return { takeover, timelineVisible, composerVisible, dockViews, activeDockView, patternsVisible };
 }
 
 /** The side panel view actually shown: a phone never shows Edit there (it has its own sub-tab). */

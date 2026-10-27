@@ -8,7 +8,7 @@
 // is left exactly as it is. Runtime state (transport, audio, selection) lives outside the
 // project and is never involved.
 import { projectReducer, type Action } from "./reducer";
-import type { Pattern, Project, Track } from "./types";
+import type { Composer, Pattern, Project, Track } from "./types";
 
 /** Undo steps kept. An entry is a handful of references to the notes records/tracks it replaced,
  * so 100 steps stays small even for large patterns. */
@@ -18,10 +18,14 @@ export type HistoryAction = Action | { type: "UNDO" } | { type: "REDO" };
 
 type Fields = Record<string, unknown>;
 interface Patch {
-  kind: "pattern" | "track";
+  kind: "pattern" | "track" | "composer";
   id: string;
   before: Fields;
   after: Fields;
+  /** "composer" only: the Composer's patterns this step created and removed (a sequence owns a pattern, so adding or deleting
+   * one adds or removes it). `before`/`after` then hold the whole `composer` value (lanes and their sequences). */
+  added?: Pattern[];
+  removed?: Pattern[];
 }
 interface Entry {
   /** Set for continuous edits (drags, nudges) so repeats of the same edit fold into one step. */
@@ -47,8 +51,11 @@ export function createHistory(present: Project): History {
 const UNDOABLE = new Set<Action["type"]>([
   "ADD_NOTE", "REMOVE_NOTE", "CLEAR_TRACK_NOTES", "PASTE_NOTES", "MOVE_NOTE", "RESIZE_NOTE",
   "SET_NOTE_PITCH", "SET_NOTE_MODE", "SET_NOTE_CHORD", "SET_NOTE_VELOCITY", "SET_NOTE_RATCHET", "SET_NOTE_TIE", "SET_TRACK_NOTES_TIE", "SET_NOTE_LFO", "SET_TRACK_NOTES_LFO",
-  "EXTEND_TRACK", "DUPLICATE_SEQUENCE", "DUPLICATE_BAR", "SET_PATTERN_BARS",
+  "EXTEND_TRACK", "DUPLICATE_SEQUENCE", "DUPLICATE_BAR", "SET_PATTERN_BARS", "COMPOSER_RESIZE",
   "PASTE_TRACK", "PASTE_TRACK_CONFIG", "PASTE_INSTRUMENT", "PASTE_FX", "PASTE_MODULATION", "PASTE_BANK",
+  // The Composer's arrangement: sequences and lanes (see diffComposer).
+  "COMPOSER_ADD_PATTERN", "COMPOSER_ADD_BLANK", "COMPOSER_DUPLICATE", "COMPOSER_PASTE", "COMPOSER_MOVE", "COMPOSER_SET_COLOR",
+  "COMPOSER_REMOVE", "COMPOSER_ADD_LANE", "COMPOSER_REMOVE_LANE", "COMPOSER_RENAME_LANE", "COMPOSER_MOVE_LANE", "COMPOSER_SET_LANE_MODIFIERS",
 ]);
 
 /** Repeats of the same continuous edit on the same target fold into one undo step. */
@@ -59,6 +66,8 @@ function coalesceKey(action: Action): string | null {
       return `${action.type}:${action.patternId}:${action.noteId}`;
     case "SET_TRACK_NOTES_LFO": case "SET_TRACK_NOTES_TIE":
       return `${action.type}:${action.patternId}:${action.trackId}`;
+    case "COMPOSER_RENAME_LANE": // typing a name is one step
+      return `${action.type}:${action.laneId}`;
     default:
       return null;
   }
@@ -92,8 +101,20 @@ function diffList<T extends { id: string }>(kind: Patch["kind"], prev: T[], next
   return patches;
 }
 
+/** The Composer's part of a step: the `composer` value before and after, and the patterns of its sequences that appeared or went. Only
+ * those patterns are touched on undo/redo, so other Composer patterns (notes edited since, renames) are left as they are. */
+function diffComposer(prev: Project, next: Project): Patch[] {
+  const ids = (p: Project) => new Set(p.patterns.filter((x) => x.composerOwned).map((x) => x.id));
+  const before = ids(prev);
+  const after = ids(next);
+  const added = next.patterns.filter((x) => x.composerOwned && !before.has(x.id));
+  const removed = prev.patterns.filter((x) => x.composerOwned && !after.has(x.id));
+  if (prev.composer === next.composer && added.length === 0 && removed.length === 0) return [];
+  return [{ kind: "composer", id: "composer", before: { composer: prev.composer }, after: { composer: next.composer }, added, removed }];
+}
+
 function diffProject(prev: Project, next: Project): Patch[] {
-  return [...diffList<Pattern>("pattern", prev.patterns, next.patterns), ...diffList<Track>("track", prev.tracks, next.tracks)];
+  return [...diffList<Pattern>("pattern", prev.patterns, next.patterns), ...diffList<Track>("track", prev.tracks, next.tracks), ...diffComposer(prev, next)];
 }
 
 function applyFields<T extends { id: string }>(items: T[], id: string, fields: Fields): T[] {
@@ -109,12 +130,24 @@ function applyFields<T extends { id: string }>(items: T[], id: string, fields: F
 }
 
 function applyEntry(project: Project, entry: Entry, side: "before" | "after"): Project {
-  let { patterns, tracks } = project;
+  let { patterns, tracks, composer } = project;
+  let result = project;
   for (const patch of entry.patches) {
     if (patch.kind === "pattern") patterns = applyFields(patterns, patch.id, patch[side]);
-    else tracks = applyFields(tracks, patch.id, patch[side]);
+    else if (patch.kind === "track") tracks = applyFields(tracks, patch.id, patch[side]);
+    else {
+      // Going forward ("after") the step's removals go and its additions come back; going back, the reverse. Composer patterns
+      // stay last in the list (model/composer.ts), where the ones coming back are appended.
+      const gone = new Set((side === "after" ? patch.removed : patch.added)?.map((p) => p.id));
+      const back = (side === "after" ? patch.added : patch.removed) ?? [];
+      patterns = [...patterns.filter((p) => !gone.has(p.id)), ...back];
+      composer = patch[side].composer as Composer | undefined;
+      result = { ...result, composer };
+    }
   }
-  return { ...project, patterns, tracks };
+  const next: Project = { ...result, patterns, tracks };
+  if (composer === undefined) delete next.composer;
+  return next;
 }
 
 /** Folds `next` into `prev` (same target, consecutive): earliest `before`, latest `after`. */

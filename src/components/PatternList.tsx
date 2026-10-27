@@ -15,6 +15,8 @@ interface Props {
   onRename: (id: PatternId, name: string) => void;
   onSetBars: (id: PatternId, bars: number) => void;
   onQueueNext: (id: PatternId) => void;
+  /** Copy this pattern onto the Composer timeline as a new, independent sequence. */
+  onAddToComposer: (id: PatternId) => void;
 }
 
 /** How many distinct tracks have at least one step in `pattern`. */
@@ -34,12 +36,13 @@ interface RowProps {
   onRename: (name: string) => void;
   onSetBars: (bars: number) => void;
   onQueueNext: () => void;
+  onAddToComposer: () => void;
 }
 
 /** One pattern. Status is in words (EDITING / ▶ PLAYING), the everyday actions are visible
  * (Edit ▸, Queue →, Duplicate) and the rare / destructive ones (Rename, Delete) are in ⋯. This view
  * isn't over the timeline, so a small menu here costs nothing in the hot loop. */
-function PatternRow({ pattern, editing, playing, canDelete, onSelect, onEdit, onDuplicate, onRemove, onRename, onSetBars, onQueueNext }: RowProps) {
+function PatternRow({ pattern, editing, playing, canDelete, onSelect, onEdit, onDuplicate, onRemove, onRename, onSetBars, onQueueNext, onAddToComposer }: RowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
 
@@ -95,6 +98,9 @@ function PatternRow({ pattern, editing, playing, canDelete, onSelect, onEdit, on
         <button className="btn small" onClick={stop(onQueueNext)} title="Queue to play next">
           Queue →
         </button>
+        <button className="btn small" onClick={stop(onAddToComposer)} title="Add a copy to the Composer timeline">
+          + Composer
+        </button>
         <button className="btn small" onClick={stop(onDuplicate)}>
           Duplicate
         </button>
@@ -145,7 +151,7 @@ function PatternRow({ pattern, editing, playing, canDelete, onSelect, onEdit, on
  * queue-facing action here — it never needs to know current queue membership (always allowed, even
  * for the playing pattern: queuing a repeat is a legitimate explicit choice under the ordered-queue
  * model), since PatternQueue is the one place that shows and edits what's queued. */
-export function PatternList({ patterns, selectedPatternId, playingPatternId, onSelect, onEdit, onDuplicate, onRemove, onRename, onSetBars, onQueueNext }: Props) {
+export function PatternList({ patterns, selectedPatternId, playingPatternId, onSelect, onEdit, onDuplicate, onRemove, onRename, onSetBars, onQueueNext, onAddToComposer }: Props) {
   return (
     <div className="pattern-list-column">
       <div className="pattern-list-header">
@@ -166,6 +172,7 @@ export function PatternList({ patterns, selectedPatternId, playingPatternId, onS
             onRename={(name) => onRename(p.id, name)}
             onSetBars={(bars) => onSetBars(p.id, bars)}
             onQueueNext={() => onQueueNext(p.id)}
+            onAddToComposer={() => onAddToComposer(p.id)}
           />
         ))}
       </div>

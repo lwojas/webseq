@@ -7,6 +7,7 @@ import type { Asset, AssetId, ChainEntry, ChainEntryId, NoteId, Pattern, Pattern
 import { normalizeChopStart, normalizeCues } from "./chop";
 import { DEFAULT_ENVELOPE, DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, SOURCE_GAIN_MAX_DB, SOURCE_GAIN_MIN_DB, leadsTo } from "./types";
 import * as notes from "./notes";
+import { barsAllowedForPattern, launcherPatterns } from "./composer";
 
 export const MIN_BPM = 40;
 export const MAX_BPM = 240;
@@ -357,8 +358,8 @@ export function setAssetChopStart(project: Project, assetId: AssetId, start: num
 // --- patterns ---
 
 export function addPattern(project: Project, name?: string, bars = 1): Project {
-  const pattern = createEmptyPattern(name ?? `Pattern ${String.fromCharCode(65 + project.patterns.length)}`, bars);
-  return { ...project, patterns: [...project.patterns, pattern] };
+  const pattern = createEmptyPattern(name ?? `Pattern ${String.fromCharCode(65 + launcherPatterns(project.patterns).length)}`, bars);
+  return { ...project, patterns: insertLauncherPattern(project.patterns, pattern) };
 }
 
 export function duplicatePattern(project: Project, patternId: PatternId): Project {
@@ -369,8 +370,16 @@ export function duplicatePattern(project: Project, patternId: PatternId): Projec
     id: nextId("pattern"),
     name: `${source.name} copy`,
     notes: { ...source.notes },
+    composerOwned: undefined,
   };
-  return { ...project, patterns: [...project.patterns, copy] };
+  return { ...project, patterns: insertLauncherPattern(project.patterns, copy) };
+}
+
+/** Adds a launcher pattern after the last launcher pattern, ahead of any Composer-owned ones
+ * (model/composer.ts keeps those last so launcher indices never shift). */
+function insertLauncherPattern(patterns: Pattern[], pattern: Pattern): Pattern[] {
+  const at = patterns.findIndex((p) => p.composerOwned);
+  return at === -1 ? [...patterns, pattern] : [...patterns.slice(0, at), pattern, ...patterns.slice(at)];
 }
 
 /** Removes a pattern and every queue entry referencing it. Refuses to remove the project's
@@ -379,13 +388,16 @@ export function duplicatePattern(project: Project, patternId: PatternId): Projec
  * project, if they were never queued), falls back to a fresh single entry for the new first
  * remaining pattern — the queue is never allowed to go empty (see Project.patternChain). */
 export function removePattern(project: Project, patternId: PatternId): Project {
-  if (project.patterns.length <= 1) return project;
+  // Composer-owned patterns go with their sequence (composer.removeSequence), never on their own, and
+  // don't count toward "the last pattern": the queue may only ever fall back to a launcher pattern.
+  const launcher = launcherPatterns(project.patterns);
+  if (launcher.length <= 1 || project.patterns.find((p) => p.id === patternId)?.composerOwned) return project;
   const patterns = project.patterns.filter((p) => p.id !== patternId);
   const patternChain = project.patternChain.filter((e) => e.patternId !== patternId);
   return {
     ...project,
     patterns,
-    patternChain: patternChain.length > 0 ? patternChain : [{ id: nextId("chain"), patternId: patterns[0].id }],
+    patternChain: patternChain.length > 0 ? patternChain : [{ id: nextId("chain"), patternId: launcherPatterns(patterns)[0].id }],
   };
 }
 
@@ -394,6 +406,7 @@ export function renamePattern(project: Project, patternId: PatternId, name: stri
 }
 
 export function setPatternBars(project: Project, patternId: PatternId, bars: number): Project {
+  if (!barsAllowedForPattern(project, patternId, bars)) return project; // would run into the next Composer sequence
   return {
     ...project,
     patterns: project.patterns.map((p) => (p.id === patternId ? notes.setBars(p, project.beatsPerBar, bars) : p)),

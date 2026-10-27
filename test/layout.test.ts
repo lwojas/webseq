@@ -22,6 +22,14 @@ describe("deriveLayout", () => {
     expect(deriveLayout(desktop, base).timelineVisible).toBe(true);
     expect(deriveLayout(phone, { ...base, takeover: "picker" }).timelineVisible).toBe(false);
     expect(deriveLayout(desktop, { ...base, mainView: "patterns" }).timelineVisible).toBe(false);
+    // The Composer view keeps the grid (and its automation row) on screen.
+    expect(deriveLayout(desktop, { ...base, mainView: "composer" }).timelineVisible).toBe(true);
+    // ...but in the grid's place: never both.
+    expect(deriveLayout(desktop, { ...base, mainView: "composer" }).composerVisible).toBe(true);
+    expect(deriveLayout(desktop, base).composerVisible).toBe(false);
+    expect(deriveLayout(phone, { ...base, mainView: "composer" }).composerVisible).toBe(true);
+    expect(deriveLayout(phone, { ...base, mainView: "composer", mobileTab: "mixer" }).composerVisible).toBe(false);
+    expect(deriveLayout(phone, { ...base, mainView: "composer", takeover: "picker" }).composerVisible).toBe(false);
     expect(deriveLayout(phone, { ...base, mobileTab: "track" }).timelineVisible).toBe(false);
   });
   it("takeovers (picker, settings) exist only on a phone's Timeline tab", () => {

@@ -24,10 +24,11 @@
 // know which queue entry is "playing" in order to insert a newly-queued pattern right after
 // it (so "queue next" means next, not "whenever the loop gets back around to it").
 import { hostBeatAt, type AudioRuntime, type BusId, type HostTransport, type SampleMetadata, type VoiceHandle } from "webdsp";
-import type { ChainEntryId, FxTarget, PatternId, Project } from "../model/types";
+import type { ChainEntryId, FxTarget, LaneId, Pattern, PatternId, Project, SequenceId } from "../model/types";
+import { activeAt, applyLaneModifiers, automationAppliesTo, masterLaneIndex, songBeats, songInstances, type PlaybackSource, type SongInstance } from "../model/composer";
 import { effectiveVoiceMode, patternById, resolveChainStep, totalBeats, trackById } from "../model/types";
 import { compileInstrumentNotes, compilePatternIterationTracked, secondsPerBeat, simultaneousChokeLosers } from "./compile";
-import { restoreAutomation, scheduleAutomation, startAutomation } from "./automation";
+import { restoreAutomation, scheduleAutomation, startAutomation, type WindowsFor } from "./automation";
 import { instrumentHostFor } from "./instruments";
 import type { Playback } from "./playback";
 
@@ -60,6 +61,25 @@ interface StepWindow {
 interface Position {
   stepIndex: number;
   patternId: PatternId | null;
+  beat: number;
+  /** Song mode only: the playhead's beat from the start of the song. `patternId`/`beat` are then those of the
+   * first (top-most) lane's sequence under it, as the single-pattern readouts want one. */
+  songBeat?: number;
+}
+
+/** A Song-mode sequence that has been (or is being) scheduled. Lanes overlap in time, so these overlap too. */
+interface SongWindow {
+  instance: SongInstance;
+  startTime: number;
+  endTime: number;
+}
+
+/** What is sounding on a lane right now (Song mode), for the Composer's highlighting and the grid's playhead. */
+export interface ActiveSequence {
+  sequenceId: SequenceId;
+  laneId: LaneId;
+  patternId: PatternId;
+  /** Beats into the sequence. */
   beat: number;
 }
 
@@ -123,11 +143,42 @@ export class Transport {
      * once per hardware buffer, which makes a playhead read straight from it choppy on phones.
      * Scheduling always uses the real audio clock. */
     private readonly uiClock: () => number = () => runtime.getCurrentTime(),
+    /** What is being played: the pattern queue (default) or the Composer song. Read on every use, but
+     * only changes between runs: the owner stops the transport before switching it. */
+    private readonly getSource: () => PlaybackSource = () => "pattern",
   ) {
     // Forget each sequenced voice once the engine reports it ended. activeVoices then holds only
     // voices that may still sound, which is all haltAudio needs to release. Without this the set
     // grew by one entry per note for the whole playback session (ECS-84).
     runtime.onVoiceEnded((voice) => this.activeVoices.delete(voice));
+  }
+
+  // --- Song mode ---
+  // The song is not turned into a queue. Every sequence of every lane is an instance with an absolute start
+  // beat (model/composer.ts songInstances); the song is a cycle of `songBeats` beats and instance k of the
+  // list, in cycle c, starts at songOrigin + (c * length + startBeat) * secondsPerBeat. tickSong() schedules
+  // each one as its start enters the lookahead window, through the same note scheduling Pattern mode uses.
+  // Lanes overlap simply because their instances do; a gap is the absence of an instance.
+  private songOrigin = 0; // engine time of song beat 0, cycle 0
+  private songNext = 0; // how many instance slots (across cycles) have been scheduled
+  private songWindows: SongWindow[] = [];
+  private songCache: { project: Project; instances: SongInstance[] } | null = null;
+
+  private inSong(): boolean {
+    return this.getSource() === "song";
+  }
+
+  private songInstancesOf(project: Project): SongInstance[] {
+    if (this.songCache?.project !== project) this.songCache = { project, instances: songInstances(project) };
+    return this.songCache.instances;
+  }
+
+  /** The Position for song beat `songBeat` (wrapped into the song). */
+  private songPosition(project: Project, songBeat: number): Position {
+    const length = songBeats(project);
+    const beat = length > 0 ? ((songBeat % length) + length) % length : 0;
+    const first = activeAt(this.songInstancesOf(project), beat)[0];
+    return { stepIndex: 0, patternId: first?.instance.pattern.id ?? null, beat: first?.beat ?? 0, songBeat: beat };
   }
 
   getStatus(): PlaybackStatus {
@@ -185,7 +236,11 @@ export class Transport {
     const spb = secondsPerBeat(bpm);
     this.anchorTempo = bpm;
     this.nextStepIndex = resume.stepIndex;
-    this.nextStepStartTime = audibleAt - resume.beat * spb;
+    // Song mode resumes at a song beat; Pattern mode at a beat of a queue step.
+    this.nextStepStartTime = audibleAt - (this.inSong() ? (resume.songBeat ?? 0) : resume.beat) * spb;
+    this.songOrigin = this.nextStepStartTime;
+    this.songNext = 0;
+    this.songWindows = [];
     // Tempo-aware synths (Pulse) lock their pump/repeat to the engine's beat grid, not to note
     // starts. Anchor it to the pattern start before anything is scheduled (message order is
     // preserved); retime() and resume both come through here, so they re-anchor too.
@@ -207,6 +262,7 @@ export class Transport {
   /** The queue position `chainBeat` beats from the start of the queue, wrapping around its total length
    * (dangling entries and empty patterns are skipped, as tick() skips them). */
   private positionAtChainBeat(project: Project, chainBeat: number): Position {
+    if (this.inSong()) return Number.isFinite(chainBeat) ? this.songPosition(project, chainBeat) : this.chainStart(project);
     const lengths: { stepIndex: number; patternId: PatternId; beats: number }[] = [];
     let total = 0;
     for (let i = 0; i < project.patternChain.length; i++) {
@@ -224,6 +280,15 @@ export class Transport {
       within -= l.beats;
     }
     return this.chainStart(project);
+  }
+
+  /** Starts (or restarts) playback `beat` beats into the source's cycle (Song mode: into the song) —
+   * "play from here". A running transport is cut first, like playAt(). */
+  playFromBeat(beat: number): void {
+    if (this.hosted) return;
+    if (this.status === "playing") this.haltAudio();
+    const project = this.getProject();
+    this.begin(this.positionAtChainBeat(project, beat), this.runtime.getCurrentTime() + LEAD_IN_SECONDS, project.bpm);
   }
 
   /** Stops the schedule-ahead timer and cancels not-yet-fired events, remembering the
@@ -251,6 +316,7 @@ export class Transport {
    * queuePatternNext()'s `afterEntryId` so a freshly-queued pattern is inserted right after
    * whatever's actually sounding, not at the end of the queue. */
   getCurrentChainEntryId(): ChainEntryId | null {
+    if (this.inSong()) return null; // the queue is not what is playing
     return resolveChainStep(this.getProject(), this.currentPosition().stepIndex)?.entry.id ?? null;
   }
 
@@ -262,7 +328,7 @@ export class Transport {
    * was scheduled with. Call it in the same event handler that dispatches the reorder, so no tick
    * can see the new counter with the old queue. A stopped transport has nothing to preserve. */
   shiftChainSteps(delta: number): void {
-    if (delta === 0 || this.status === "stopped") return;
+    if (delta === 0 || this.status === "stopped" || this.inSong()) return;
     this.nextStepIndex += delta;
     for (const w of this.stepWindows) w.stepIndex += delta;
     this.startPosition = { ...this.startPosition, stepIndex: this.startPosition.stepIndex + delta };
@@ -300,10 +366,12 @@ export class Transport {
     this.activeVoices.clear();
     this.playback.dropSequencerVoices();
     this.stepWindows = [];
+    this.songWindows = [];
     this.cancelResample(new Error("Resample cancelled: transport stopped or paused."));
   }
 
   private chainStart(project: Project): Position {
+    if (this.inSong()) return this.songPosition(project, 0);
     const step = resolveChainStep(project, 0);
     return { stepIndex: 0, patternId: step?.pattern.id ?? null, beat: 0 };
   }
@@ -322,6 +390,7 @@ export class Transport {
     if (this.hosted) return this.positionAtChainBeat(this.getProject(), hostBeatAt(this.hosted, now) * BEATS_PER_QUARTER);
     if (now < this.audibleFrom) return this.startPosition;
     const spb = secondsPerBeat(this.anchorTempo);
+    if (this.inSong()) return this.songPosition(this.getProject(), (now - this.songOrigin) / spb);
     for (const w of this.stepWindows) {
       if (now >= w.startTime && now < w.endTime) {
         return { stepIndex: w.stepIndex, patternId: w.patternId, beat: (now - w.startTime) / spb };
@@ -363,6 +432,29 @@ export class Transport {
   getPlayheadInfo(): { patternId: PatternId | null; beat: number } {
     const { patternId, beat } = this.currentPosition(this.uiClock());
     return { patternId, beat };
+  }
+
+  /** Song mode: the playhead's beat from the start of the song and what sounds on each lane there. Null in
+   * Pattern mode, and while stopped. Reads the UI clock, so it is meant to be polled per frame. */
+  getSongPosition(): { songBeat: number; active: ActiveSequence[] } | null {
+    if (!this.inSong() || this.status === "stopped") return null;
+    const project = this.getProject();
+    const songBeat = this.currentPosition(this.uiClock()).songBeat ?? 0;
+    const active = activeAt(this.songInstancesOf(project), songBeat).map(({ instance, beat }) => ({
+      sequenceId: instance.sequenceId,
+      laneId: instance.laneId,
+      patternId: instance.pattern.id,
+      beat,
+    }));
+    return { songBeat, active };
+  }
+
+  /** The playhead's beat within pattern `patternId` if that pattern is sounding (in Song mode, on any lane),
+   * else null: what a grid showing that pattern draws. */
+  getPlayheadBeatFor(patternId: PatternId): number | null {
+    if (this.inSong()) return this.getSongPosition()?.active.find((a) => a.patternId === patternId)?.beat ?? null;
+    const info = this.getPlayheadInfo();
+    return info.patternId === patternId ? info.beat : null;
   }
 
   getPlayheadBeat(): number {
@@ -458,7 +550,110 @@ export class Transport {
     }
   }
 
+  /** Compiles `pattern` for a step starting at `stepStartTime` and hands it to the engine; notes before `notBefore`
+   * are dropped. The one place notes are scheduled, for a queue step and a Song-mode sequence alike. */
+  private scheduleNotes(project: Project, pattern: Pattern, stepStartTime: number, notBefore: number): void {
+    const tracks = project.tracks;
+    let compiled = compilePatternIterationTracked(
+      pattern,
+      tracks,
+      this.anchorTempo,
+      stepStartTime,
+      (trackId) => this.getBusId(trackId),
+      project.swing,
+      this.lfoAnchorTime,
+      project.beatsPerBar,
+      project.scale,
+    );
+    let synthNotes = compileInstrumentNotes(pattern, tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale);
+    // Starting part-way into a pattern (resume, or following an external clock) leaves the notes before
+    // that point in the past: drop them rather than let the engine fire them all at once.
+    if (stepStartTime < notBefore) {
+      const cutoff = notBefore - AUDIBLE_EPSILON_SECONDS;
+      compiled = compiled.filter((c) => c.event.time >= cutoff);
+      synthNotes = synthNotes.filter((n) => (n.params.time ?? 0) >= cutoff);
+    }
+    const compiledCount = compiled.length;
+    // Choke groups: notes of two tracks in one group starting at the same instant are resolved here,
+    // last track in track order wins (see simultaneousChokeLosers), not left to engine queue order.
+    const losers = simultaneousChokeLosers(project.tracks, [
+      ...compiled.map((c) => ({ trackId: c.trackId, time: c.event.time })),
+      ...synthNotes.map((n) => ({ trackId: n.trackId, time: n.params.time ?? 0 })),
+    ]);
+    if (losers.some(Boolean)) {
+      compiled = compiled.filter((_, i) => !losers[i]);
+      synthNotes = synthNotes.filter((_, i) => !losers[compiledCount + i]);
+    }
+    if (compiled.length > 0) {
+      // Sort by time before handing events to the engine. Compiling per track leaves them out
+      // of time order, and the engine's queue insertion is linear for each out-of-order event
+      // (webdsp scheduler.h). Sorted input appends. The handles stay aligned with `compiled`
+      // because both are sorted together (ECS-84).
+      compiled.sort((a, b) => a.event.time - b.event.time);
+      const handles = this.runtime.schedule(compiled.map((c) => c.event));
+      handles.forEach((handle, i) => {
+        this.activeVoices.add(handle);
+        const { trackId } = compiled[i];
+        const track = trackById(project, trackId);
+        if (track && effectiveVoiceMode(track) === "mono") this.playback.registerMonoVoice(trackId, handle, "sequencer");
+      });
+    }
+    // Synth tracks: one instrumentNoteOn per note, each carrying its absolute start time so the
+    // engine fires it sample-accurately (runtime.cancelScheduled() drops any still pending).
+    const instrumentHost = instrumentHostFor(this.runtime);
+    for (const { trackId, params, voice } of synthNotes) {
+      instrumentHost.noteOn(trackId, params, voice);
+    }
+  }
+
+  /** Song mode's tick: schedules every sequence instance whose start has entered the lookahead window. */
+  private tickSong(): void {
+    const project = this.getProject();
+    const now = this.runtime.getCurrentTime();
+    const horizon = now + LOOKAHEAD_SECONDS;
+    const spb = secondsPerBeat(this.anchorTempo);
+    const instances = this.songInstancesOf(project);
+    const length = songBeats(project);
+    const n = instances.length;
+
+    let guard = 0;
+    while (n > 0 && guard < MAX_STEP_SKIPS_PER_TICK) {
+      guard++;
+      const cycle = Math.floor(this.songNext / n);
+      const instance = instances[this.songNext % n];
+      const startTime = this.songOrigin + (cycle * length + instance.startBeat) * spb;
+      if (startTime >= horizon) break;
+      const endTime = startTime + instance.beats * spb;
+      this.songNext++;
+      if (endTime < now - 1) continue; // long past: the song was edited under the playhead
+      // The lane's modifiers act on the notes here, before the pattern is compiled like any other: all that follows (instrument,
+      // sample, track FX, mixer) is the ordinary pipeline.
+      this.scheduleNotes(project, applyLaneModifiers(instance.pattern, instance.modifiers), startTime, this.audibleFrom);
+      this.songWindows.push({ instance, startTime, endTime });
+      this.armResampleIfTargetStep(instance.pattern.id, startTime, endTime);
+    }
+
+    this.songWindows = this.songWindows.filter((w) => w.endTime > now - 1.0);
+    if (this.status === "playing") this.scheduleSongAutomation(project, instances, spb, now, horizon);
+  }
+
+  /** Automation in Song mode is the existing, pattern-local kind, replayed from the start of each sequence it applies to
+   * (model/composer.ts automationAppliesTo): a track's lanes over the sequences that have notes for it, the master's over
+   * the top-most lane's. The Composer draws the same spans. */
+  private scheduleSongAutomation(project: Project, instances: SongInstance[], spb: number, now: number, horizon: number): void {
+    const masterLane = masterLaneIndex(instances);
+    const windowsFor: WindowsFor = (owner) => {
+      const target = owner.kind === "master" ? "master" : owner.id;
+      return this.songWindows.filter((w) => automationAppliesTo(w.instance, target, masterLane));
+    };
+    scheduleAutomation(this.runtime, project, this.getBusId, windowsFor, spb, now, horizon);
+  }
+
   private tick(): void {
+    if (this.inSong()) {
+      this.tickSong();
+      return;
+    }
     const project = this.getProject();
     const now = this.runtime.getCurrentTime();
     const horizon = now + LOOKAHEAD_SECONDS;
@@ -480,56 +675,7 @@ export class Transport {
         continue;
       }
       const stepStartTime = this.nextStepStartTime;
-      let compiled = compilePatternIterationTracked(
-        pattern,
-        project.tracks,
-        this.anchorTempo,
-        stepStartTime,
-        (trackId) => this.getBusId(trackId),
-        project.swing,
-        this.lfoAnchorTime,
-        project.beatsPerBar,
-        project.scale,
-      );
-      let synthNotes = compileInstrumentNotes(pattern, project.tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale);
-      // Starting part-way into a pattern (resume, or following an external clock) leaves the notes before
-      // that point in the past: drop them rather than let the engine fire them all at once.
-      if (stepStartTime < this.audibleFrom) {
-        const cutoff = this.audibleFrom - AUDIBLE_EPSILON_SECONDS;
-        compiled = compiled.filter((c) => c.event.time >= cutoff);
-        synthNotes = synthNotes.filter((n) => (n.params.time ?? 0) >= cutoff);
-      }
-      const compiledCount = compiled.length;
-      // Choke groups: notes of two tracks in one group starting at the same instant are resolved here,
-      // last track in track order wins (see simultaneousChokeLosers), not left to engine queue order.
-      const losers = simultaneousChokeLosers(project.tracks, [
-        ...compiled.map((c) => ({ trackId: c.trackId, time: c.event.time })),
-        ...synthNotes.map((n) => ({ trackId: n.trackId, time: n.params.time ?? 0 })),
-      ]);
-      if (losers.some(Boolean)) {
-        compiled = compiled.filter((_, i) => !losers[i]);
-        synthNotes = synthNotes.filter((_, i) => !losers[compiledCount + i]);
-      }
-      if (compiled.length > 0) {
-        // Sort by time before handing events to the engine. Compiling per track leaves them out
-        // of time order, and the engine's queue insertion is linear for each out-of-order event
-        // (webdsp scheduler.h). Sorted input appends. The handles stay aligned with `compiled`
-        // because both are sorted together (ECS-84).
-        compiled.sort((a, b) => a.event.time - b.event.time);
-        const handles = this.runtime.schedule(compiled.map((c) => c.event));
-        handles.forEach((handle, i) => {
-          this.activeVoices.add(handle);
-          const { trackId } = compiled[i];
-          const track = trackById(project, trackId);
-          if (track && effectiveVoiceMode(track) === "mono") this.playback.registerMonoVoice(trackId, handle, "sequencer");
-        });
-      }
-      // Synth tracks: one instrumentNoteOn per note, each carrying its absolute start time so the
-      // engine fires it sample-accurately (runtime.cancelScheduled() drops any still pending).
-      const instrumentHost = instrumentHostFor(this.runtime);
-      for (const { trackId, params, voice } of synthNotes) {
-        instrumentHost.noteOn(trackId, params, voice);
-      }
+      this.scheduleNotes(project, pattern, stepStartTime, this.audibleFrom);
       const stepEndTime = stepStartTime + beats * spb;
       this.stepWindows.push({
         stepIndex: this.nextStepIndex,

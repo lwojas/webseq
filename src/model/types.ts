@@ -15,6 +15,8 @@ import type { ProjectScale } from "./scale";
 export type TrackId = string;
 export type PatternId = string;
 export type NoteId = string;
+export type SequenceId = string;
+export type LaneId = string;
 export type ChainEntryId = string;
 export type FxId = string;
 export type SampleId = number;
@@ -300,6 +302,55 @@ export interface Pattern {
    * lengths — see Project.beatsPerBar for how this becomes a beat count. */
   bars: number;
   notes: Record<NoteId, Note>;
+  /** Owned by a Composer sequence (see ComposerSequence): the sequence's own editable content, kept
+   * in `Project.patterns` so the whole existing editor addresses it by id, but never listed in the
+   * pattern launcher / queue / MIDI slots. Absent = an ordinary launcher pattern, so older projects
+   * are byte-identical. Invariant (model/composer.ts): composer-owned patterns sit after every
+   * launcher pattern in `Project.patterns`, so launcher indices stay stable. */
+  composerOwned?: boolean;
+}
+
+/** One block on the Composer timeline. An independent instance: `patternId` points at a pattern that
+ * only this sequence uses (a clone when it was added from the launcher or duplicated), so editing one
+ * sequence never touches another. Its length is that pattern's `bars` (one source of truth, so the
+ * sequencer's bars stepper and the timeline can never disagree); its name is the pattern's name. */
+export interface ComposerSequence {
+  id: SequenceId;
+  patternId: PatternId;
+  /** Start in whole bars from the beginning of the timeline, 0-based. Sequences never overlap. */
+  start: number;
+  /** Display colour (a CSS colour from COMPOSER_COLORS) — a property of this instance, not the pattern. */
+  color: string;
+}
+
+/** Musical transformations a lane applies to the notes of the sequences on it, before they reach the instrument
+ * (model/composer.ts applyLaneModifiers). They change WHAT is played, never how it sounds: no audio processing, no bus,
+ * and nothing about tracks, FX or the mixer. Defaults (0 / 1 / 1) change nothing. */
+export interface LaneModifiers {
+  /** Semitones added to every plain note's pitch (chord notes are left as written). -24..24. */
+  transpose: number;
+  /** Multiplies every note's velocity (the result stays within 0..1). */
+  velocity: number;
+  /** Multiplies every note's length. */
+  gate: number;
+}
+
+/** A parallel stream of the song: its own row of sequences (never overlapping each other; sequences on
+ * different lanes play at the same time). A lane is only a place on the timeline plus an optional set of
+ * sequencer-level modifiers. It is not a track, a bus or a routing: every sequence still plays all the tracks its
+ * pattern has notes for, through those tracks' own instruments, FX and faders. */
+export interface ComposerLane {
+  id: LaneId;
+  name: string;
+  /** Sorted by `start`; no two overlap. */
+  sequences: ComposerSequence[];
+  /** Absent = no modifiers. */
+  modifiers?: LaneModifiers;
+}
+
+/** The song: lanes top to bottom. Kept in its own object so a project without one is unchanged. */
+export interface Composer {
+  lanes: ComposerLane[];
 }
 
 /** One slot in the project's pattern queue (`Project.patternChain` — see its doc comment for
@@ -419,6 +470,9 @@ export interface Project {
   /** The project's key (model/scale.ts): a context for note entry, never applied to stored notes
    * or to playback. Absent = chromatic (every note in scale), so older projects are unchanged. */
   scale?: ProjectScale;
+  /** The Composer timeline (model/composer.ts). Absent = nothing composed yet. Playback does not read
+   * it only in Song mode (audio/transport.ts); Pattern mode walks `patternChain`. */
+  composer?: Composer;
 }
 
 export function totalBeats(pattern: Pick<Pattern, "bars">, beatsPerBar: number): number {

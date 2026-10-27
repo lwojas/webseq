@@ -24,19 +24,25 @@ export interface BarTool {
   onRun: () => void;
 }
 
+import { ComposerDetails, type ComposerDetailsProps } from "./ComposerDetails";
+
 interface Props {
   history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
   clipboard: ClipboardRow[];
   barTools: BarTool[];
   /** Transient result of the last action, cleared by App.tsx after a couple of seconds. */
   feedback: string | null;
+  /** Present while the Composer view is up: the details of the selected sequence and lane (the Composer's own toolbar
+   * has only the quick actions). */
+  composer?: ComposerDetailsProps;
 }
 
 /** The Edit tab: project-level editing operations grouped by what they act on. Presentational —
  * all state and model calls live in App.tsx. */
-export function EditPanel({ history, clipboard, barTools, feedback }: Props) {
+export function EditPanel({ history, clipboard, barTools, feedback, composer }: Props) {
   return (
     <div className="edit-panel">
+      {composer && <ComposerDetails {...composer} />}
       <section className="edit-group">
         <div className="edit-group-title">History</div>
         <div className="edit-row">
@@ -48,6 +54,10 @@ export function EditPanel({ history, clipboard, barTools, feedback }: Props) {
           </button>
         </div>
       </section>
+      {/* In the Composer the track clipboard and bar tools are not offered: they act on the selected track and pattern, which
+          the Composer does not show, so nothing would confirm what they did. They return with the Sequencer. */}
+      {!composer && (
+        <>
       <section className="edit-group">
         <div className="edit-group-title">Clipboard</div>
         {clipboard.map((row) => (
@@ -74,6 +84,8 @@ export function EditPanel({ history, clipboard, barTools, feedback }: Props) {
           </div>
         ))}
       </section>
+        </>
+      )}
       {feedback && <div className="clipboard-status edit-feedback">{feedback}</div>}
     </div>
   );

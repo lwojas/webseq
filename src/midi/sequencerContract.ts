@@ -9,6 +9,7 @@
 // Each resolved control is cached, and syncFromProject() keeps every cached control's change notifications
 // in step with the project, the same way controlAdapter.ts's ProjectControl already does for track mutes.
 
+import { launcherPatterns } from "../model/composer";
 import {
   createAction,
   type Action as MidiAction,
@@ -508,7 +509,7 @@ function createPatternBarsControl(index: number, deps: SequencerRegistryDeps): P
 /** patterns.count: how many patterns exist, so a caller can bound its own pattern-pad iteration -- same role `tracks.count` already plays for the step grid. */
 function createPatternsCountControl(deps: SequencerRegistryDeps): ProjectControl<NumericControlDef> {
   const def: NumericControlDef = { id: PATTERNS_COUNT_ID, label: "Pattern count", kind: "number", min: 0, max: 1024, default: 0 };
-  const count = (project: Project) => project.patterns.length;
+  const count = (project: Project) => launcherPatterns(project.patterns).length;
   const listeners = new Set<(value: number, previous: number) => void>();
   let last = count(deps.getProject());
 
