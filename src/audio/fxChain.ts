@@ -35,6 +35,7 @@ export const FX_KIND: Record<FxType, EffectKind> = {
   utility: EffectKind.Utility,
   dubDelay: EffectKind.DubDelay,
   eq: EffectKind.Eq,
+  glitch: EffectKind.Glitch,
 };
 
 /** FX param id (model/fx.ts FX_DEFS) -> the engine's NodeParam. */
@@ -92,6 +93,12 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
     mix: NodeParam.DubDelayMix,
   },
   eq: EQ_NODE_PARAMS,
+  glitch: {
+    mix: NodeParam.GlitchMix,
+    mode: NodeParam.GlitchMode,
+    division: NodeParam.GlitchDivision,
+    speed: NodeParam.GlitchSpeed,
+  },
 };
 
 interface LiveEffect {

@@ -208,6 +208,47 @@ export const FX_DEFS: Record<FxType, FxDef> = {
     ],
   },
   eq: { type: "eq", label: "EQ", params: eqParams() },
+  // Ring-buffer performance effect (webdsp Glitch FX, docs/glitch-fx.md). It always records; Mix 0 is an exact bypass and the
+  // 0 -> >0 edge engages it, using the Mode and Time in force at that moment. Repeat loops the last Time of audio, Tape reads the
+  // signal back at Speed (1 untouched, 0 stopped, negative backwards), Gate chops it (Mix is the depth). Mode/Time values mirror
+  // webdsp's GlitchMode and GlitchDivision.
+  glitch: {
+    type: "glitch",
+    label: "Glitch",
+    params: [
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
+      {
+        id: "mode",
+        label: "Mode",
+        min: 0,
+        max: 2,
+        step: 1,
+        default: 0,
+        options: [
+          { label: "Repeat", value: 0 },
+          { label: "Tape", value: 1 },
+          { label: "Gate", value: 2 },
+        ],
+      },
+      {
+        id: "division",
+        label: "Time",
+        min: 0,
+        max: 5,
+        step: 1,
+        default: 1,
+        options: [
+          { label: "1/2", value: 0 },
+          { label: "1/4", value: 1 },
+          { label: "1/8", value: 2 },
+          { label: "1/16", value: 3 },
+          { label: "1/32", value: 4 },
+          { label: "1/64", value: 5 },
+        ],
+      },
+      { id: "speed", label: "Speed", min: -1, max: 2, step: 0.01, unit: "x", default: 1 },
+    ],
+  },
   // A bare gain stage (webdsp Utility FX): the automatable per-track volume. Unity (0 dB) is
   // neutral; the bottom of the range is silence. Deliberately one parameter.
   utility: {
