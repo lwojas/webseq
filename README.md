@@ -47,7 +47,8 @@ src/audio/        — the one place the model meets webdsp:
                       compile.ts     — Note → webdsp ScheduledEvent, bus-aware
                       buses.ts       — Track -> webdsp BusId assignment (runtime-only,
                                       never persisted — see "Persistence" below)
-                      applyFx.ts     — FxInstance[] → webdsp NodeParam calls on a bus
+                      fxChain.ts     — FxInstance[] → the bus's webdsp FX chain (EffectKind
+                                      instances, NodeParam writes, bypass, reorder)
                       transport.ts   — play/pause/stop/retime + a lookahead scheduler that
                                       walks the *pattern chain* continuously (see "Pattern
                                       chain playback" below), plus per-tick automation
@@ -125,23 +126,26 @@ playing simply shows no playhead (see `hooks/usePlayheadAnimation.ts`).
 
 ## Per-track FX and buses
 
-`webdsp` originally shipped with exactly one real mixer bus (`MASTER_BUS`). Giving each track
-its own filter+delay chain — distinct from master's — needed one small, already-anticipated
-engine addition: `AudioRuntime.createBus()`, which hands out an additional bus backed by the
-same `NodeParam`-addressable filter+delay chain as `MASTER_BUS`. See `webdsp`'s
+Every track gets its own webdsp bus (`AudioRuntime.createBus()`), each with its own ordered
+FX chain, distinct from master's (`MASTER_BUS` has one too). See `webdsp`'s
 `ARCHITECTURE.md`, "Buses / mixing", for the full routing model
 (`track voices -> track bus chain -> [sum] -> master bus chain -> output`); `src/audio/buses.ts`
 is this app's side of that — one bus per track, assigned once (via `ensureTrackBuses`) when the
 runtime is ready, never persisted (a `BusId` is a live runtime handle, meaningless across a
 reload — see "Persistence").
 
-`src/model/fx.ts`'s `FX_DEFS` is the only place that knows what a "filter" or "delay" *is* at
-the model level (param keys/ranges/defaults); `src/audio/applyFx.ts` is the only other place,
-translating those generic params into `NodeParam` calls. One real engine constraint: `webdsp`'s
-`Bus` has exactly one filter slot and one delay slot (a fixed two-node chain), so a track's FX
-chain may contain at most one of each type, and the engine always applies filter before delay
-regardless of this array's stored order (reordering the two isn't implemented — see that
-file's doc comment).
+`src/model/fx.ts`'s `FX_DEFS` is the only place that knows what an FX type *is* at the model
+level (param keys/ranges/defaults); `src/audio/fxChain.ts` is the only other place, translating
+those generic params into `EffectKind` and `NodeParam` calls. The chain is a real ordered stack
+(webdsp `docs/fx-chain.md`): any number of instances of any kind, up to the engine's
+per-bus limit, and the array order is the signal-flow order. `fxChain.ts` mirrors the array
+onto the engine's chain by instance id (add, remove, `moveEffect`, `setEffectEnabled` for
+bypass), writing a parameter only when it changed.
+
+The FX types in `FX_DEFS` are filter, chorus/flanger, delay, reverb, compressor, saturation,
+phaser, bitcrusher, utility (gain), Dub Delay (tempo-synced, with triplet divisions), a
+four-band parametric EQ (with a drag-the-curve editor, `EqCurveEditor.tsx`) and Glitch (beat
+repeat, tape stop/slow/reverse, tempo-synced gate). Each is one `EffectKind` in webdsp.
 
 ### Track-to-track routing
 
@@ -316,18 +320,18 @@ sounding stays "now" and the next step follows its successor in the new order.
 
 ## Extending
 
-**Adding a third FX type** (reverb, compression, EQ...): if the underlying DSP already exists
-on `webdsp`'s bus (check `NodeParam` in `webdsp`'s `src/runtime/types.ts`), add an entry to
-`FX_DEFS` (`model/fx.ts`) and a case in `applyFx.ts`'s `applyFilter`/`applyDelay`-shaped
-functions — no new UI component needed, `ModulePanel`/`FxChainStrip`/`AutomationLane` all
-render generically from `FX_DEFS`. If the DSP itself doesn't exist yet, that's a `webdsp`
-change (a new `DSPNode`, a `DSPChain` capacity bump, a WASM rebuild) — see `webdsp`'s
-`ARCHITECTURE.md`, "Adding a new master-bus module".
+**Adding an FX type**: if webdsp already has the effect (check `EffectKind` and `NodeParam` in
+`webdsp`'s `src/runtime/types.ts`), add an entry to `FxType` (`model/types.ts`) and `FX_DEFS`
+(`model/fx.ts`), and map it in `audio/fxChain.ts` (`FX_KIND` and `FX_NODE_PARAMS`) —
+no new UI component needed, `ModulePanel`/`FxChainStrip`/`AutomationLane` all render
+generically from `FX_DEFS`. If the DSP itself doesn't exist yet, that's a `webdsp` change (a new
+`DSPNode`, an `FxKind`, a WASM rebuild) — see `webdsp`'s `ARCHITECTURE.md`, "Adding a new
+master-bus module".
 
 ## Testing
 
-`test/notes.test.ts`, `test/project.test.ts`, `test/fx.test.ts`, `test/automation.test.ts`,
-`test/compile.test.ts`, `test/transport.test.ts`, `test/wav.test.ts` — all pure/fake-runtime, no
+`test/` (about 50 files, e.g. `notes`, `project`, `fx`, `automation`, `compile`, `transport`,
+`nativeSequence`, `tie`, `wav`) — all pure/fake-runtime (`test/mockRuntime.ts`), no
 browser needed (same approach as `webdsp`'s own `lookaheadPlayer.test.ts`: `Transport` is
 tested against a faked `AudioRuntime` under `vitest`'s fake timers, since a real `AudioRuntime`
 needs a browser `AudioContext`/`AudioWorklet`). `transport.test.ts` specifically covers gapless

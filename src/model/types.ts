@@ -47,8 +47,8 @@ export interface Track {
    * Asset (imported or resampled) can be assigned to any number of tracks. */
   assetId: AssetId | null;
   /** Ordered chain of FX processing this track's voices before the mixer. Order is explicit
-   * and meaningful (see FxInstance), even though today's audio engine only has two FX types
-   * and applies them in a fixed native order — see src/audio/applyFx.ts. */
+   * and meaningful (see FxInstance): it is the signal-flow order on the track's bus, mirrored
+   * onto the engine's per-bus FX chain by src/audio/fxChain.ts. */
   fx: FxInstance[];
   /** Optional per-(fx, parameter) automation lanes for this track. Separate from `fx` itself
    * — an FX's automation can be cleared without deleting the FX or resetting its base
@@ -206,9 +206,9 @@ export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compress
 /** One FX in a track's or master's ordered chain. `params` is a flat, generic key->value map
  * (see fx.ts's FX_DEFS for what keys each `type` defines and their defaults/ranges) rather
  * than a per-type interface, so the chain, the reducer, and the generic module-panel UI never
- * need a switch statement over FX type — only fx.ts's registry and audio/applyFx.ts (the
- * translation to webdsp's NodeParam ids) know what a "filter", "delay", "reverb", or
- * "compressor" actually is. */
+ * need a switch statement over FX type — only fx.ts's registry and audio/fxChain.ts (the
+ * translation to webdsp's EffectKind and NodeParam ids) know what a "filter", "delay", "reverb",
+ * or "compressor" actually is. */
 export interface FxInstance {
   id: FxId;
   type: FxType;

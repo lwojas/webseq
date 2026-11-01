@@ -1,8 +1,8 @@
 // FX chain operations, generic over FxTarget (a track or the master bus — see types.ts).
 // This is the one place that knows what a "filter", "chorusFlanger", "delay", "reverb",
 // "compressor", or "saturation" *is* at the model level (their param keys, defaults, and
-// ranges); src/audio/applyFx.ts is the only other place that needs to know it, translating
-// these generic params into webdsp's NodeParam calls. The UI's module panel renders any
+// ranges); src/audio/fxChain.ts is the only other place that needs to know it, translating
+// these generic params into webdsp's EffectKind and NodeParam calls. The UI's module panel renders any
 // FxInstance generically from FX_DEFS, the same way the old AudioModule abstraction rendered a
 // single hand-written module.
 //

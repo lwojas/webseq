@@ -1,4 +1,4 @@
-// Maps each track to its own webdsp bus, so a track's FX chain (src/audio/applyFx.ts) and its
+// Maps each track to its own webdsp bus, so a track's FX chain (src/audio/fxChain.ts) and its
 // triggered voices (src/audio/compile.ts) always agree on which bus that track owns. This
 // mapping is pure runtime state, deliberately kept out of the serializable Project (see
 // model/types.ts's Asset doc comment and README's persistence notes) — a BusId is a live

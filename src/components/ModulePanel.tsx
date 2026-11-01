@@ -19,8 +19,8 @@ interface Props {
 }
 
 /** Renders any FxInstance generically from FX_DEFS (model/fx.ts) — this component has no idea
- * it's rendering a filter vs. a delay specifically, so a future third FX type needs no new UI
- * code here, only an FX_DEFS entry and an audio/applyFx.ts case. Clicking a parameter's label
+ * it's rendering a filter vs. a delay specifically, so a new FX type needs no new UI
+ * code here, only an FX_DEFS entry and an audio/fxChain.ts mapping (FX_KIND and its parameter ids). Clicking a parameter's label
  * selects it as the one whose automation is shown in the lane below (see AutomationLane). */
 export function ModulePanel({ fx, onSetParam, onSetEnabled, badges, onAutomateParam, spectrumTap, children }: Props) {
   const def = FX_DEFS[fx.type];
