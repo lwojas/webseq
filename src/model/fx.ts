@@ -16,7 +16,7 @@
 // flanger (see webdsp's docs/chorus-flanger-node.md).
 
 import { withLfoAdded, withLfoPatched, withLfoRemoved, MAX_TRACK_LFOS } from "./lfoStack";
-import type { FxId, FxInstance, FxTarget, FxType, Project, Track, TrackLfo } from "./types";
+import type { FxId, FxInstance, FxTarget, FxType, Project, Track, TrackId, TrackLfo } from "./types";
 import { fxOwner } from "./types";
 
 export interface FxParamDef {
@@ -30,6 +30,21 @@ export interface FxParamDef {
   /** Enum-valued params (currently only filter mode) list their options here instead of
    * min/max being meaningful as a continuous range. */
   options?: { label: string; value: number }[];
+  /** The value is a track number (1..64, the N of "track-N"; 0 = none), picked from the project's
+   * tracks. audio/fxChain.ts turns it into that track's engine bus. It is a stepped selector, so it
+   * has no automation lane (modulation.ts's fxParamDefs leaves it out). */
+  trackKey?: boolean;
+}
+
+/** The track a `trackKey` parameter's value names, or null for 0 / no such track. */
+export function keyTrackId(value: number): TrackId | null {
+  return Number.isInteger(value) && value >= 1 ? `track-${value}` : null;
+}
+
+/** The `trackKey` value that names `trackId` (0 if it is not a "track-N" id). */
+export function keyTrackValue(trackId: TrackId): number {
+  const n = /^track-(\d+)$/.exec(trackId);
+  return n ? Number(n[1]) : 0;
 }
 
 export interface FxDef {
@@ -142,6 +157,8 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "release", label: "Release", min: 0.001, max: 3, step: 0.001, unit: "s", default: 0.15 },
       { id: "knee", label: "Knee", min: 0, max: 24, step: 0.1, unit: "dB", default: 6 },
       { id: "makeup", label: "Makeup", min: -24, max: 24, step: 0.1, unit: "dB", default: 0 },
+      // The detector listens to this track's output instead of the compressor's own input (a bass ducking to a kick).
+      { id: "sidechain", label: "Sidechain", min: 0, max: 64, step: 1, default: 0, trackKey: true },
     ],
   },
   saturation: {

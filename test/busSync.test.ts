@@ -142,6 +142,26 @@ describe("syncBuses", () => {
     expect(calls.setEffectParameter.map((c) => [c[2], c[3]])).toEqual([[NodeParam.FilterCutoff, 18000]]);
   });
 
+  it("sends a compressor's sidechain track as that track's bus, not its number", () => {
+    const { runtime, calls } = mockRuntime();
+    // Bus ids need not match track numbers: track-2 owns bus 9.
+    const shuffled = { ...buses, "track-2": 9 };
+    let project = addFx(createInitialProject(), "track-1", "compressor");
+    const fxId = project.tracks[0].fx[0].id;
+    project = setFxParam(project, "track-1", fxId, "sidechain", 2);
+    syncBuses(runtime, project, shuffled);
+    const sent = () => calls.setEffectParameter.filter((c) => c[2] === NodeParam.CompSidechain).map((c) => c[3]);
+    expect(sent()).toEqual([9]);
+
+    // Back to the compressor's own input.
+    syncBuses(runtime, setFxParam(project, "track-1", fxId, "sidechain", 0), shuffled);
+    expect(sent()).toEqual([9, 0]);
+
+    // A track without a bus reads as none rather than sending its number.
+    syncBuses(runtime, setFxParam(project, "track-1", fxId, "sidechain", 70), shuffled);
+    expect(sent()).toEqual([9, 0, 0]);
+  });
+
   it("sends track pan as BusPan", () => {
     const { runtime, raw } = mockRuntime();
     syncBuses(runtime, setTrackPan(createInitialProject(), "track-3", -0.5), buses);

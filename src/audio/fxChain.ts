@@ -19,8 +19,8 @@
 // to a *user edit*), `written` is whatever automation last told the engine (so restoreBase() knows
 // what to put back when playback halts). setParam() remains for direct writes.
 import { EffectKind, NodeParam, type AudioRuntime, type BusId, type EffectId } from "webdsp";
-import { FX_DEFS } from "../model/fx";
-import type { FxId, FxInstance, FxType, TrackLfo } from "../model/types";
+import { FX_DEFS, keyTrackId } from "../model/fx";
+import type { FxId, FxInstance, FxType, TrackId, TrackLfo } from "../model/types";
 import { syncLfoSlots } from "./lfoSync";
 
 export const FX_KIND: Record<FxType, EffectKind> = {
@@ -69,6 +69,7 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
     release: NodeParam.CompRelease,
     knee: NodeParam.CompKnee,
     makeup: NodeParam.CompMakeup,
+    sidechain: NodeParam.CompSidechain,
   },
   saturation: {
     drive: NodeParam.SatDrive,
@@ -119,8 +120,14 @@ interface BusChain {
   order: FxId[];
 }
 
+/** Project track id -> the engine bus that track owns (buses.ts's TrackBusMap), for FX parameters
+ * that name a track. */
+type BusOf = (trackId: TrackId) => BusId | undefined;
+
 export class FxChainSync {
   private chains = new Map<BusId, BusChain>();
+  /** Where `trackKey` parameters (the compressor sidechain) find their track's bus; set by each sync(). */
+  private busOf: BusOf = () => undefined;
 
   constructor(private readonly runtime: AudioRuntime) {}
 
@@ -129,8 +136,18 @@ export class FxChainSync {
     return this.chains.get(busId)?.effects.get(fxId)?.engineId;
   }
 
-  /** Brings the engine chain on `busId` in line with `fx`. */
-  sync(busId: BusId, fx: FxInstance[]): void {
+  /** What the engine is told for a parameter: the project value, except a `trackKey` (the sidechain
+   * source), whose track number becomes that track's bus id (0 = none, also for a track with no bus). */
+  private engineValue(type: FxType, paramId: string, value: number): number {
+    if (!FX_DEFS[type].params.find((p) => p.id === paramId)?.trackKey) return value;
+    const track = keyTrackId(value);
+    return track ? (this.busOf(track) ?? 0) : 0;
+  }
+
+  /** Brings the engine chain on `busId` in line with `fx`. `busOf` resolves a track a parameter
+   * names (the compressor's sidechain) to its bus; without it such a parameter reads as none. */
+  sync(busId: BusId, fx: FxInstance[], busOf: BusOf = () => undefined): void {
+    this.busOf = busOf;
     let chain = this.chains.get(busId);
     if (!chain) {
       // Nothing to do for an empty chain on a bus we have never touched — keeps unused buses
@@ -176,7 +193,7 @@ export class FxChainSync {
         if (live.base.get(def.id) === value) continue;
         live.base.set(def.id, value);
         live.written.set(def.id, value);
-        this.runtime.setEffectParameter(busId, live.engineId, param, value);
+        this.runtime.setEffectParameter(busId, live.engineId, param, this.engineValue(instance.type, def.id, value));
       }
       this.syncLfos(busId, live, instance.lfos ?? []);
     });
@@ -208,7 +225,7 @@ export class FxChainSync {
     const param = FX_NODE_PARAMS[live.type][paramId];
     if (param === undefined || live.written.get(paramId) === value) return;
     live.written.set(paramId, value);
-    this.runtime.setEffectParameter(busId, live.engineId, param, value);
+    this.runtime.setEffectParameter(busId, live.engineId, param, this.engineValue(live.type, paramId, value));
   }
 
   /** The engine target of one parameter of one live FX instance, for scheduled parameter events
@@ -236,7 +253,7 @@ export class FxChainSync {
           const param = FX_NODE_PARAMS[live.type][paramId];
           if (param === undefined) continue;
           live.written.set(paramId, base);
-          this.runtime.setEffectParameter(busId, live.engineId, param, base);
+          this.runtime.setEffectParameter(busId, live.engineId, param, this.engineValue(live.type, paramId, base));
         }
       }
     }

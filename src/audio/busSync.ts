@@ -116,11 +116,12 @@ function syncRoutes(runtime: AudioRuntime, project: Project, buses: TrackBusMap)
 
 export function syncBuses(runtime: AudioRuntime, project: Project, buses: TrackBusMap): void {
   const chains = fxChainsFor(runtime);
-  chains.sync(MASTER_BUS, project.master.fx);
+  const busOf = (trackId: string) => buses[trackId];
+  chains.sync(MASTER_BUS, project.master.fx, busOf);
   for (const track of project.tracks) {
     const busId = buses[track.id];
     if (busId === undefined) continue;
-    chains.sync(busId, track.fx);
+    chains.sync(busId, track.fx, busOf);
     applyTrackMix(runtime, busId, project, track);
   }
   syncRoutes(runtime, project, buses);

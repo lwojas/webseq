@@ -78,6 +78,8 @@ export function FxPanel({
         <div className="fx-panel-detail">
           <ModulePanel
             fx={selectedFx}
+            tracks={tracks}
+            ownerTrackId={track?.id ?? null}
             onSetParam={(paramId, value) => onSetFxParam(selectedFx.id, paramId, value)}
             onSetEnabled={(enabled) => onSetFxEnabled(selectedFx.id, enabled)}
             badges={modulationBadges(automation?.lanes ?? [], selectedFx.lfos ?? [])}

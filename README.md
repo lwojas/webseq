@@ -147,6 +147,13 @@ phaser, bitcrusher, utility (gain), Dub Delay (tempo-synced, with triplet divisi
 four-band parametric EQ (with a drag-the-curve editor, `EqCurveEditor.tsx`) and Glitch (beat
 repeat, tape stop/slow/reverse, tempo-synced gate). Each is one `EffectKind` in webdsp.
 
+A compressor can be **sidechained**: its `sidechain` parameter (a `trackKey` in `FX_DEFS`) picks another
+track whose output drives the detector, so a bass ducks to a kick. The value is that track's number
+(`track-N` -> N, 0 = the compressor's own input); `FxChainSync` turns it into the track's engine bus
+(`NodeParam.CompSidechain`) using the bus map `syncBuses` passes in. It is a selector, so it has no
+automation lane, and the track an FX sits on is left out of its own list. The engine orders the key track
+before the one listening and reads a loop as off.
+
 ### Track-to-track routing
 
 A track's audio goes to the master by default, or to another track: `Track.outputTrack` (absent =

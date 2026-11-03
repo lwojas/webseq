@@ -83,6 +83,7 @@ describe("FX chains (track and master)", () => {
       release: 0.15,
       knee: 6,
       makeup: 0,
+      sidechain: 0,
     });
   });
 

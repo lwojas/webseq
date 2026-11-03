@@ -55,7 +55,7 @@ export const SAMPLE_PARAMS: ModParamDef[] = [
 
 /** The parameters of an FX instance. */
 export function fxParamDefs(fx: Pick<FxInstance, "type">): ModParamDef[] {
-  return (FX_DEFS[fx.type]?.params ?? []).map(describe);
+  return (FX_DEFS[fx.type]?.params ?? []).filter((p) => !p.trackKey).map(describe);
 }
 
 /** The parameters of a track's source: its synth's controls, or a sample's. */
