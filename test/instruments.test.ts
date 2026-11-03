@@ -180,7 +180,7 @@ describe("compileInstrumentNotes", () => {
   });
 
   it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
-    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth", "edge"] as const) {
+    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth", "edge", "matrix"] as const) {
       expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
     }
   });
@@ -249,6 +249,28 @@ describe("compileInstrumentNotes", () => {
     expect(def.params.find((p) => p.id === "pitchenv")!.min).toBeLessThan(0);   // a signed transient
     const proj = projectWithNotes("edge");
     expect(rootMidiNote(proj.tracks[0])).toBeCloseTo(57);   // 220 Hz = A3
+    expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeGreaterThan(0);
+  });
+
+  it("lists Matrix as sustained: the voice's 22 controls, then one signed cell per source and destination", () => {
+    const def = INSTRUMENT_DEFS.matrix;
+    expect(def.sustained).toBe(true);
+    expect(def.params.map((p) => p.id)).toEqual(["gain", ...INSTRUMENT_PARAM_NAMES.matrix]);
+    expect(def.params).toHaveLength(1 + 22 + 42);
+    expect(new Set(def.params.map((p) => p.id)).size).toBe(def.params.length);
+    for (const p of def.params) {
+      expect(p.default).toBeGreaterThanOrEqual(p.min);
+      expect(p.default).toBeLessThanOrEqual(p.max);
+    }
+    expect(def.params.find((p) => p.id === "mode")?.options?.map((o) => o.label)).toEqual(["LP 24", "LP 12", "Band-pass", "HP 12"]);
+    // The matrix: signed, off by default except the init patch (ENV 1 on the amp, ENV 2 on the cutoff).
+    const cells = def.params.filter((p) => /^(lfo1|lfo2|env1|env2|noise|vco|vcf)_/.test(p.id));
+    expect(cells).toHaveLength(42);
+    for (const c of cells) expect([c.min, c.max]).toEqual([-1, 1]);
+    expect(cells.filter((c) => c.default !== 0).map((c) => [c.id, c.default])).toEqual([["env1_level", 1], ["env2_cutoff", 0.4]]);
+    expect(def.params.find((p) => p.id === "vcf_cutoff")?.label).toBe("VCF > Cutoff");   // filter feedback is one cell
+    const proj = projectWithNotes("matrix");
+    expect(rootMidiNote(proj.tracks[0])).toBeCloseTo(45);   // 110 Hz = A2
     expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeGreaterThan(0);
   });
 

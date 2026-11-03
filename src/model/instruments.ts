@@ -37,6 +37,28 @@ export interface InstrumentDef {
   params: InstrumentParamDef[];
 }
 
+// Matrix (webdsp docs/matrix-instrument.md): a subtractive voice whose 7 x 6 patch matrix is exposed as
+// parameters. Ids 0..21 are the voice; the other 42 are one signed amount (-1..1, 0 = no patch) per
+// source and destination, named by the engine "<source>_<dest>" (lfo1_cutoff, vcf_pitch). The cells are
+// generated from the same two lists webdsp's patchMatrix.ts describes, in the engine's own order.
+const MATRIX_SOURCES = [
+  ["lfo1", "LFO 1"], ["lfo2", "LFO 2"], ["env1", "ENV 1"], ["env2", "ENV 2"], ["noise", "Noise"], ["vco", "VCO"], ["vcf", "VCF"],
+] as const;
+const MATRIX_DESTS = [
+  ["pitch", "Pitch"], ["pwm", "PWM"], ["cutoff", "Cutoff"], ["resonance", "Reso"], ["drive", "Drive"], ["level", "Level"],
+] as const;
+/** Cells that are patched in the engine's init patch: ENV 1 opens the amp, ENV 2 sweeps the cutoff. */
+const MATRIX_INIT_PATCHES: Record<string, number> = { env1_level: 1, env2_cutoff: 0.4 };
+const stepOptions = (labels: string[]) => labels.map((label, value) => ({ value, label }));
+function matrixCells(): InstrumentParamDef[] {
+  return MATRIX_SOURCES.flatMap(([s, sLabel]) =>
+    MATRIX_DESTS.map(([d, dLabel]): InstrumentParamDef => {
+      const id = `${s}_${d}`;
+      return { id, label: `${sLabel} > ${dLabel}`, min: -1, max: 1, step: 0.01, default: MATRIX_INIT_PATCHES[id] ?? 0 };
+    }),
+  );
+}
+
 export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
   kick: {
     kind: "kick",
@@ -448,6 +470,41 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "decay", label: "Decay", min: 0.01, max: 4, step: 0.01, unit: "s", default: 0.3 },
       { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0 },
       { id: "release", label: "Release", min: 0.005, max: 2, step: 0.005, unit: "s", default: 0.08 },
+    ],
+  },
+  // Matrix (webdsp docs/matrix-instrument.md): VCO, VCF and VCA with two LFOs, two envelopes and a patch
+  // matrix; ids are the engine's own (lowercase) names. Sustained: ENV 1 sets the note's life, so the
+  // default one-shot (Sustain 0) ends itself within the note and Sustain 1 holds for the note's length.
+  // Root is the Tune (110 Hz = A2).
+  matrix: {
+    kind: "matrix",
+    label: "Matrix",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "tune", label: "Root", min: 27.5, max: 1760, step: 0.5, unit: "Hz", default: 110 },
+      { id: "wave", label: "Wave", min: 0, max: 2, step: 1, default: 0, options: stepOptions(["Saw", "Pulse", "Triangle"]) },
+      { id: "pwm", label: "PWM", min: 0.05, max: 0.95, step: 0.01, default: 0.5 },
+      { id: "noise", label: "Noise", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "cutoff", label: "Cutoff", min: 20, max: 18000, step: 1, unit: "Hz", default: 1200 },
+      { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.25 },
+      { id: "drive", label: "Drive", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "mode", label: "Filter", min: 0, max: 3, step: 1, default: 0, options: stepOptions(["LP 24", "LP 12", "Band-pass", "HP 12"]) },
+      { id: "keytrack", label: "Keytrack", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "level", label: "Level", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "lfo1rate", label: "LFO 1 Rate", min: 0.05, max: 40, step: 0.05, unit: "Hz", default: 2 },
+      { id: "lfo1wave", label: "LFO 1 Wave", min: 0, max: 4, step: 1, default: 0, options: stepOptions(["Sine", "Tri", "Saw", "Square", "S&H"]) },
+      { id: "lfo2rate", label: "LFO 2 Rate", min: 0.05, max: 40, step: 0.05, unit: "Hz", default: 0.5 },
+      { id: "lfo2wave", label: "LFO 2 Wave", min: 0, max: 4, step: 1, default: 1, options: stepOptions(["Sine", "Tri", "Saw", "Square", "S&H"]) },
+      { id: "env1attack", label: "ENV 1 Attack", min: 0.0005, max: 4, step: 0.0005, unit: "s", default: 0.003 },
+      { id: "env1decay", label: "ENV 1 Decay", min: 0.01, max: 4, step: 0.01, unit: "s", default: 0.4 },
+      { id: "env1sustain", label: "ENV 1 Sustain", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "env1release", label: "ENV 1 Release", min: 0.005, max: 4, step: 0.005, unit: "s", default: 0.12 },
+      { id: "env2attack", label: "ENV 2 Attack", min: 0.0005, max: 4, step: 0.0005, unit: "s", default: 0.002 },
+      { id: "env2decay", label: "ENV 2 Decay", min: 0.01, max: 4, step: 0.01, unit: "s", default: 0.25 },
+      { id: "env2sustain", label: "ENV 2 Sustain", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "env2release", label: "ENV 2 Release", min: 0.005, max: 4, step: 0.005, unit: "s", default: 0.12 },
+      ...matrixCells(),
     ],
   },
 };

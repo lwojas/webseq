@@ -3,6 +3,9 @@
 import { vi } from "vitest";
 import { InstrumentKind, type AudioRuntime } from "webdsp";
 
+const MATRIX_NAMES = ["tune", "wave", "pwm", "noise", "cutoff", "resonance", "drive", "mode", "keytrack", "level", "lfo1rate", "lfo1wave", "lfo2rate", "lfo2wave", "env1attack", "env1decay", "env1sustain", "env1release", "env2attack", "env2decay", "env2sustain", "env2release"];
+const MATRIX_CELLS = ["lfo1", "lfo2", "env1", "env2", "noise", "vco", "vcf"].flatMap((s) => ["pitch", "pwm", "cutoff", "resonance", "drive", "level"].map((d) => `${s}_${d}`));
+
 export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   kick: ["tune", "pitchDrop", "pitchDecay", "decay", "punch", "drive"],
   snare: ["tune", "decay", "snap", "noise"],
@@ -17,6 +20,7 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   dm_chaos: ["tune", "decay", "chaos", "ratio", "fold", "noise", "sweep", "hold"],
   percsynth: ["tune", "osc1wave", "osc1level", "osc2wave", "osc2pitch", "osc2level", "osc2fm", "pitchenv", "pitchdecay", "osc2env", "noise", "noisetone", "noisedecay", "filtertype", "cutoff", "resonance", "filterenv", "filterdecay", "attack", "decay", "sustain", "release", "drive"],
   edge: ["tune", "shape", "bright", "brightenv", "detune", "pitchenv", "pitchdecay", "routing", "filtera", "filterb", "cutoff", "spread", "resonance", "filterenv", "tonedecay", "lforate", "lfopitch", "lfofilter", "attack", "decay", "sustain", "release"],
+  matrix: [...MATRIX_NAMES, ...MATRIX_CELLS],
   fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide"],
 };
@@ -56,6 +60,7 @@ const KIND_IDS: [string, InstrumentKind][] = [
   ["dm_chaos", InstrumentKind.DmChaos],
   ["percsynth", InstrumentKind.PercSynth],
   ["edge", InstrumentKind.Edge],
+  ["matrix", InstrumentKind.Matrix],
 ];
 
 export function mockRuntime() {
