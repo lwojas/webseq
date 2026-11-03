@@ -25,6 +25,9 @@ export interface InstrumentParamDef {
   /** A stepped control (webdsp's Pulse Rate): rendered as a toggle of these labelled values
    * instead of a slider, like FX enum params. */
   options?: { value: number; label: string }[];
+  /** Matrix cables only: which out and in this control joins (webdsp's MatrixOut / MatrixIn order). The panel
+   * draws these in the patch matrix view instead of as sliders. */
+  cell?: { out: number; input: number };
 }
 
 export interface InstrumentDef {
@@ -37,24 +40,27 @@ export interface InstrumentDef {
   params: InstrumentParamDef[];
 }
 
-// Matrix (webdsp docs/matrix-instrument.md): a subtractive voice whose 7 x 6 patch matrix is exposed as
-// parameters. Ids 0..21 are the voice; the other 42 are one signed amount (-1..1, 0 = no patch) per
-// source and destination, named by the engine "<source>_<dest>" (lfo1_cutoff, vcf_pitch). The cells are
-// generated from the same two lists webdsp's patchMatrix.ts describes, in the engine's own order.
-const MATRIX_SOURCES = [
-  ["lfo1", "LFO 1"], ["lfo2", "LFO 2"], ["env1", "ENV 1"], ["env2", "ENV 2"], ["noise", "Noise"], ["vco", "VCO"], ["vcf", "VCF"],
+// Matrix (webdsp docs/matrix-instrument.md): a semi-modular voice, Mother-32 style. Fixed modules joined only
+// by cables: 8 outs and 11 ins, 88 cells. Ids 0..20 are the modules' knobs; the other 88 are one signed amount
+// (-1..1, 0 = no cable) per (out, in), named by the engine "<out>_<in>" (vcf_cutoff, vco_vcfin). The default
+// values are the ordinary voice, normalled: VCO > VCF in, VCF > VCA in, VCA > OUT, ENV 1 > VCA level and
+// ENV 2 > cutoff. The cells are generated from the two lists below, in the engine's own order (webdsp's
+// MatrixOut / MatrixIn); the patch matrix view draws them, the Controls view does not.
+const MATRIX_OUTS = [
+  ["vco", "VCO"], ["noise", "Noise"], ["lfo1", "LFO 1"], ["lfo2", "LFO 2"], ["env1", "ENV 1"], ["env2", "ENV 2"], ["vcf", "VCF"], ["vca", "VCA"],
 ] as const;
-const MATRIX_DESTS = [
-  ["pitch", "Pitch"], ["pwm", "PWM"], ["cutoff", "Cutoff"], ["resonance", "Reso"], ["drive", "Drive"], ["level", "Level"],
+const MATRIX_INS = [
+  ["pitch", "Pitch"], ["pwm", "PWM"], ["vcfin", "VCF in"], ["cutoff", "Cutoff"], ["resonance", "Reso"], ["drive", "Drive"],
+  ["vcain", "VCA in"], ["level", "Level"], ["lfo1rate", "LFO 1 rate"], ["lfo2rate", "LFO 2 rate"], ["out", "Out"],
 ] as const;
-/** Cells that are patched in the engine's init patch: ENV 1 opens the amp, ENV 2 sweeps the cutoff. */
-const MATRIX_INIT_PATCHES: Record<string, number> = { env1_level: 1, env2_cutoff: 0.4 };
+/** The cables of the default patch. */
+const MATRIX_NORMAL_CABLES: Record<string, number> = { vco_vcfin: 1, vcf_vcain: 1, vca_out: 1, env1_level: 1, env2_cutoff: 0.4 };
 const stepOptions = (labels: string[]) => labels.map((label, value) => ({ value, label }));
 function matrixCells(): InstrumentParamDef[] {
-  return MATRIX_SOURCES.flatMap(([s, sLabel]) =>
-    MATRIX_DESTS.map(([d, dLabel]): InstrumentParamDef => {
-      const id = `${s}_${d}`;
-      return { id, label: `${sLabel} > ${dLabel}`, min: -1, max: 1, step: 0.01, default: MATRIX_INIT_PATCHES[id] ?? 0 };
+  return MATRIX_OUTS.flatMap(([o, oLabel], out) =>
+    MATRIX_INS.map(([i, iLabel], input): InstrumentParamDef => {
+      const id = `${o}_${i}`;
+      return { id, label: `${oLabel} > ${iLabel}`, min: -1, max: 1, step: 0.01, default: MATRIX_NORMAL_CABLES[id] ?? 0, cell: { out, input } };
     }),
   );
 }
@@ -472,10 +478,10 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "release", label: "Release", min: 0.005, max: 2, step: 0.005, unit: "s", default: 0.08 },
     ],
   },
-  // Matrix (webdsp docs/matrix-instrument.md): VCO, VCF and VCA with two LFOs, two envelopes and a patch
-  // matrix; ids are the engine's own (lowercase) names. Sustained: ENV 1 sets the note's life, so the
-  // default one-shot (Sustain 0) ends itself within the note and Sustain 1 holds for the note's length.
-  // Root is the Tune (110 Hz = A2).
+  // Matrix (webdsp docs/matrix-instrument.md): VCO, VCF, VCA, two LFOs, two envelopes and noise, joined by a
+  // patch matrix (outs across the top, ins down the side); ids are the engine's own (lowercase) names.
+  // Sustained: ENV 1 sets the note's life, so the default one-shot (Sustain 0) ends itself within the note and
+  // Sustain 1 holds for the note's length. Root is the Tune (110 Hz = A2).
   matrix: {
     kind: "matrix",
     label: "Matrix",
@@ -485,7 +491,6 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       { id: "tune", label: "Root", min: 27.5, max: 1760, step: 0.5, unit: "Hz", default: 110 },
       { id: "wave", label: "Wave", min: 0, max: 2, step: 1, default: 0, options: stepOptions(["Saw", "Pulse", "Triangle"]) },
       { id: "pwm", label: "PWM", min: 0.05, max: 0.95, step: 0.01, default: 0.5 },
-      { id: "noise", label: "Noise", min: 0, max: 1, step: 0.01, default: 0 },
       { id: "cutoff", label: "Cutoff", min: 20, max: 18000, step: 1, unit: "Hz", default: 1200 },
       { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.25 },
       { id: "drive", label: "Drive", min: 0, max: 1, step: 0.01, default: 0 },

@@ -1,9 +1,11 @@
-import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor } from "../model/instruments";
+import { useCallback, useMemo, useState } from "react";
+import { INSTRUMENT_DEFS, INSTRUMENT_KINDS, instrumentDefFor, type InstrumentDef } from "../model/instruments";
+import { PatchMatrixEditor } from "./PatchMatrixEditor";
 import { ModBadge, ModulationSlot, modulationBadges, type AutomationUi, type ModulationUi } from "./ModulationSlot";
 import { ChopEditor } from "./ChopEditor";
 import { effectiveSampleMode } from "../model/chop";
 import { DEFAULT_ENVELOPE, SOURCE_GAIN_MAX_DB, SOURCE_GAIN_MIN_DB, effectiveAssetGain, effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode } from "../model/types";
-import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackLfo, VoiceMode } from "../model/types";
+import type { Asset, InstrumentKindId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackInstrument, TrackLfo, VoiceMode } from "../model/types";
 
 interface Props {
   /** The selected track, or null when MASTER is selected (it has no sound source). */
@@ -103,6 +105,100 @@ const CHOKE_GROUP_COUNT = 8;
 function chokeGroupOptions(current: number | null): number[] {
   const groups = Array.from({ length: CHOKE_GROUP_COUNT }, (_, i) => i + 1);
   return current !== null && current > CHOKE_GROUP_COUNT ? [...groups, current] : groups;
+}
+
+interface SynthPanelProps {
+  def: InstrumentDef;
+  synth: TrackInstrument;
+  trackId: string;
+  badges: Record<string, { auto: boolean; lfos: number }>;
+  modulation: ModulationUi | null;
+  automation?: AutomationUi;
+  onSetInstrumentParam: Props["onSetInstrumentParam"];
+  onAddLfo: Props["onAddLfo"];
+  onSetLfo: Props["onSetLfo"];
+  onRemoveLfo: Props["onRemoveLfo"];
+}
+
+/** A synth track's controls, rendered generically from its INSTRUMENT_DEFS entry. A synth with a patch
+ * matrix (its params carry `cell`) splits into two views, Controls and Patch Matrix: the voice sliders
+ * and the matrix are separate surfaces, and the modulation slot below is shared. */
+function SynthPanel({ def, synth, trackId, badges, modulation, automation, onSetInstrumentParam, onAddLfo, onSetLfo, onRemoveLfo }: SynthPanelProps) {
+  const [view, setView] = useState<"controls" | "matrix">("controls");
+  const hasMatrix = def.params.some((p) => p.cell);
+  const showMatrix = hasMatrix && view === "matrix";
+  const controls = hasMatrix ? def.params.filter((p) => !p.cell) : def.params;
+  const cellDefaults = useMemo(() => new Map(def.params.map((p) => [p.id, p.default])), [def]);
+  const cellDefault = useCallback((id: string) => cellDefaults.get(id) ?? 0, [cellDefaults]);
+  return (
+    <div className="module-panel">
+      <div className="module-panel-header">
+        <span className="name">{def.label}</span>
+        {hasMatrix && (
+          <div className="track-mode-toggle" role="tablist" aria-label={`${def.label} view`}>
+            {(["controls", "matrix"] as const).map((v) => (
+              <button key={v} role="tab" aria-selected={view === v} className={view === v ? "active" : ""} onClick={() => setView(v)}>
+                {v === "controls" ? "Controls" : "Patch Matrix"}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {showMatrix ? (
+        <PatchMatrixEditor
+          params={synth.params}
+          cellDefault={cellDefault}
+          onSetParam={(id, v) => onSetInstrumentParam(trackId, id, v)}
+          badges={badges}
+          onAutomate={automation ? (id) => automation.onAdd(id) : undefined}
+        />
+      ) : (
+        <div className="module-params">
+          {controls.map((p) =>
+            p.options ? (
+              <div key={p.id} className="module-param">
+                <span className="param-label static">{p.label}</span>
+                <div className="enum-toggle">
+                  {p.options.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={opt.value === (synth.params[p.id] ?? p.default) ? "active" : ""}
+                      onClick={() => onSetInstrumentParam(trackId, p.id, opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <Slider
+                key={p.id}
+                label={p.label}
+                min={p.min}
+                max={p.max}
+                step={p.step}
+                unit={p.unit}
+                value={synth.params[p.id] ?? p.default}
+                onChange={(v) => onSetInstrumentParam(trackId, p.id, v)}
+                badge={badges[p.id]}
+                onAutomate={automation ? () => automation.onAdd(p.id) : undefined}
+              />
+            ),
+          )}
+        </div>
+      )}
+      {def.sustained && <div className="instrument-hint">Sustained: each note's length is its held time.</div>}
+      <ModulationSlot
+        lfos={synth.lfos ?? []}
+        ui={modulation}
+        labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
+        onAdd={(target) => onAddLfo(trackId, target)}
+        onChange={(index, patch) => onSetLfo(trackId, index, patch)}
+        onRemove={(index) => onRemoveLfo(trackId, index)}
+        automation={automation}
+      />
+    </div>
+  );
 }
 
 export function InstrumentPanel({
@@ -247,54 +343,18 @@ export function InstrumentPanel({
 
       <div className="fx-panel-detail">
         {synth && def && (
-          <div className="module-panel">
-            <div className="module-panel-header">
-              <span className="name">{def.label}</span>
-            </div>
-            <div className="module-params">
-              {def.params.map((p) =>
-                p.options ? (
-                  <div key={p.id} className="module-param">
-                    <span className="param-label static">{p.label}</span>
-                    <div className="enum-toggle">
-                      {p.options.map((opt) => (
-                        <button
-                          key={opt.value}
-                          className={opt.value === (synth.params[p.id] ?? p.default) ? "active" : ""}
-                          onClick={() => onSetInstrumentParam(track.id, p.id, opt.value)}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                <Slider
-                  key={p.id}
-                  label={p.label}
-                  min={p.min}
-                  max={p.max}
-                  step={p.step}
-                  unit={p.unit}
-                  value={synth.params[p.id] ?? p.default}
-                  onChange={(v) => onSetInstrumentParam(track.id, p.id, v)}
-                  badge={badges[p.id]}
-                  onAutomate={automation ? () => automation.onAdd(p.id) : undefined}
-                />
-                ),
-              )}
-            </div>
-            {def.sustained && <div className="instrument-hint">Sustained: each note's length is its held time.</div>}
-            <ModulationSlot
-              lfos={synth.lfos ?? []}
-              ui={modulation}
-              labelFor={(id) => def.params.find((p) => p.id === id)?.label ?? id}
-              onAdd={(target) => onAddLfo(track.id, target)}
-              onChange={(index, patch) => onSetLfo(track.id, index, patch)}
-              onRemove={(index) => onRemoveLfo(track.id, index)}
-              automation={automation}
-            />
-          </div>
+          <SynthPanel
+            def={def}
+            synth={synth}
+            trackId={track.id}
+            badges={badges}
+            modulation={modulation}
+            automation={automation}
+            onSetInstrumentParam={onSetInstrumentParam}
+            onAddLfo={onAddLfo}
+            onSetLfo={onSetLfo}
+            onRemoveLfo={onRemoveLfo}
+          />
         )}
 
         {!synth && asset && (

@@ -3,8 +3,10 @@
 import { vi } from "vitest";
 import { InstrumentKind, type AudioRuntime } from "webdsp";
 
-const MATRIX_NAMES = ["tune", "wave", "pwm", "noise", "cutoff", "resonance", "drive", "mode", "keytrack", "level", "lfo1rate", "lfo1wave", "lfo2rate", "lfo2wave", "env1attack", "env1decay", "env1sustain", "env1release", "env2attack", "env2decay", "env2sustain", "env2release"];
-const MATRIX_CELLS = ["lfo1", "lfo2", "env1", "env2", "noise", "vco", "vcf"].flatMap((s) => ["pitch", "pwm", "cutoff", "resonance", "drive", "level"].map((d) => `${s}_${d}`));
+const MATRIX_NAMES = ["tune", "wave", "pwm", "cutoff", "resonance", "drive", "mode", "keytrack", "level", "lfo1rate", "lfo1wave", "lfo2rate", "lfo2wave", "env1attack", "env1decay", "env1sustain", "env1release", "env2attack", "env2decay", "env2sustain", "env2release"];
+const MATRIX_CELLS = ["vco", "noise", "lfo1", "lfo2", "env1", "env2", "vcf", "vca"].flatMap((o) =>
+  ["pitch", "pwm", "vcfin", "cutoff", "resonance", "drive", "vcain", "level", "lfo1rate", "lfo2rate", "out"].map((i) => `${o}_${i}`),
+);
 
 export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   kick: ["tune", "pitchDrop", "pitchDecay", "decay", "punch", "drive"],

@@ -2858,6 +2858,349 @@ select {
   font-size: 10px;
 }
 
+/* --- Matrix synth patch matrix (components/PatchMatrixEditor.tsx): outs across the top, ins down the side.
+   Colour is the kind of cable: control (amber), audio (cyan), feedback (red). Reuses .module-panel /
+   .module-param / .range-row. --- */
+.matrix-control {
+  --k: var(--amber);
+}
+
+.matrix-audio {
+  --k: var(--accent);
+}
+
+.matrix-feedback {
+  --k: var(--danger);
+}
+
+.matrix-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.matrix-main {
+  flex: 1 1 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.matrix-scroll {
+  overflow-x: auto;
+}
+
+.matrix-grid {
+  display: grid;
+  grid-template-columns: 96px repeat(8, minmax(52px, 1fr));
+  gap: 2px;
+  min-width: 560px;
+}
+
+.matrix-corner {
+  display: flex;
+  align-items: flex-end;
+  padding: 0 0 2px 2px;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.matrix-group {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--panel-alt);
+  border-bottom: 2px solid var(--k);
+  color: var(--k);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.matrix-out,
+.matrix-in {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  background: var(--panel-alt);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.matrix-out {
+  justify-content: center;
+  border-bottom: 2px solid var(--k);
+  text-align: center;
+}
+
+.matrix-in {
+  border-left: 3px solid var(--border-strong);
+}
+
+.matrix-out:hover,
+.matrix-in:hover,
+.matrix-out.focus,
+.matrix-in.focus {
+  border-color: var(--accent-dim);
+  background: var(--panel);
+}
+
+.matrix-section {
+  grid-column: 1 / -1;
+  padding: 6px 2px 0;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.matrix-cell {
+  position: relative;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.matrix-cell:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-alt);
+}
+
+.matrix-cell.focus {
+  background: var(--panel-alt);
+}
+
+.matrix-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.matrix-cell.would-feedback .matrix-dot {
+  background: var(--danger);
+  opacity: 0.55;
+}
+
+.matrix-cell.would-feedback:hover {
+  border-style: dashed;
+  border-color: var(--danger);
+}
+
+.matrix-cell.patched {
+  background: var(--panel-alt);
+  border-color: var(--k);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.matrix-amount {
+  position: relative;
+  top: -3px;
+  color: var(--k);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.matrix-bar {
+  position: absolute;
+  bottom: 5px;
+  height: 3px;
+  background: var(--k);
+  border-radius: 1px;
+}
+
+.matrix-cell.selected {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+  z-index: 1;
+}
+
+.matrix-status {
+  min-height: 24px;
+  padding: 5px 8px;
+  background: var(--panel-alt);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.matrix-editor {
+  flex: 0 1 270px;
+  min-width: 220px;
+}
+
+.matrix-connection {
+  width: 100%;
+}
+
+.matrix-connection .module-panel-header {
+  gap: 8px;
+}
+
+.matrix-kind {
+  margin-left: auto;
+  color: var(--k, var(--text-dim));
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.matrix-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.matrix-readout {
+  margin: 8px 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.matrix-readout b {
+  color: var(--k, var(--text));
+}
+
+.matrix-sound {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.matrix-sound-name {
+  color: var(--k);
+  font-size: 12px;
+}
+
+.matrix-sound-text {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.matrix-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.matrix-path-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+
+.matrix-path-step .matrix-path-patch {
+  color: var(--k);
+}
+
+.matrix-path-arrow {
+  color: var(--text-dim);
+}
+
+.matrix-loop {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--danger);
+  border-radius: 3px;
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.matrix-patch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.matrix-patch-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.matrix-patch-row:hover {
+  border-color: var(--border-strong);
+  background: var(--panel-alt);
+}
+
+.matrix-patch-kind {
+  color: var(--k);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.matrix-patch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-patch-amount {
+  color: var(--k);
+  font-weight: 600;
+}
+
+@media (pointer: coarse) {
+  .matrix-cell {
+    min-height: 44px;
+  }
+
+  .matrix-out,
+  .matrix-in,
+  .matrix-patch-row {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+}
+
+@media (max-width: 768px) {
+  .matrix-editor {
+    flex-basis: 100%;
+  }
+
+  .matrix-status {
+    white-space: normal;
+  }
+}
+
 /* --- Track Editor tab (reuses .track-lane/.cells/.cell/.note-block from the timeline and
    .module-param labels from the FX panel). One column per step, TRACK_EDITOR_COLUMN_PX wide
    (timelineConstants.ts); the tab scrolls as normal browser overflow, nothing virtualised. --- */
