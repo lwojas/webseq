@@ -3,7 +3,7 @@
 // same copy-now/paste-later split notes.ts's CopiedNote/pasteNotes already uses. No React, no
 // webdsp — usable from the reducer, App.tsx's handlers, or a test without modification.
 
-import type { Asset, AssetId, AutomationLane, FxId, FxInstance, PlaybackMode, Project, Track, TrackEventLfo, TrackId, TrackInstrument, VoiceMode } from "./types";
+import type { Asset, AssetId, AutomationLane, FxId, FxInstance, PlaybackMode, Project, SampleMode, Track, TrackEventLfo, TrackId, TrackInstrument, VoiceMode } from "./types";
 import { INSTRUMENT_DEFS } from "./instruments";
 import type { TrackArp } from "./arp";
 import { DEFAULT_PLAYBACK_MODE, DEFAULT_VOICE_MODE, effectiveChokeGroup, effectivePan, effectivePlaybackMode, effectiveVoiceMode } from "./types";
@@ -30,6 +30,8 @@ export interface CopiedTrackConfig {
   playbackMode?: PlaybackMode;
   voiceMode?: VoiceMode;
   chokeGroup?: number | null;
+  /** Chromatic vs chop: in chop mode a note's pitch is a slice index, so it must travel with the notes. */
+  sampleMode?: SampleMode;
   /** The synth source, if the track plays one (mutually exclusive with `assetId`). */
   instrument?: TrackInstrument | null;
   pan?: number;
@@ -101,6 +103,7 @@ export function copyTrackConfig(track: Track): CopiedTrackConfig {
     playbackMode: track.playbackMode,
     voiceMode: track.voiceMode,
     chokeGroup: track.chokeGroup,
+    sampleMode: track.sampleMode,
     instrument: track.instrument ? cloneInstrument(track.instrument) : null,
     pan: track.pan,
     eventLfo: track.eventLfo ? { ...track.eventLfo } : undefined,
@@ -149,6 +152,7 @@ export function pasteTrackConfig(project: Project, trackId: TrackId, config: Cop
             playbackMode: config.playbackMode,
             voiceMode: config.voiceMode,
             chokeGroup: config.chokeGroup,
+            sampleMode: config.sampleMode,
           }
         : t,
     ),

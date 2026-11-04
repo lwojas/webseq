@@ -13,6 +13,7 @@ import type {
   PatternId,
   PlaybackMode,
   Project,
+  SampleMode,
   Track,
   TrackEventLfo,
   TrackId,
@@ -72,6 +73,7 @@ export interface InstrumentClip {
   playbackMode?: PlaybackMode;
   voiceMode?: VoiceMode;
   chokeGroup?: number | null;
+  sampleMode?: SampleMode;
 }
 
 export function hasInstrument(track: Track): boolean {
@@ -81,7 +83,7 @@ export function hasInstrument(track: Track): boolean {
 export function copyInstrument(track: Track): InstrumentClip {
   const instrument = track.instrument ? cloneInstrument(track.instrument) : null;
   if (instrument) delete instrument.lfos;
-  return { assetId: track.assetId, instrument, playbackMode: track.playbackMode, voiceMode: track.voiceMode, chokeGroup: track.chokeGroup };
+  return { assetId: track.assetId, instrument, playbackMode: track.playbackMode, voiceMode: track.voiceMode, chokeGroup: track.chokeGroup, sampleMode: track.sampleMode };
 }
 
 /** Replaces the destination's source. Its synth LFO slots survive only if the synth kind is
@@ -102,6 +104,7 @@ export function pasteInstrument(project: Project, trackId: TrackId, clip: Instru
       playbackMode: clip.playbackMode,
       voiceMode: clip.voiceMode,
       chokeGroup: clip.chokeGroup,
+      sampleMode: clip.sampleMode,
     };
   });
 }

@@ -230,3 +230,17 @@ describe("Extend Track", () => {
     expect(starts(project, pid, "track-1")).toHaveLength(5);
   });
 });
+
+describe("chop mode travels with track and instrument paste", () => {
+  it("keeps sampleMode so copied slice-index pitches stay slices", async () => {
+    const { createInitialProject, setTrackSampleMode } = await import("../src/model/project");
+    const { copyTrack, pasteTrack, copyInstrument, pasteInstrument } = await import("../src/model/edit");
+    const { trackById } = await import("../src/model/types");
+    let project = setTrackSampleMode(createInitialProject(), "track-1", "chop");
+    const clip = copyTrack(project, "track-1", project.patterns[0].id)!;
+    project = pasteTrack(project, "track-2", project.patterns[0].id, clip);
+    expect(trackById(project, "track-2")!.sampleMode).toBe("chop");
+    project = pasteInstrument(project, "track-3", copyInstrument(trackById(project, "track-1")!));
+    expect(trackById(project, "track-3")!.sampleMode).toBe("chop");
+  });
+});
