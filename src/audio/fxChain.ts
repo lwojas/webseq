@@ -108,6 +108,7 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
     feedback: NodeParam.DubSpaceFeedback,
     tone: NodeParam.DubSpaceTone,
     size: NodeParam.DubSpaceSize,
+    decay: NodeParam.DubSpaceDecay,
     depth: NodeParam.DubSpaceDepth,
     damping: NodeParam.DubSpaceDamping,
     character: NodeParam.DubSpaceCharacter,

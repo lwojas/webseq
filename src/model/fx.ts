@@ -176,6 +176,7 @@ export const FX_DEFS: Record<FxType, FxDef> = {
     label: "Phaser",
     params: [
       { id: "rate", label: "Rate", min: 0.01, max: 10, step: 0.01, unit: "Hz", default: 0.5 },
+      { id: "decay", label: "Decay", min: 0, max: 1, step: 0.01, default: 0.35 },
       { id: "depth", label: "Depth", min: 0, max: 1, step: 0.01, default: 0.5 },
       { id: "center", label: "Center", min: 100, max: 5000, step: 1, unit: "Hz", default: 1000 },
       { id: "feedback", label: "Feedback", min: -0.95, max: 0.95, step: 0.01, default: 0 },
