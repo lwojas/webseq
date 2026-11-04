@@ -26,6 +26,12 @@ describe("compiling notes into webdsp scheduled events", () => {
     expect(event!.gain).toBe(0.8);
   });
 
+  it("sends the track's own envelope per hit, and nothing when it shares the sample's", () => {
+    expect(compileNote(track, note, 120, 0)!.envelope).toBeUndefined();
+    const own = compileNote({ ...track, envelope: { attack: 0, decay: 0.2, sustain: 0, release: 0.3 } }, note, 120, 0)!;
+    expect(own.envelope).toEqual({ attack: 0, decay: 0.2, sustain: 0, release: 0.3 });
+  });
+
   it("converts note duration into a scheduled duration in seconds", () => {
     const event = compileNote(track, note, 120, 0);
     expect(event!.duration).toBeCloseTo(2 * 0.125, 5);

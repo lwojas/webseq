@@ -36,6 +36,7 @@ export const FX_KIND: Record<FxType, EffectKind> = {
   dubDelay: EffectKind.DubDelay,
   eq: EffectKind.Eq,
   glitch: EffectKind.Glitch,
+  dubSpace: EffectKind.DubSpace,
 };
 
 /** FX param id (model/fx.ts FX_DEFS) -> the engine's NodeParam. */
@@ -99,6 +100,18 @@ export const FX_NODE_PARAMS: Record<FxType, Record<string, NodeParam>> = {
     mode: NodeParam.GlitchMode,
     division: NodeParam.GlitchDivision,
     speed: NodeParam.GlitchSpeed,
+  },
+  dubSpace: {
+    echoOn: NodeParam.DubSpaceEchoOn,
+    spaceOn: NodeParam.DubSpaceSpaceOn,
+    time: NodeParam.DubSpaceTime,
+    feedback: NodeParam.DubSpaceFeedback,
+    tone: NodeParam.DubSpaceTone,
+    size: NodeParam.DubSpaceSize,
+    depth: NodeParam.DubSpaceDepth,
+    damping: NodeParam.DubSpaceDamping,
+    character: NodeParam.DubSpaceCharacter,
+    mix: NodeParam.DubSpaceMix,
   },
 };
 

@@ -38,7 +38,7 @@ export function ModulePanel({ fx, tracks = [], ownerTrackId = null, onSetParam, 
             const keyable = tracks.filter((t) => t.id !== ownerTrackId && keyTrackValue(t.id) > 0);
             return (
               <div className="module-param" key={param.id}>
-                <span className="param-label">{param.label}</span>
+                <span className="param-label static">{param.label}</span>
                 <select value={value} onChange={(e) => onSetParam(param.id, Number(e.target.value))} title="The track whose signal drives this effect">
                   <option value={0}>Off (own input)</option>
                   {value > 0 && !keyable.some((t) => keyTrackValue(t.id) === value) && <option value={value}>{keyTrackId(value) ?? "?"} (unavailable)</option>}

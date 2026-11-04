@@ -9,7 +9,7 @@
 // Immediate triggers are not scheduled, so Transport's runtime.cancelScheduled() never reaches
 // them. Stop goes through Transport.stop(), which calls stopAll() here explicitly.
 import type { AudioRuntime, BusId, VoiceHandle } from "webdsp";
-import type { AssetId, FxTarget, Project, Track, TrackId } from "../model/types";
+import type { AssetId, FxTarget, Project, SampleEnvelope, Track, TrackId } from "../model/types";
 import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode, trackById } from "../model/types";
 import { effectiveSampleMode } from "../model/chop";
 import { instrumentDefFor, rootMidiNote } from "../model/instruments";
@@ -30,6 +30,11 @@ export const MIDI_UNITY_NOTE = 60;
 function chokeParams(track: Track): { chokeGroup?: number } {
   const chokeGroup = effectiveChokeGroup(track);
   return chokeGroup === null ? {} : { chokeGroup };
+}
+
+/** A sample track's own envelope as trigger params, so a manual hit sounds like the sequenced one. */
+function envelopeParams(track: Track): { envelope?: SampleEnvelope } {
+  return track.envelope ? { envelope: { ...track.envelope } } : {};
 }
 
 type VoiceOwner = "sequencer" | "manual";
@@ -191,6 +196,7 @@ export class Playback {
       ...(looping ? { loop: true } : {}),
       ...(chop ? { region: pitch } : pitch ? { pitch } : {}),
       ...chokeParams(track),
+      ...envelopeParams(track),
     });
     if (effectiveVoiceMode(track) === "mono") this.registerMonoVoice(track.id, handle, "manual");
     // Only a held (looping) voice follows the key up; a one-shot rings out like a pad hit.
@@ -216,7 +222,7 @@ export class Playback {
   triggerTrackOnce(track: Track): boolean {
     const target = this.trackTarget(track);
     if (!target) return false;
-    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, ...chokeParams(track) });
+    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, ...chokeParams(track), ...envelopeParams(track) });
     if (effectiveVoiceMode(track) === "mono") this.registerMonoVoice(track.id, handle, "manual");
     return true;
   }
@@ -231,7 +237,7 @@ export class Playback {
     }
     const target = this.trackTarget(track);
     if (!target) return false;
-    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, loop: true, ...chokeParams(track) });
+    const handle = this.runtime.trigger({ sampleId: target.assetId, bus: target.bus, loop: true, ...chokeParams(track), ...envelopeParams(track) });
     this.loops.set(track.id, { assetId: target.assetId, handle });
     if (effectiveVoiceMode(track) === "mono") this.registerMonoVoice(track.id, handle, "manual");
     this.notify();

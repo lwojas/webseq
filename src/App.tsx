@@ -982,6 +982,10 @@ export function App() {
     [],
   );
 
+  const handleSetTrackEnvelope = useCallback(
+    (trackId: TrackId, envelope: Partial<SampleEnvelope> | null) => dispatch({ type: "SET_TRACK_ENVELOPE", trackId, envelope }),
+    [],
+  );
   const handleSetTrackChokeGroup = useCallback(
     (trackId: TrackId, chokeGroup: number | null) => dispatch({ type: "SET_TRACK_CHOKE_GROUP", trackId, chokeGroup }),
     [],
@@ -1510,6 +1514,7 @@ export function App() {
     onSetPlaybackMode: handleSetTrackPlaybackMode,
     onSetVoiceMode: handleSetTrackVoiceMode,
     onSetChokeGroup: handleSetTrackChokeGroup,
+    onSetTrackEnvelope: handleSetTrackEnvelope,
     onSetSampleMode: handleSetSampleMode,
     onSetCues: handleSetCues,
     onSetChopStart: handleSetChopStart,

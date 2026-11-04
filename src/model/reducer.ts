@@ -34,6 +34,7 @@ export type Action =
   | { type: "SET_TRACK_SOLOED"; trackId: TrackId; soloed: boolean }
   | { type: "SET_TRACK_PLAYBACK_MODE"; trackId: TrackId; playbackMode: PlaybackMode }
   | { type: "SET_TRACK_VOICE_MODE"; trackId: TrackId; voiceMode: VoiceMode }
+  | { type: "SET_TRACK_ENVELOPE"; trackId: TrackId; envelope: Partial<SampleEnvelope> | null }
   | { type: "SET_TRACK_CHOKE_GROUP"; trackId: TrackId; chokeGroup: number | null }
   | { type: "SET_TRACK_PAN"; trackId: TrackId; pan: number }
   | { type: "SET_TRACK_OUTPUT"; trackId: TrackId; dest: TrackId | null }
@@ -157,6 +158,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.setTrackPlaybackMode(state, action.trackId, action.playbackMode);
     case "SET_TRACK_VOICE_MODE":
       return project.setTrackVoiceMode(state, action.trackId, action.voiceMode);
+    case "SET_TRACK_ENVELOPE":
+      return project.setTrackEnvelope(state, action.trackId, action.envelope);
     case "SET_TRACK_CHOKE_GROUP":
       return project.setTrackChokeGroup(state, action.trackId, action.chokeGroup);
     case "SET_TRACK_PAN":

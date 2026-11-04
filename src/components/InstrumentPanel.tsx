@@ -35,6 +35,8 @@ interface Props {
   onSetVoiceMode: (trackId: string, mode: VoiceMode) => void;
   /** Choke group (null = none): playing this track cuts off the other tracks in the same group. */
   onSetChokeGroup: (trackId: string, group: number | null) => void;
+  /** Gives the track its own sample envelope (a partial edit), or null to share the sample's again. */
+  onSetTrackEnvelope: (trackId: string, envelope: Partial<SampleEnvelope> | null) => void;
   /** Chromatic (pitch transposes) vs chop (pitch picks a slice) for a sample track. */
   onSetSampleMode: (trackId: string, mode: SampleMode) => void;
   onSetCues: (assetId: number, cues: number[]) => void;
@@ -217,6 +219,7 @@ export function InstrumentPanel({
   onSetPlaybackMode,
   onSetVoiceMode,
   onSetChokeGroup,
+  onSetTrackEnvelope,
   onSetSampleMode,
   onSetCues,
   onSetChopStart,
@@ -234,7 +237,9 @@ export function InstrumentPanel({
 
   const def = instrumentDefFor(track);
   const synth = track.instrument ?? null;
-  const envelope = asset?.envelope ?? DEFAULT_ENVELOPE;
+  const ownEnvelope = track.envelope ?? null;
+  const envelope = ownEnvelope ?? asset?.envelope ?? DEFAULT_ENVELOPE;
+  const setEnvelope = (patch: Partial<SampleEnvelope>) => (ownEnvelope && asset ? onSetTrackEnvelope(track.id, patch) : asset && onSetEnvelope(asset.id, patch));
   const badges = modulationBadges(automation?.lanes ?? [], synth?.lfos ?? []);
 
   return (
@@ -361,7 +366,15 @@ export function InstrumentPanel({
           <div className="module-panel">
             <div className="module-panel-header">
               <span className="name">{asset.name} — Envelope</span>
-              <button className="btn small" onClick={() => onSetEnvelope(asset.id, DEFAULT_ENVELOPE)} title="Reset the envelope to no shaping">
+              <div className="enum-toggle" title="Whose envelope this track plays the sample with">
+                <button className={ownEnvelope ? "" : "active"} onClick={() => onSetTrackEnvelope(track.id, null)}>
+                  Shared
+                </button>
+                <button className={ownEnvelope ? "active" : ""} onClick={() => !ownEnvelope && onSetTrackEnvelope(track.id, {})}>
+                  This track
+                </button>
+              </div>
+              <button className="btn small" onClick={() => setEnvelope(DEFAULT_ENVELOPE)} title="Reset the envelope to no shaping">
                 Reset
               </button>
             </div>
@@ -384,15 +397,19 @@ export function InstrumentPanel({
                   step={f.step}
                   unit={f.unit}
                   value={envelope[f.id]}
-                  onChange={(v) => onSetEnvelope(asset.id, { [f.id]: v })}
-                  badge={badges[f.id]}
-                  onAutomate={automation ? () => automation.onAdd(f.id) : undefined}
+                  onChange={(v) => setEnvelope({ [f.id]: v })}
+                  badge={ownEnvelope ? undefined : badges[f.id]}
+                  onAutomate={automation && !ownEnvelope ? () => automation.onAdd(f.id) : undefined}
                 />
               ))}
             </div>
             <ModulationSlot lfos={[]} ui={null} labelFor={(id) => id} onAdd={() => {}} onChange={() => {}} onRemove={() => {}} automation={automation} />
-            {assetUseCount > 1 && (
-              <div className="instrument-hint">The gain and envelope belong to the sample, so they apply on all {assetUseCount} tracks that play it.</div>
+            {ownEnvelope ? (
+              <div className="instrument-hint">This track plays the sample with its own envelope. The sample's shared envelope, and its automation, no longer reach it.</div>
+            ) : (
+              assetUseCount > 1 && (
+                <div className="instrument-hint">The envelope is shared by the {assetUseCount} tracks that play this sample (pick "This track" to give this one its own); the gain always is.</div>
+              )
             )}
           </div>
         )}

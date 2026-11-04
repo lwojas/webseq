@@ -2354,6 +2354,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
@@ -2528,12 +2529,14 @@ select {
   cursor: grab;
 }
 
-.module-param .enum-toggle {
+.module-param .enum-toggle,
+.module-panel-header .enum-toggle {
   display: flex;
   gap: 2px;
 }
 
-.module-param .enum-toggle button {
+.module-param .enum-toggle button,
+.module-panel-header .enum-toggle button {
   background: var(--panel);
   border: 1px solid var(--border-strong);
   color: var(--text-dim);
@@ -2542,7 +2545,8 @@ select {
   font-size: 10px;
 }
 
-.module-param .enum-toggle button.active {
+.module-param .enum-toggle button.active,
+.module-panel-header .enum-toggle button.active {
   background: var(--accent-dim);
   border-color: var(--accent);
   color: #eafffa;

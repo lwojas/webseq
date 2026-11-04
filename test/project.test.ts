@@ -456,3 +456,17 @@ describe("project model", () => {
     });
   });
 });
+
+describe("track envelope override", () => {
+  it("copies the asset's envelope on first edit, clamps, and returns to shared on null", async () => {
+    const { setAssetEnvelope, setTrackEnvelope } = await import("../src/model/project");
+    let project = { ...createInitialProject(), assets: [{ id: 7, name: "a", type: "audio", duration: 1, sampleRate: 48000, channels: 1, origin: "import" }] } as ReturnType<typeof createInitialProject>;
+    project = { ...project, tracks: project.tracks.map((t) => (t.id === "track-1" ? { ...t, assetId: 7 } : t)) };
+    project = setAssetEnvelope(project, 7, { release: 0.5 });
+    project = setTrackEnvelope(project, "track-1", { decay: 99 });
+    expect(project.tracks[0].envelope).toEqual({ attack: 0, decay: 30, sustain: 1, release: 0.5 });
+    expect(project.tracks[1].envelope).toBeUndefined();
+    project = setTrackEnvelope(project, "track-1", null);
+    expect("envelope" in project.tracks[0]).toBe(false);
+  });
+});

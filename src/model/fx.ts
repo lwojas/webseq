@@ -266,6 +266,44 @@ export const FX_DEFS: Record<FxType, FxDef> = {
       { id: "speed", label: "Speed", min: -1, max: 2, step: 0.01, unit: "x", default: 1 },
     ],
   },
+  // Dub echo that dissolves into a deep synthetic space (webdsp Dub Delay's bigger sibling, docs/dub-space.md). Echo and Space are
+  // independent switches; with both on, every repeat is smeared by the space on its way round the loop. Time is a division of the
+  // transport BPM (webdsp's DubDelayDivision). Mix 0 is a bypass. Character: tape drift, saturation, darkness and movement in one.
+  dubSpace: {
+    type: "dubSpace",
+    label: "Dub Space",
+    params: [
+      { id: "echoOn", label: "Echo", min: 0, max: 1, step: 1, default: 1, options: [{ label: "Off", value: 0 }, { label: "On", value: 1 }] },
+      {
+        id: "time",
+        label: "Time",
+        min: 0,
+        max: 9,
+        step: 1,
+        default: 2,
+        options: [
+          { label: "1/16", value: 0 },
+          { label: "1/8", value: 1 },
+          { label: "1/8.", value: 2 },
+          { label: "1/4", value: 3 },
+          { label: "1/4.", value: 4 },
+          { label: "1/2", value: 5 },
+          { label: "1/16T", value: 6 },
+          { label: "1/8T", value: 7 },
+          { label: "1/4T", value: 8 },
+          { label: "1/2T", value: 9 },
+        ],
+      },
+      { id: "feedback", label: "Feedback", min: 0, max: 0.92, step: 0.01, default: 0.55 },
+      { id: "tone", label: "Tone", min: 200, max: 16000, step: 1, unit: "Hz", default: 4000 },
+      { id: "spaceOn", label: "Space", min: 0, max: 1, step: 1, default: 1, options: [{ label: "Off", value: 0 }, { label: "On", value: 1 }] },
+      { id: "size", label: "Size", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "depth", label: "Depth", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "damping", label: "Damping", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "character", label: "Character", min: 0, max: 1, step: 0.01, default: 0.3 },
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0 },
+    ],
+  },
   // A bare gain stage (webdsp Utility FX): the automatable per-track volume. Unity (0 dB) is
   // neutral; the bottom of the range is silence. Deliberately one parameter.
   utility: {

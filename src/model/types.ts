@@ -83,6 +83,12 @@ export interface Track {
    * voice stealing (a full voice pool). Read through effectiveChokeGroup. Optional for the same
    * missing-field-defaults-safely reason as voiceMode. Sample tracks only. See docs/choke-groups.md. */
   chokeGroup?: number | null;
+  /** This track's own amplitude ADSR for its sample, sent with every hit (webdsp's per-trigger
+   * `TriggerParams.envelope`) instead of the asset's shared one, so tracks that play one sample can
+   * shape it differently. Absent = the asset's envelope (Asset.envelope). Sample tracks only. A live
+   * edit of the asset's envelope, or its automation, does not reach a track that has its own. Native `Sequence`
+   * sample events cannot carry it yet (webdsp docs/adsr-envelope.md), so a native host plays the asset's. */
+  envelope?: SampleEnvelope;
   /** Chromatic: a note's pitch transposes the sample. Chop: the sample's cue points (Asset.cues)
    * slice it and a note's pitch picks the slice (0 = first) instead of transposing — see
    * audio/compile.ts and model/chop.ts. A property of how *this track* plays the sample, so two
@@ -201,7 +207,7 @@ export interface MasterBus {
   automation: AutomationLane[];
 }
 
-export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compressor" | "saturation" | "phaser" | "bitcrusher" | "utility" | "dubDelay" | "eq" | "glitch";
+export type FxType = "filter" | "chorusFlanger" | "delay" | "reverb" | "compressor" | "saturation" | "phaser" | "bitcrusher" | "utility" | "dubDelay" | "eq" | "glitch" | "dubSpace";
 
 /** One FX in a track's or master's ordered chain. `params` is a flat, generic key->value map
  * (see fx.ts's FX_DEFS for what keys each `type` defines and their defaults/ranges) rather

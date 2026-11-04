@@ -211,6 +211,26 @@ export function setAssetEnvelope(project: Project, assetId: AssetId, envelope: P
   };
 }
 
+/** Gives a sample track its own envelope (merged onto the asset's current one, clamped like
+ * setAssetEnvelope), or `null` to go back to the asset's shared envelope. */
+export function setTrackEnvelope(project: Project, trackId: TrackId, envelope: Partial<SampleEnvelope> | null): Project {
+  return {
+    ...project,
+    tracks: project.tracks.map((t) => {
+      if (t.id !== trackId) return t;
+      const { envelope: _drop, ...rest } = t;
+      if (envelope === null) return rest;
+      const base = t.envelope ?? project.assets.find((a) => a.id === t.assetId)?.envelope;
+      const merged = { ...DEFAULT_ENVELOPE, ...base, ...envelope };
+      const time = (v: number) => Math.min(30, Math.max(0, v));
+      return {
+        ...rest,
+        envelope: { attack: time(merged.attack), decay: time(merged.decay), sustain: Math.min(1, Math.max(0, merged.sustain)), release: time(merged.release) },
+      };
+    }),
+  };
+}
+
 export function renameAsset(project: Project, assetId: AssetId, name: string): Project {
   return { ...project, assets: project.assets.map((a) => (a.id === assetId ? { ...a, name } : a)) };
 }

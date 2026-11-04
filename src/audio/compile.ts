@@ -95,6 +95,8 @@ export function compileNote(
   };
   if (busId !== undefined) event.bus = busId;
   if (effectivePlaybackMode(track) === "loop") event.loop = true;
+  // The track's own envelope replaces the sample's shared one for this voice only (webdsp TriggerParams.envelope).
+  if (track.envelope) event.envelope = { ...track.envelope };
   // Choke group: the engine cuts the group's other tracks' voices at this event's exact start frame
   // (webdsp VoiceManager), so no sequencer-side release is involved. Tracks are told apart by bus.
   const chokeGroup = effectiveChokeGroup(track);
