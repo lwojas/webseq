@@ -6,12 +6,15 @@
 // of the audio clock.
 import { LFO_DIVISIONS, LfoWaveform, lfoValueAt } from "webdsp";
 import type { Note, Track, TrackEventLfo } from "../model/types";
+import { pitchOptions } from "../model/pitchOptions";
+import { normalizeScale, type ProjectScale } from "../model/scale";
 
 const WAVEFORMS: Record<string, LfoWaveform> = {
   sine: LfoWaveform.Sine,
   triangle: LfoWaveform.Triangle,
   square: LfoWaveform.Square,
   saw: LfoWaveform.Saw,
+  "sample & hold": LfoWaveform.SampleHold,
 };
 
 /** The transport timing an event LFO is evaluated against. */
@@ -46,10 +49,38 @@ export function effectiveVelocity(track: Pick<Track, "eventLfo">, note: Note, ev
   const participation = note.lfo ?? 0;
   if (!clock || !lfo || !lfo.enabled || participation <= 0) return note.velocity;
   switch (lfo.target) {
+    case "pitch":
+      return note.velocity;
     case "velocity": {
       const v = note.velocity + eventLfoValue(lfo, eventTime, clock) * lfo.depth * participation;
       return Math.min(1, Math.max(0, v));
     }
   }
   return note.velocity;
+}
+
+/** What the pitch target needs to know about the track: its root note (null for a sample), how many
+ * slices a chop track has (null when not chop), and the project scale (Snap trims the options). */
+export interface PitchLfoContext {
+  root: number | null;
+  slices: number | null;
+  scale?: Partial<ProjectScale> | null;
+}
+
+/** The pitch (semitone offset, or slice number on a chop track) a note should play at when
+ * scheduled at `eventTime`. The LFO moves the note along the options its Pitch dropdown offers
+ * (ascending), `lfo x depth x participation x (options - 1)` places from where it is set, clamped
+ * to the ends. Untouched when the target is not "pitch", the LFO is off, the note does not take
+ * part, or no clock is available. */
+export function effectivePitch(track: Pick<Track, "eventLfo">, note: Note, eventTime: number, clock: EventLfoClock | undefined, ctx: PitchLfoContext): number | undefined {
+  const base = note.pitch;
+  const lfo = track.eventLfo;
+  const participation = note.lfo ?? 0;
+  if (!clock || !lfo || !lfo.enabled || lfo.target !== "pitch" || participation <= 0) return base;
+  const current = base ?? 0;
+  const options = pitchOptions(ctx.root, current, ctx.slices, normalizeScale(ctx.scale)).sort((a, b) => a - b);
+  const at = options.indexOf(current);
+  if (at < 0) return base;
+  const places = Math.round(eventLfoValue(lfo, eventTime, clock) * lfo.depth * participation * (options.length - 1));
+  return options[Math.min(options.length - 1, Math.max(0, at + places))];
 }

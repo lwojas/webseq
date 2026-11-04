@@ -135,13 +135,14 @@ export interface TrackSend {
   amount?: number;
 }
 
-/** What a Track LFO modulates. Only the note's velocity for now; the type is the seam for other
- * event properties later (audio/trackLfo.ts applies by target). */
-export type EventLfoTarget = "velocity";
+/** What a Track LFO modulates: the note's velocity, or its pitch (the note, or the slice on a chop
+ * track), stepping through the values the step's Pitch dropdown offers. audio/trackLfo.ts applies by target. */
+export type EventLfoTarget = "velocity" | "pitch";
 
 /** Track LFO configuration. Waveform and division are webdsp's own names (as TrackLfo). `depth`
- * is 0..1 of the full velocity range (1 = a full-scale LFO swings velocity by +-1.0, i.e. +-127
- * in MIDI terms); effective = clamp(velocity + lfo * depth * Note.lfo, 0, 1). */
+ * is 0..1 of the full range: for velocity 1 = a full-scale LFO swings velocity by +-1.0 (i.e. +-127
+ * in MIDI terms), effective = clamp(velocity + lfo * depth * Note.lfo, 0, 1); for pitch 1 = it can
+ * reach any option of the Pitch dropdown, moving lfo * depth * Note.lfo * (options - 1) places. */
 export interface TrackEventLfo {
   enabled: boolean;
   target: EventLfoTarget;
@@ -164,7 +165,7 @@ export interface TrackInstrument {
   lfos?: TrackLfo[];
 }
 
-export type LfoWaveformId = "sine" | "triangle" | "square" | "saw";
+export type LfoWaveformId = "sine" | "triangle" | "square" | "saw" | "sample & hold";
 
 /** One LFO slot. Waveform, division and target are stored by webdsp's own *names* (not engine
  * indices/ids), so a saved project survives the engine reordering its tables. `target` is a

@@ -73,7 +73,7 @@ export function compileNativeSequence(project: Project, ctx: NativeSequenceConte
     const { beats } = step;
     const startSeconds = step.startBeat * secondsPerBeat(REFERENCE_BPM);
 
-    let samples = compilePatternIterationTracked(step.pattern, project.tracks, REFERENCE_BPM, startSeconds, (id) => ctx.getBusId(id), project.swing, 0, project.beatsPerBar, project.scale);
+    let samples = compilePatternIterationTracked(step.pattern, project.tracks, REFERENCE_BPM, startSeconds, (id) => ctx.getBusId(id), project.swing, 0, project.beatsPerBar, project.scale, project.assets);
     let notes = compileInstrumentNotes(step.pattern, project.tracks, REFERENCE_BPM, startSeconds, project.swing, 0, project.beatsPerBar, project.scale);
     const losers = simultaneousChokeLosers(project.tracks, [
       ...samples.map((c) => ({ trackId: c.trackId, time: c.event.time })),

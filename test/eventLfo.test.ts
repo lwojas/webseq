@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileInstrumentNote, compileInstrumentNotes, compileNote, compilePatternIteration } from "../src/audio/compile";
-import { effectiveVelocity } from "../src/audio/trackLfo";
+import { effectivePitch, effectiveVelocity } from "../src/audio/trackLfo";
 import { createEventLfo, setNoteLfo, setTrackEventLfo, setTrackNotesLfo } from "../src/model/eventLfo";
 import { createInitialProject, addNote, assignAsset, addAsset } from "../src/model/project";
 import { setTrackInstrument } from "../src/model/instruments";
@@ -173,5 +173,43 @@ describe("model, copy and persistence", () => {
     const pasted = pasteTrackConfig(p, "track-2", copyTrackConfig(p.tracks[0]));
     expect(pasted.tracks[1].eventLfo).toEqual(p.tracks[0].eventLfo);
     expect(pasted.tracks[1].eventLfo).not.toBe(p.tracks[0].eventLfo);
+  });
+});
+
+describe("effectivePitch (pitch target)", () => {
+  const ctx = { root: null, slices: 8, scale: undefined };
+  const pitchLfo = (patch: Partial<TrackEventLfo> = {}) => lfo({ target: "pitch", ...patch });
+
+  it("leaves pitch alone for the velocity target, off, or a non-participating step", () => {
+    expect(effectivePitch(track(lfo()), note({ pitch: 3 }), HIGH, clock, ctx)).toBe(3);
+    expect(effectivePitch(track(pitchLfo({ enabled: false })), note({ pitch: 3 }), HIGH, clock, ctx)).toBe(3);
+    expect(effectivePitch(track(pitchLfo()), note({ pitch: 3, lfo: 0 }), HIGH, clock, ctx)).toBe(3);
+  });
+
+  it("moves along the slices, clamped to the first and last", () => {
+    // depth 0.2 x 7 places = 1.4 -> 1
+    expect(effectivePitch(track(pitchLfo()), note({ pitch: 3 }), HIGH, clock, ctx)).toBe(4);
+    expect(effectivePitch(track(pitchLfo()), note({ pitch: 3 }), LOW, clock, ctx)).toBe(2);
+    expect(effectivePitch(track(pitchLfo({ depth: 1 })), note({ pitch: 3 }), HIGH, clock, ctx)).toBe(7);
+    expect(effectivePitch(track(pitchLfo({ depth: 1 })), note({ pitch: 3 }), LOW, clock, ctx)).toBe(0);
+  });
+
+  it("compiles a chop step to the modulated slice and leaves velocity alone", () => {
+    const chop = { ...track(pitchLfo()), sampleMode: "chop" as const };
+    const ev = compileNote(chop, note({ pitch: 3 }), 120, 10, undefined, 0.5, 10, 0, undefined, { cues: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7] });
+    expect(ev?.region).toBe(4);
+    expect(ev?.gain).toBe(0.5);
+  });
+});
+
+describe("sample & hold waveform", () => {
+  const sh = (patch: Partial<TrackEventLfo> = {}) => lfo({ waveform: "sample & hold", depth: 1, ...patch });
+  it("holds one value per cycle, deterministically", () => {
+    const t = track(sh());
+    const a = effectiveVelocity(t, note(), 10.1, clock);
+    expect(effectiveVelocity(t, note(), 10.4, clock)).toBe(a); // same 0.5 s cycle
+    expect(effectiveVelocity(t, note(), 10.1, clock)).toBe(a); // repeatable
+    const values = new Set(Array.from({ length: 12 }, (_, i) => effectiveVelocity(t, note({ velocity: 0.5 }), 10 + i * 0.5 + 0.1, clock)));
+    expect(values.size).toBeGreaterThan(4); // changes between cycles
   });
 });

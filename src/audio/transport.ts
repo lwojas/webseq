@@ -564,6 +564,7 @@ export class Transport {
       this.lfoAnchorTime,
       project.beatsPerBar,
       project.scale,
+      project.assets,
     );
     let synthNotes = compileInstrumentNotes(pattern, tracks, this.anchorTempo, stepStartTime, project.swing, this.lfoAnchorTime, project.beatsPerBar, project.scale);
     // Starting part-way into a pattern (resume, or following an external clock) leaves the notes before

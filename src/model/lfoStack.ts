@@ -4,7 +4,7 @@ import type { LfoWaveformId, TrackLfo } from "./types";
 
 /** Mirrors webdsp's per-owner LFO slot count (the engine reports the real limit). */
 export const MAX_TRACK_LFOS = 4;
-export const LFO_WAVEFORMS: LfoWaveformId[] = ["sine", "triangle", "square", "saw"];
+export const LFO_WAVEFORMS: LfoWaveformId[] = ["sine", "triangle", "square", "saw", "sample & hold"];
 export const LFO_MIN_RATE_HZ = 0.01;
 export const LFO_MAX_RATE_HZ = 40;
 export const DEFAULT_LFO_DIVISION = "1/4";

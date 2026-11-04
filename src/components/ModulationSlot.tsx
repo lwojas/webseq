@@ -74,7 +74,7 @@ export function ModBadge({ badge }: { badge: { auto: boolean; lfos: number } | u
   );
 }
 
-const WAVE_LABEL: Record<string, string> = { sine: "Sine", triangle: "Tri", square: "Sq", saw: "Saw" };
+const WAVE_LABEL: Record<string, string> = { sine: "Sine", triangle: "Tri", square: "Sq", saw: "Saw", "sample & hold": "S&H" };
 
 // Rate is a log-scaled slider (0.01-40 Hz spans four decades).
 export const RATE_STEPS = 1000;

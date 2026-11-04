@@ -8,17 +8,19 @@ interface Props {
   /** How many steps of this track (in the shown pattern) take part, and how many there are. */
   participating: number;
   stepCount: number;
+  /** Chop track: the pitch target picks slices rather than notes. */
+  chop: boolean;
   onChange: (patch: Partial<TrackEventLfo>) => void;
   /** Sets participation of every step of the track in the shown pattern. */
   onSetAllSteps: (amount: number) => void;
 }
 
-const WAVE_LABEL: Record<string, string> = { sine: "Sine", triangle: "Tri", square: "Sq", saw: "Saw" };
+const WAVE_LABEL: Record<string, string> = { sine: "Sine", triangle: "Tri", square: "Sq", saw: "Saw", "sample & hold": "S&H" };
 
-/** The Track LFO controls in the Track Editor: an LFO that changes the velocity of the steps
+/** The Track LFO controls in the Track Editor: an LFO that changes the velocity, or the note / slice, of the steps
  * that opt in (each step's LFO slider below the lane). It acts when a step is scheduled, not
  * inside the synth. Same control language as the synth Modulation card. */
-export function TrackLfoPanel({ lfo, participating, stepCount, onChange, onSetAllSteps }: Props) {
+export function TrackLfoPanel({ lfo, participating, stepCount, chop, onChange, onSetAllSteps }: Props) {
   return (
     <div className="track-lfo">
       <div className="track-lfo-head">
@@ -31,9 +33,14 @@ export function TrackLfoPanel({ lfo, participating, stepCount, onChange, onSetAl
             Off
           </button>
         </div>
-        <span className="track-lfo-target">
-          Target <b>Velocity</b>
-        </span>
+        <div className="enum-toggle track-lfo-onoff" role="group" aria-label="Track LFO target">
+          <button className={lfo.target === "velocity" ? "active" : ""} onClick={() => onChange({ target: "velocity" })} title="The LFO changes how hard each step plays">
+            Velocity
+          </button>
+          <button className={lfo.target === "pitch" ? "active" : ""} onClick={() => onChange({ target: "pitch" })} title="The LFO moves each step along the notes (or slices) its Pitch dropdown offers">
+            {chop ? "Slice" : "Note"}
+          </button>
+        </div>
         <span className="track-lfo-steps">
           {participating}/{stepCount} steps
         </span>

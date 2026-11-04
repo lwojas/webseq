@@ -1,7 +1,7 @@
 # Track LFO
 
-A track-level LFO that modulates **event** properties, today the **velocity** of the notes that
-opt in. It is a sequencer concern: it acts when a step is scheduled, never inside the synth.
+A track-level LFO that modulates **event** properties: the **velocity** of the notes that
+opt in, or their **note / slice** (the target toggle). It is a sequencer concern: it acts when a step is scheduled, never inside the synth.
 (The synth's own continuous LFOs are the Modulation card in the Instrument panel; see webdsp's
 `docs/lfo-modulation.md`.)
 
@@ -16,12 +16,21 @@ effective velocity  --> ScheduledEvent.gain / instrumentNoteOn velocity --> engi
 
 | Where | Field | Meaning |
 |---|---|---|
-| `Track.eventLfo` | `enabled, target ("velocity"), waveform, sync, rateHz, division, depth` | the LFO. Waveform/division are webdsp's names. |
+| `Track.eventLfo` | `enabled, target ("velocity"), waveform, sync, rateHz, division, depth` | the LFO. Waveform/division are webdsp's names (including "sample & hold": a held random value per cycle). |
 | `Note.lfo` | 0..1 | the step's participation. Absent/0 = plays at its own velocity. |
 
 Effective velocity is never stored. `effective = clamp(velocity + lfo * depth * Note.lfo, 0, 1)`,
 `lfo` in -1..1, `depth` 0..1 of the full range (webseq velocity is 0..1; depth 0.25 = about 32 of
 127). Projects without these fields play exactly as before (tested).
+
+### Note / slice target
+
+With target "pitch" the velocity is left alone and the LFO moves each participating step along the
+values its Pitch dropdown offers (`model/pitchOptions.ts`, shared with the editor): slices on a chop
+track, notes in the audible range of a synth root (Snap-trimmed), semitones on a plain sample. The
+step's own pitch is the centre; it moves `lfo x depth x Note.lfo x (options - 1)` places, rounded and
+clamped to the ends of the list (depth 1 can reach any option). Chop needs the asset's slice count,
+so `compilePatternIteration*` take the project's assets. The stored pitch is never changed.
 
 ## Timing
 
@@ -41,8 +50,8 @@ second clock: the evaluation uses the transport anchor (the one given to `runtim
 ## UI
 
 Track Editor tab: the **Track LFO** card (On/Off, waveform, Sync/Free, rate or division, depth,
-fixed target "Velocity", and All steps / None), a per-step **LFO** slider on each step card (shown
+target Velocity / Note (Slice on a chop track), and All steps / None), a per-step **LFO** slider on each step card (shown
 while the LFO is on), and an amber bar on the step block showing its participation.
 
 Adding another event target later means one more `EventLfoTarget` and one more case in
-`effectiveVelocity`; compile and transport do not change.
+`trackLfo.ts`.

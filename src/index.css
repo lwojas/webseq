@@ -3772,16 +3772,11 @@ select {
   color: #eafffa;
 }
 
-.track-lfo-target,
 .track-lfo-steps {
   color: var(--text-dim);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-}
-
-.track-lfo-target b {
-  color: var(--text);
 }
 
 .track-lfo-steps {

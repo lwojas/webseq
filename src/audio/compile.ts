@@ -6,11 +6,11 @@
 
 import { findLane, valueAtBeat } from "../model/automation";
 import type { BusId, InstrumentNoteParams, ScheduledEvent } from "webdsp";
-import type { Note, Pattern, Track, TrackId } from "../model/types";
+import type { Asset, Note, Pattern, Track, TrackId } from "../model/types";
 import { effectiveChokeGroup, effectivePlaybackMode, effectiveVoiceMode, ratchetOf } from "../model/types";
-import { effectiveSampleMode } from "../model/chop";
-import { instrumentDefFor, supportsTie } from "../model/instruments";
-import { effectiveVelocity, type EventLfoClock } from "./trackLfo";
+import { effectiveSampleMode, sliceCount } from "../model/chop";
+import { instrumentDefFor, rootMidiNote, supportsTie } from "../model/instruments";
+import { effectivePitch, effectiveVelocity, type EventLfoClock } from "./trackLfo";
 import { arpOf, arpTrackNotes, isArpActive } from "../model/arp";
 import { expandChordNotes, type PlayedNote } from "../model/chord";
 import type { ProjectScale } from "../model/scale";
@@ -83,6 +83,8 @@ export function compileNote(
   swing = 0.5,
   lfoAnchorTime?: number,
   hit = 0,
+  scale?: Partial<ProjectScale> | null,
+  asset?: Pick<Asset, "cues"> | null,
 ): ScheduledEvent | null {
   if (track.assetId == null) return null;
   const spb = secondsPerBeat(bpm);
@@ -101,16 +103,19 @@ export function compileNote(
   // (webdsp VoiceManager), so no sequencer-side release is involved. Tracks are told apart by bus.
   const chokeGroup = effectiveChokeGroup(track);
   if (chokeGroup !== null) event.chokeGroup = chokeGroup;
-  if (effectiveSampleMode(track) === "chop") {
+  const chop = effectiveSampleMode(track) === "chop";
+  // The Track LFO's "pitch" target moves the note / slice along the Pitch dropdown's options.
+  const notePitch = effectivePitch(track, note, time, lfoClock(bpm, lfoAnchorTime), { root: null, slices: chop ? Math.max(1, sliceCount(asset)) : null, scale });
+  if (chop) {
     // Chop: the note's pitch selects the slice (0 = first) and never transposes. A negative
     // pitch has no slice; a slice beyond the sample's count is dropped by the engine.
-    const slice = Math.round(note.pitch ?? 0);
+    const slice = Math.round(notePitch ?? 0);
     if (slice < 0) return null;
     event.region = slice;
   } else {
     // The note's own pitch plus the track's sample-pitch automation lane (if any), read at the
     // note's position: lane positions are beats from the pattern start, i.e. note.start.
-    const pitch = (note.pitch ?? 0) + (valueAtBeat(findLane(track.automation, null, "pitch"), note.start) ?? 0);
+    const pitch = (notePitch ?? 0) + (valueAtBeat(findLane(track.automation, null, "pitch"), note.start) ?? 0);
     if (pitch) event.pitch = pitch;
   }
   return event;
@@ -164,6 +169,7 @@ export function compileInstrumentNote(
   lfoAnchorTime?: number,
   hit = 0,
   link?: NoteLink,
+  scale?: Partial<ProjectScale> | null,
 ): InstrumentNoteParams | null {
   const def = instrumentDefFor(track);
   if (!def) return null;
@@ -173,7 +179,8 @@ export function compileInstrumentNote(
     time,
     velocity: effectiveVelocity(track, note, time, lfoClock(bpm, lfoAnchorTime)),
   };
-  if (note.pitch) params.pitch = note.pitch;
+  const pitch = effectivePitch(track, note, time, lfoClock(bpm, lfoAnchorTime), { root: rootMidiNote(track), slices: null, scale });
+  if (pitch) params.pitch = pitch;
   const chokeGroup = effectiveChokeGroup(track);
   if (chokeGroup !== null) params.chokeGroup = chokeGroup;
   if (def.sustained) {
@@ -206,7 +213,7 @@ export function compileInstrumentNotes(
     const links = noteLinks(track, played, bpm, stepStartTime, swing);
     for (const note of played) {
       for (let hit = 0, n = ratchetOf(note); hit < n; hit++) {
-        const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime, hit, links.get(note));
+        const params = compileInstrumentNote(track, note, bpm, stepStartTime, swing, lfoAnchorTime, hit, links.get(note), scale);
         if (params) results.push({ trackId: track.id, params, voice: note.voice ?? 0 });
       }
     }
@@ -229,8 +236,9 @@ export function compilePatternIteration(
   lfoAnchorTime?: number,
   beatsPerBar = DEFAULT_BEATS_PER_BAR,
   scale?: Partial<ProjectScale> | null,
+  assets: readonly Pick<Asset, "id" | "cues">[] = [],
 ): ScheduledEvent[] {
-  return compilePatternIterationTracked(pattern, tracks, bpm, stepStartTime, busIdFor, swing, lfoAnchorTime, beatsPerBar, scale).map((r) => r.event);
+  return compilePatternIterationTracked(pattern, tracks, bpm, stepStartTime, busIdFor, swing, lfoAnchorTime, beatsPerBar, scale, assets).map((r) => r.event);
 }
 
 /** Same as compilePatternIteration, but keeps each ScheduledEvent paired with the TrackId that
@@ -258,18 +266,20 @@ export function compilePatternIterationTracked(
   lfoAnchorTime?: number,
   beatsPerBar = DEFAULT_BEATS_PER_BAR,
   scale?: Partial<ProjectScale> | null,
+  assets: readonly Pick<Asset, "id" | "cues">[] = [],
 ): { event: ScheduledEvent; trackId: TrackId }[] {
   const results: { event: ScheduledEvent; trackId: TrackId }[] = [];
   const notesByTrack = groupNotesByTrack(pattern);
   for (const track of tracks) {
     const busId = busIdFor(track.id);
+    const asset = assets.find((a) => a.id === track.assetId);
     const trackEvents: ScheduledEvent[] = [];
     let ratcheted = false;
     for (const note of playedNotes(track, notesByTrack.get(track.id) ?? [], pattern, beatsPerBar, scale)) {
       const n = ratchetOf(note);
       if (n > 1) ratcheted = true;
       for (let hit = 0; hit < n; hit++) {
-        const event = compileNote(track, note, bpm, stepStartTime, busId, swing, lfoAnchorTime, hit);
+        const event = compileNote(track, note, bpm, stepStartTime, busId, swing, lfoAnchorTime, hit, scale, asset);
         if (event) trackEvents.push(event);
       }
     }

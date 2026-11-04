@@ -8,7 +8,7 @@ import { chordMidis, chordRootOptions, chordType, chordTypeId, chordTypePatch, m
 import { degreeOfIndex } from "../model/scaleDegrees";
 import { getScaleDegree, isChromatic, isOffsetInScale, referenceMidi, type ProjectScale } from "../model/scale";
 import { RATCHET_VALUES, notesForTrack, ratchetOf, totalBeats, trackHasSource } from "../model/types";
-import { MAX_NOTE_PITCH, MIN_NOTE_PITCH } from "../model/notes";
+import { pitchOptions } from "../model/pitchOptions";
 import { effectiveSampleMode, sliceCount } from "../model/chop";
 import { rootMidiNote, supportsTie } from "../model/instruments";
 import { NoteBlock } from "./NoteBlock";
@@ -48,10 +48,6 @@ interface Props {
 const LENGTH_OPTIONS = [0.125, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16];
 
 const NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-"];
-const PITCH_OFFSETS = Array.from({ length: MAX_NOTE_PITCH - MIN_NOTE_PITCH + 1 }, (_, i) => MAX_NOTE_PITCH - i);
-/** Audible band offered in the dropdown (the engine would happily play outside it). */
-const MIN_AUDIBLE_HZ = 20;
-const MAX_AUDIBLE_HZ = 16000;
 
 /** The note a pitch offset sounds as. For a synth with a Hz root, that is its real note
  * (root + offset, e.g. Bass 55 Hz = A-1); otherwise (samples, unpitched roots) only the
@@ -61,21 +57,6 @@ function formatPitch(pitch: number, root: number | null, chop = false): string {
   if (root === null) return pitch === 0 ? "0 st" : `${pitch > 0 ? "+" : ""}${pitch} st`;
   const midi = Math.round(root + pitch);
   return `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 1}`;
-}
-
-/** Offsets to offer: all of them for a sample, only the audible span for a synth root, always
- * including the note's current value. */
-function pitchOptions(root: number | null, current: number, slices: number | null, scale: ProjectScale): number[] {
-  // Chop track: one option per slice (at least one), plus the current value so a stale step shows.
-  if (slices !== null) return PITCH_OFFSETS.filter((p) => p >= 0 && (p < Math.max(1, slices) || p === current)).reverse();
-  // With Snap on only the key's notes are offered (the note's current value always stays, so an
-  // existing off-scale note is never hidden or silently changed).
-  const keep = (p: number) => p === current || !scale.snap || isOffsetInScale(scale, root, p);
-  if (root === null) return PITCH_OFFSETS.filter(keep);
-  return PITCH_OFFSETS.filter((p) => {
-    const hz = 440 * Math.pow(2, (root + p - 69) / 12);
-    return keep(p) && (p === current || (hz >= MIN_AUDIBLE_HZ && hz <= MAX_AUDIBLE_HZ));
-  });
 }
 
 /** Menu text for a pitch: in-scale notes get a bullet and their scale degree, so the key is
@@ -425,6 +406,7 @@ export const TrackEditor = memo(function TrackEditor({
         lfo={lfo}
         participating={participating}
         stepCount={notes.length}
+        chop={slices !== null}
         onChange={(patch) => onSetTrackEventLfo(track.id, patch)}
         onSetAllSteps={(amount) => onSetTrackNotesLfo(track.id, amount)}
       />
