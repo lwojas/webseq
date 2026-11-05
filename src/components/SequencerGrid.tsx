@@ -1,6 +1,7 @@
 import { useCallback, useRef, type CSSProperties } from "react";
 import type { FxTarget, NoteId, Pattern, Project, TrackId } from "../model/types";
 import { totalBeats } from "../model/types";
+import { isTrackOffInPattern } from "../model/patternSettings";
 import { BANK_SIZE, tracksInBank, type BankSummary } from "../model/project";
 import { usePlayheadAnimation } from "../hooks/usePlayheadAnimation";
 import { useVisibleColumnWindow } from "../hooks/useVisibleColumnWindow";
@@ -23,6 +24,7 @@ interface Props {
   onMoveNote: (noteId: NoteId, start: number, freePlacement: boolean) => void;
   onRemoveNote: (noteId: NoteId) => void;
   onSetMuted: (trackId: TrackId, muted: boolean) => void;
+  onSetNotesOff: (trackId: TrackId, off: boolean) => void;
   onSetSoloed: (trackId: TrackId, soloed: boolean) => void;
   /** Which bank of 16 tracks is shown (see model/project.ts's BANK_SIZE). */
   bank: number;
@@ -68,6 +70,7 @@ export function SequencerGrid({
   onMoveNote,
   onRemoveNote,
   onSetMuted,
+  onSetNotesOff,
   onSetSoloed,
   bank,
   bankSummaries,
@@ -158,6 +161,8 @@ export function SequencerGrid({
                   onRemoveNote={onRemoveNote}
                   onSetMuted={onSetMuted}
                   onSetSoloed={onSetSoloed}
+                  notesOff={isTrackOffInPattern(pattern, track.id)}
+                  onSetNotesOff={onSetNotesOff}
                   looping={loopingTrackIds.includes(track.id)}
                   triggerDisabled={triggerDisabled}
                   onTrigger={onTriggerTrack}

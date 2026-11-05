@@ -12,7 +12,7 @@
   --danger: #e05252;
   --note-height: 22px;
   --row-height: 28px;
-  --header-width: 220px;
+  --header-width: 252px;
 }
 
 * {
@@ -1855,6 +1855,7 @@ select {
 
 /* Per-row mute/solo (same state as the Mixer's M/S — both read Track.muted/soloed). Active
    colors match .mixer-mute/.mixer-solo below. Hidden on phones (see the 768px block). */
+.track-header .track-notes,
 .track-header .track-mute,
 .track-header .track-solo {
   background: transparent;
@@ -1867,6 +1868,7 @@ select {
   flex-shrink: 0;
 }
 
+.track-header .track-notes:hover,
 .track-header .track-mute:hover,
 .track-header .track-solo:hover {
   color: var(--accent);
@@ -1965,6 +1967,10 @@ select {
 /* A muted track: dimmed name and lane (opacity only — no repaint-heavy effects on the rows). */
 .track-row.muted .track-header .track-name {
   color: var(--text-dim);
+}
+
+.track-row.notes-off .track-lane {
+  opacity: 0.35;
 }
 
 .track-row.muted .track-lane {
@@ -2776,8 +2782,10 @@ select {
   color: #ffe4e4;
 }
 
+/* .track-notes.active: notes switched off in this pattern (Pattern.offTracks) — a per-pattern MIDI mute, separate from M. */
 .mixer-solo.active,
-.track-header .track-solo.active {
+.track-header .track-solo.active,
+.track-header .track-notes.active {
   background: #6b5323;
   border-color: var(--amber);
   color: #ffe9c4;
@@ -3596,6 +3604,7 @@ select {
     padding: 10px 8px;
   }
 
+  .track-header .track-notes,
   .track-header .track-mute,
   .track-header .track-solo,
   .track-header .track-trigger {

@@ -80,3 +80,32 @@ describe("a pattern's own arp and Track LFO", () => {
     expect((copied.patterns[copied.patterns.length - 1] as Pattern).trackSettings).toEqual(edited.patterns[0].trackSettings);
   });
 });
+
+describe("a pattern's notes switched off for a track", () => {
+  it("silences the track in that pattern only, keeps its notes and the track's own mute", () => {
+    const { project, a, b } = setup();
+    const next = projectReducer(project, { type: "SET_PATTERN_TRACK_OFF", patternId: a, trackId: "track-1", off: true });
+    expect(events(next, a)).toBe(0);
+    expect(events(next, b)).toBe(3);
+    expect(Object.keys(next.patterns[0].notes)).toHaveLength(3);
+    expect(next.tracks[0].muted).toBeFalsy();
+  });
+
+  it("switching back on drops the entry, so the pattern is as it was", () => {
+    const { project, a } = setup();
+    const off = projectReducer(project, { type: "SET_PATTERN_TRACK_OFF", patternId: a, trackId: "track-1", off: true });
+    const on = projectReducer(off, { type: "SET_PATTERN_TRACK_OFF", patternId: a, trackId: "track-1", off: false });
+    expect(on.patterns[0].offTracks).toBeUndefined();
+    expect(events(on, a)).toBe(3);
+  });
+
+  it("is carried by Duplicate pattern, Duplicate sequence and copy / paste", () => {
+    const { project, a } = setup();
+    const off = projectReducer(project, { type: "SET_PATTERN_TRACK_OFF", patternId: a, trackId: "track-1", off: true });
+    const dup = duplicatePattern(off, a);
+    expect(dup.patterns[dup.patterns.length - 1].offTracks).toEqual({ "track-1": true });
+    const placed = addPatternToComposer(off, a);
+    const seqId = allSequences(placed)[0].seq.id;
+    expect(copySequence(placed, seqId)!.offTracks).toEqual({ "track-1": true });
+  });
+});

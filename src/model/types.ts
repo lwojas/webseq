@@ -316,6 +316,9 @@ export interface Pattern {
    * entry the pattern replays that instead of the owner's lanes (an empty list = no automation in this pattern); absent = the
    * owner's lanes, so older projects are unchanged. */
   automation?: Record<string, AutomationLane[]>;
+  /** Tracks whose notes do not play in this pattern (a "MIDI mute" that is per pattern; the notes are kept, and the track's own
+   * mute is untouched). Absent = every track plays, so older projects are unchanged. model/patternSettings.ts. */
+  offTracks?: Record<TrackId, true>;
 }
 
 /** What a pattern overrides on one track: either, both, or (not stored) neither. */

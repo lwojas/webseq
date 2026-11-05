@@ -25,6 +25,7 @@ export type Action =
   | { type: "SET_SWING"; swing: number }
   | { type: "SET_PROJECT_NAME"; name: string }
   | { type: "SET_PROJECT_SCALE"; patch: Partial<ProjectScale> }
+  | { type: "SET_PATTERN_TRACK_OFF"; patternId: PatternId; trackId: TrackId; off: boolean }
   | { type: "RESET_PATTERN_TRACK_SETTINGS"; patternId: PatternId; trackId: TrackId }
   | { type: "SET_TRACK_ARP"; trackId: TrackId; /** With a pattern: that pattern's own arp for the track, else the track's. */ patternId?: PatternId; patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> } }
   | { type: "APPLY_RECIPE"; recipe: Recipe; patternId: PatternId; trackId: TrackId | null; unavailableKinds?: InstrumentKindId[] }
@@ -138,6 +139,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return setProjectScale(state, action.patch);
     case "SET_TRACK_ARP":
       return action.patternId ? patternSettings.setPatternArp(state, action.patternId, action.trackId, action.patch) : setTrackArp(state, action.trackId, action.patch);
+    case "SET_PATTERN_TRACK_OFF":
+      return patternSettings.setPatternTrackOff(state, action.patternId, action.trackId, action.off);
     case "RESET_PATTERN_TRACK_SETTINGS":
       return patternSettings.clearPatternSettings(state, action.patternId, action.trackId);
     case "SET_PROJECT_NAME":

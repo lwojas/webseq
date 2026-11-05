@@ -31,6 +31,10 @@ export interface Props {
    * two surfaces can't drift apart. */
   onSetMuted: (trackId: TrackId, muted: boolean) => void;
   onSetSoloed: (trackId: TrackId, soloed: boolean) => void;
+  /** This track's notes are switched off in the pattern being edited (Pattern.offTracks) — a per-pattern "MIDI mute",
+   * separate from the track's own mute. */
+  notesOff: boolean;
+  onSetNotesOff: (trackId: TrackId, off: boolean) => void;
   /** This track's manual loop is sounding (see audio/playback.ts). A primitive, so the memo still holds. */
   looping: boolean;
   /** Disables the trigger while a resample is armed or capturing. */
@@ -57,6 +61,8 @@ function TrackRowImpl({
   onRemoveNote,
   onSetMuted,
   onSetSoloed,
+  notesOff,
+  onSetNotesOff,
   looping,
   triggerDisabled,
   onTrigger,
@@ -70,7 +76,7 @@ function TrackRowImpl({
   const end = Math.min(visibleEnd, beats);
 
   return (
-    <div className={`track-row ${selected ? "selected" : ""} ${track.muted ? "muted" : ""}`}>
+    <div className={`track-row ${selected ? "selected" : ""} ${track.muted ? "muted" : ""} ${notesOff ? "notes-off" : ""}`}>
       <div className="track-header" onClick={() => onSelectTarget(track.id)}>
         <span className="track-num">{String(index + 1).padStart(2, "0")}</span>
         <span className={`track-name ${trackHasSource(track) ? "" : "unassigned"}`}>
@@ -98,6 +104,18 @@ function TrackRowImpl({
             {looping ? "■" : "▶"}
           </button>
         )}
+        <button
+          className={`track-notes ${notesOff ? "active" : ""}`}
+          title={notesOff ? "Notes off in this pattern — click to play them" : "Switch this track's notes off in this pattern"}
+          aria-label={`${track.name} notes in this pattern`}
+          aria-pressed={!notesOff}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetNotesOff(track.id, !notesOff);
+          }}
+        >
+          ♪
+        </button>
         <button
           className={`track-mute ${track.muted ? "active" : ""}`}
           title="Mute"
@@ -181,6 +199,8 @@ export function sameRow(a: Props, b: Props): boolean {
     a.onRemoveNote !== b.onRemoveNote ||
     a.onSetMuted !== b.onSetMuted ||
     a.onSetSoloed !== b.onSetSoloed ||
+    a.notesOff !== b.notesOff ||
+    a.onSetNotesOff !== b.onSetNotesOff ||
     a.looping !== b.looping ||
     a.triggerDisabled !== b.triggerDisabled ||
     a.onTrigger !== b.onTrigger

@@ -929,6 +929,10 @@ export function App() {
     (trackId: TrackId, patch: Partial<TrackEventLfo>) => dispatch({ type: "SET_TRACK_EVENT_LFO", trackId, patternId: selectedPatternId, patch }),
     [selectedPatternId],
   );
+  const handleSetTrackNotesOff = useCallback(
+    (trackId: TrackId, off: boolean) => dispatch({ type: "SET_PATTERN_TRACK_OFF", patternId: selectedPatternId, trackId, off }),
+    [selectedPatternId],
+  );
   const handleResetPatternSettings = useCallback(
     (trackId: TrackId) => dispatch({ type: "RESET_PATTERN_TRACK_SETTINGS", patternId: selectedPatternId, trackId }),
     [selectedPatternId],
@@ -1704,6 +1708,7 @@ export function App() {
           onMoveNote: handleMoveNote,
           onRemoveNote: handleRemoveNote,
           onSetMuted: handleSetTrackMuted,
+          onSetNotesOff: handleSetTrackNotesOff,
           onSetSoloed: handleSetTrackSoloed,
           bank: activeBank,
           bankSummaries,

@@ -23,6 +23,8 @@ const base: Props = {
   onRemoveNote: noop,
   onSetMuted: noop,
   onSetSoloed: noop,
+  notesOff: false,
+  onSetNotesOff: noop,
   looping: false,
   triggerDisabled: false,
   onTrigger: noop,
@@ -44,6 +46,7 @@ describe("TrackRow's memo comparator", () => {
       visibleEnd: 8,
       selected: true,
       selectedNoteId: "n1",
+      notesOff: true,
       looping: true,
       triggerDisabled: true,
       onSelectNote: () => {},
@@ -54,6 +57,7 @@ describe("TrackRow's memo comparator", () => {
       onRemoveNote: () => {},
       onSetMuted: () => {},
       onSetSoloed: () => {},
+      onSetNotesOff: () => {},
       onTrigger: () => {},
     };
     for (const key of Object.keys(base).filter((k) => k !== "track")) {

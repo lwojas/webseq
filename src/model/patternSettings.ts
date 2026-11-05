@@ -38,6 +38,22 @@ export function setPatternEventLfo(project: Project, patternId: PatternId, track
   return withSettings(project, patternId, trackId, (own, played) => ({ ...own, eventLfo: patchEventLfo(eventLfoOf(played), patch) }));
 }
 
+/** True when `trackId`'s notes are switched off in `pattern` (they stay in the pattern, they just don't play). */
+export function isTrackOffInPattern(pattern: Pattern | undefined, trackId: TrackId): boolean {
+  return pattern?.offTracks?.[trackId] === true;
+}
+
+/** Switches `trackId`'s notes off (or back on) in one pattern. Other patterns, and the track's own mute, are not touched. */
+export function setPatternTrackOff(project: Project, patternId: PatternId, trackId: TrackId, off: boolean): Project {
+  return updatePattern(project, patternId, (p) => {
+    if (isTrackOffInPattern(p, trackId) === off) return p;
+    if (off) return { ...p, offTracks: { ...p.offTracks, [trackId]: true } };
+    const { [trackId]: _on, ...rest } = p.offTracks ?? {};
+    const { offTracks: _old, ...pattern } = p;
+    return Object.keys(rest).length > 0 ? { ...pattern, offTracks: rest } : pattern;
+  });
+}
+
 /** Drops the pattern's own arp and Track LFO for `trackId`: it plays the track's again. */
 export function clearPatternSettings(project: Project, patternId: PatternId, trackId: TrackId): Project {
   return updatePattern(project, patternId, (p) => {
