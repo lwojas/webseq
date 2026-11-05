@@ -924,12 +924,16 @@ export function App() {
     [selectedPatternId],
   );
   const handleSetTrackEventLfo = useCallback(
-    (trackId: TrackId, patch: Partial<TrackEventLfo>) => dispatch({ type: "SET_TRACK_EVENT_LFO", trackId, patch }),
-    [],
+    (trackId: TrackId, patch: Partial<TrackEventLfo>) => dispatch({ type: "SET_TRACK_EVENT_LFO", trackId, patternId: selectedPatternId, patch }),
+    [selectedPatternId],
+  );
+  const handleResetPatternSettings = useCallback(
+    (trackId: TrackId) => dispatch({ type: "RESET_PATTERN_TRACK_SETTINGS", patternId: selectedPatternId, trackId }),
+    [selectedPatternId],
   );
   const handleSetTrackArp = useCallback(
-    (trackId: TrackId, patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> }) => dispatch({ type: "SET_TRACK_ARP", trackId, patch }),
-    [],
+    (trackId: TrackId, patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> }) => dispatch({ type: "SET_TRACK_ARP", trackId, patternId: selectedPatternId, patch }),
+    [selectedPatternId],
   );
   const handleSetNoteLfo = useCallback(
     (noteId: NoteId, amount: number) => dispatch({ type: "SET_NOTE_LFO", patternId: selectedPatternId, noteId, amount }),
@@ -1755,6 +1759,7 @@ export function App() {
             chopAsset: selectedTrackAsset,
             scale: projectScale,
             onSetTrackArp: handleSetTrackArp,
+            onResetPatternSettings: handleResetPatternSettings,
             onSetTrackEventLfo: handleSetTrackEventLfo,
             onSetNoteLfo: handleSetNoteLfo,
             onSetTrackNotesLfo: handleSetTrackNotesLfo,

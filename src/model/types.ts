@@ -309,6 +309,15 @@ export interface Pattern {
    * lengths — see Project.beatsPerBar for how this becomes a beat count. */
   bars: number;
   notes: Record<NoteId, Note>;
+  /** This pattern's own arp / Track LFO, per track (model/patternSettings.ts). Where a track has an entry the pattern plays
+   * that instead of the track's; absent = the pattern plays every track's own, so older projects are unchanged. */
+  trackSettings?: Record<TrackId, PatternTrackSettings>;
+}
+
+/** What a pattern overrides on one track: either, both, or (not stored) neither. */
+export interface PatternTrackSettings {
+  arp?: TrackArp;
+  eventLfo?: TrackEventLfo;
 }
 
 /** One block on the Composer timeline: a placement of a pattern from `Project.patterns` (the Patterns page lists them all).

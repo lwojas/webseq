@@ -198,10 +198,11 @@ export function removeSequencesOfPattern(project: Project, patternId: PatternId)
 }
 
 /** A pattern's content as an independent copy: fresh id, every note a fresh object. */
-function clonePattern(source: Pick<Pattern, "name" | "bars" | "notes">): Pattern {
+function clonePattern(source: Pick<Pattern, "name" | "bars" | "notes" | "trackSettings">): Pattern {
   const notes: Record<string, Note> = {};
   for (const [id, note] of Object.entries(source.notes)) notes[id] = { ...note };
-  return { id: nextId("pattern"), name: source.name, bars: source.bars, notes };
+  // The pattern's own arp / Track LFO settings are immutable values, so the copy can share them.
+  return { id: nextId("pattern"), name: source.name, bars: source.bars, notes, ...(source.trackSettings ? { trackSettings: source.trackSettings } : {}) };
 }
 
 /** A sequence's content as plain data (the clipboard's contents). */
@@ -209,6 +210,7 @@ export interface SequenceClip {
   name: string;
   bars: number;
   notes: Record<string, Note>;
+  trackSettings?: Pattern["trackSettings"];
   color: string;
 }
 
@@ -216,8 +218,8 @@ export function copySequence(project: Project, id: SequenceId): SequenceClip | n
   const seq = sequenceById(project, id);
   const pattern = seq && patternOf(project, seq);
   if (!seq || !pattern) return null;
-  const { bars, notes } = clonePattern(pattern);
-  return { name: `${pattern.name} copy`, bars, notes, color: seq.color };
+  const { bars, notes, trackSettings } = clonePattern(pattern);
+  return { name: `${pattern.name} copy`, bars, notes, ...(trackSettings ? { trackSettings } : {}), color: seq.color };
 }
 
 function nextColor(project: Project): string {

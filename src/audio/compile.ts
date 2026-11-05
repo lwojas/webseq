@@ -12,6 +12,7 @@ import { effectiveSampleMode, sliceCount } from "../model/chop";
 import { instrumentDefFor, rootMidiNote, supportsTie } from "../model/instruments";
 import { effectivePitch, effectiveVelocity, type EventLfoClock } from "./trackLfo";
 import { arpOf, arpTrackNotes, isArpActive } from "../model/arp";
+import { trackInPattern } from "../model/patternSettings";
 import { expandChordNotes, type PlayedNote } from "../model/chord";
 import type { ProjectScale } from "../model/scale";
 import { DEFAULT_BEATS_PER_BAR } from "../model/project";
@@ -205,7 +206,7 @@ export function compileInstrumentNotes(
   scale?: Partial<ProjectScale> | null,
 ): { trackId: TrackId; params: InstrumentNoteParams; voice: number }[] {
   const results: { trackId: TrackId; params: InstrumentNoteParams; voice: number }[] = [];
-  const synthTracks = tracks.filter((t) => t.instrument != null);
+  const synthTracks = tracks.filter((t) => t.instrument != null).map((t) => trackInPattern(t, pattern));
   if (synthTracks.length === 0) return results;
   const byTrack = groupNotesByTrack(pattern);
   for (const track of synthTracks) {
@@ -270,7 +271,8 @@ export function compilePatternIterationTracked(
 ): { event: ScheduledEvent; trackId: TrackId }[] {
   const results: { event: ScheduledEvent; trackId: TrackId }[] = [];
   const notesByTrack = groupNotesByTrack(pattern);
-  for (const track of tracks) {
+  for (const planned of tracks) {
+    const track = trackInPattern(planned, pattern); // the pattern's own arp / Track LFO for this track, if it has them
     const busId = busIdFor(track.id);
     const asset = assets.find((a) => a.id === track.assetId);
     const trackEvents: ScheduledEvent[] = [];

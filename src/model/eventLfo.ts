@@ -34,18 +34,17 @@ export function eventLfoOf(track: Pick<Track, "eventLfo">): TrackEventLfo {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(v) ? v : lo));
 
+/** `base` with `patch` applied; numeric fields are clamped. */
+export function patchEventLfo(base: TrackEventLfo, patch: Partial<TrackEventLfo>): TrackEventLfo {
+  const next: TrackEventLfo = { ...base, ...patch };
+  next.rateHz = clamp(next.rateHz, EVENT_LFO_MIN_RATE_HZ, EVENT_LFO_MAX_RATE_HZ);
+  next.depth = clamp(next.depth, 0, 1);
+  return next;
+}
+
 /** Edits the track's LFO (creating it, disabled, on first edit). Numeric fields are clamped. */
 export function setTrackEventLfo(project: Project, trackId: TrackId, patch: Partial<TrackEventLfo>): Project {
-  return {
-    ...project,
-    tracks: project.tracks.map((t) => {
-      if (t.id !== trackId) return t;
-      const next: TrackEventLfo = { ...eventLfoOf(t), ...patch };
-      next.rateHz = clamp(next.rateHz, EVENT_LFO_MIN_RATE_HZ, EVENT_LFO_MAX_RATE_HZ);
-      next.depth = clamp(next.depth, 0, 1);
-      return { ...t, eventLfo: next };
-    }),
-  };
+  return { ...project, tracks: project.tracks.map((t) => (t.id === trackId ? { ...t, eventLfo: patchEventLfo(eventLfoOf(t), patch) } : t)) };
 }
 
 /** Sets one step's participation (0..1). 0 is stored as "absent" so notes that do not take part

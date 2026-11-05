@@ -1,6 +1,7 @@
 import { memo, useMemo } from "react";
 import type { Asset, Note, NoteId, Pattern, Track, TrackEventLfo, TrackId } from "../model/types";
 import { eventLfoOf } from "../model/eventLfo";
+import { hasPatternSettings, trackInPattern } from "../model/patternSettings";
 import { TrackLfoPanel } from "./TrackLfoPanel";
 import { ArpPanel } from "./ArpPanel";
 import { arpOf, type ArpVelocity, type TrackArp } from "../model/arp";
@@ -39,6 +40,8 @@ interface Props {
   scale: ProjectScale;
   onSetTrackArp: (trackId: TrackId, patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> }) => void;
   onSetTrackEventLfo: (trackId: TrackId, patch: Partial<TrackEventLfo>) => void;
+  /** Drop this pattern's own arp / Track LFO for the track: it plays the track's again. */
+  onResetPatternSettings: (trackId: TrackId) => void;
   onSetNoteLfo: (noteId: NoteId, amount: number) => void;
   onSetTrackNotesLfo: (trackId: TrackId, amount: number) => void;
 }
@@ -355,6 +358,7 @@ export const TrackEditor = memo(function TrackEditor({
   scale,
   onSetTrackArp,
   onSetTrackEventLfo,
+  onResetPatternSettings,
   onSetNoteLfo,
   onSetTrackNotesLfo,
 }: Props) {
@@ -372,7 +376,10 @@ export const TrackEditor = memo(function TrackEditor({
     );
   }
 
-  const lfo = eventLfoOf(track);
+  // The arp and Track LFO as THIS pattern plays them: its own where it has them, else the track's.
+  const played = trackInPattern(track, pattern);
+  const own = hasPatternSettings(pattern, track.id);
+  const lfo = eventLfoOf(played);
   const canTie = supportsTie(track);
   const tied = notes.filter((n) => n.tie).length;
   const participating = notes.filter((n) => (n.lfo ?? 0) > 0).length;
@@ -385,7 +392,18 @@ export const TrackEditor = memo(function TrackEditor({
       <div className="fx-panel-title">
         {trackHasSource(track) ? track.name : "— empty —"} — TRACK EDITOR
       </div>
-      <ArpPanel arp={arpOf(track)} noteCount={notes.length} onChange={(patch) => onSetTrackArp(track.id, patch)} />
+      <div className="track-lfo">
+        <div className="track-lfo-head">
+          <span className="mod-slot-title">Arp &amp; LFO</span>
+          <span className="track-lfo-steps">{own ? `${pattern.name}'s own` : "track's, shared by every pattern"}</span>
+          {own && (
+            <button className="btn small" onClick={() => onResetPatternSettings(track.id)} title="Drop this pattern's own arp and Track LFO for this track: it plays the track's again">
+              Use track's
+            </button>
+          )}
+        </div>
+      </div>
+      <ArpPanel arp={arpOf(played)} noteCount={notes.length} onChange={(patch) => onSetTrackArp(track.id, patch)} />
       {canTie && (
         <div className="track-lfo">
           <div className="track-lfo-head">

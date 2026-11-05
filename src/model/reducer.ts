@@ -7,6 +7,7 @@ import * as composer from "./composer";
 import * as fx from "./fx";
 import * as instruments from "./instruments";
 import * as eventLfo from "./eventLfo";
+import * as patternSettings from "./patternSettings";
 import * as automation from "./automation";
 import { sourceParamDefs } from "./modulation";
 import * as trackConfig from "./trackConfig";
@@ -23,7 +24,8 @@ export type Action =
   | { type: "SET_SWING"; swing: number }
   | { type: "SET_PROJECT_NAME"; name: string }
   | { type: "SET_PROJECT_SCALE"; patch: Partial<ProjectScale> }
-  | { type: "SET_TRACK_ARP"; trackId: TrackId; patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> } }
+  | { type: "RESET_PATTERN_TRACK_SETTINGS"; patternId: PatternId; trackId: TrackId }
+  | { type: "SET_TRACK_ARP"; trackId: TrackId; /** With a pattern: that pattern's own arp for the track, else the track's. */ patternId?: PatternId; patch: Partial<Omit<TrackArp, "velocity">> & { velocity?: Partial<ArpVelocity> } }
   | { type: "APPLY_RECIPE"; recipe: Recipe; patternId: PatternId; trackId: TrackId | null; unavailableKinds?: InstrumentKindId[] }
   | { type: "ADD_ASSET"; asset: Asset }
   | { type: "ASSIGN_ASSET"; trackId: TrackId; assetId: AssetId }
@@ -42,7 +44,7 @@ export type Action =
   | { type: "SET_TRACK_SEND_AMOUNT"; trackId: TrackId; amount: number }
   | { type: "SET_TRACK_INSTRUMENT"; trackId: TrackId; kind: InstrumentKindId | null }
   | { type: "SET_INSTRUMENT_PARAM"; trackId: TrackId; paramId: string; value: number }
-  | { type: "SET_TRACK_EVENT_LFO"; trackId: TrackId; patch: Partial<TrackEventLfo> }
+  | { type: "SET_TRACK_EVENT_LFO"; trackId: TrackId; /** With a pattern: that pattern's own Track LFO, else the track's. */ patternId?: PatternId; patch: Partial<TrackEventLfo> }
   | { type: "SET_NOTE_LFO"; patternId: PatternId; noteId: NoteId; amount: number }
   | { type: "SET_TRACK_NOTES_LFO"; patternId: PatternId; trackId: TrackId; amount: number }
   | { type: "ADD_INSTRUMENT_LFO"; trackId: TrackId; target: string }
@@ -133,7 +135,9 @@ export function projectReducer(state: Project, action: Action): Project {
     case "SET_PROJECT_SCALE":
       return setProjectScale(state, action.patch);
     case "SET_TRACK_ARP":
-      return setTrackArp(state, action.trackId, action.patch);
+      return action.patternId ? patternSettings.setPatternArp(state, action.patternId, action.trackId, action.patch) : setTrackArp(state, action.trackId, action.patch);
+    case "RESET_PATTERN_TRACK_SETTINGS":
+      return patternSettings.clearPatternSettings(state, action.patternId, action.trackId);
     case "SET_PROJECT_NAME":
       return project.renameProject(state, action.name);
     case "APPLY_RECIPE": {
@@ -177,7 +181,7 @@ export function projectReducer(state: Project, action: Action): Project {
     case "SET_INSTRUMENT_PARAM":
       return instruments.setInstrumentParam(state, action.trackId, action.paramId, action.value);
     case "SET_TRACK_EVENT_LFO":
-      return eventLfo.setTrackEventLfo(state, action.trackId, action.patch);
+      return action.patternId ? patternSettings.setPatternEventLfo(state, action.patternId, action.trackId, action.patch) : eventLfo.setTrackEventLfo(state, action.trackId, action.patch);
     case "SET_NOTE_LFO":
       return eventLfo.setNoteLfo(state, action.patternId, action.noteId, action.amount);
     case "SET_TRACK_NOTES_LFO":
