@@ -244,3 +244,22 @@ describe("chop mode travels with track and instrument paste", () => {
     expect(trackById(project, "track-3")!.sampleMode).toBe("chop");
   });
 });
+
+describe("chop step tools", () => {
+  it("fills a bar range with wrapping slice indices, replacing only that track's steps there", async () => {
+    const { sequentialChopSlices, randomChopSlices } = await import("../src/model/chop");
+    const { setChopSteps } = await import("../src/model/edit");
+    let { project, pid } = setup();
+    project = setPatternBars(project, pid, 2);
+    project = addNote(project, pid, "track-1", 3);
+    project = addNote(project, pid, "track-2", 3);
+    const next = setChopSteps(project, pid, "track-1", 0, 2, sequentialChopSlices(32, 5));
+    const mine = Object.values(next.patterns[0].notes).filter((n) => n.trackId === "track-1").sort((a, b) => a.start - b.start);
+    expect(mine).toHaveLength(32);
+    expect(mine.map((n) => n.pitch).slice(0, 7)).toEqual([0, 1, 2, 3, 4, 0, 1]);
+    expect(Object.values(next.patterns[0].notes).filter((n) => n.trackId === "track-2")).toHaveLength(1);
+    const bar2 = setChopSteps(project, pid, "track-1", 1, 1, randomChopSlices(16, 3, () => 0.99));
+    expect(Object.values(bar2.patterns[0].notes).filter((n) => n.trackId === "track-1" && n.start >= 16).every((n) => n.pitch === 2)).toBe(true);
+    expect(Object.values(bar2.patterns[0].notes).some((n) => n.trackId === "track-1" && n.start === 3)).toBe(true);
+  });
+});

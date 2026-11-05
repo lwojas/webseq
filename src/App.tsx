@@ -62,7 +62,7 @@ function releaseEngineSamples(rt: AudioRuntime): void {
 
 /** What the Edit panel gets while it isn't showing: shared empties, so nothing is allocated. */
 const NO_SPANS: { startBeat: number; beats: number }[] = [];
-const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[] } = { clipboardRows: [], barTools: [] };
+const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[]; chopTools: BarTool[] } = { clipboardRows: [], barTools: [], chopTools: [] };
 
 /** How long the song must be unchanged before it is sent to a host that plays it natively. */
 const NATIVE_SEQUENCE_DEBOUNCE_MS = 150;
@@ -1326,7 +1326,7 @@ export function App() {
   // panel is actually showing (the Edit tab of the side panel on desktop, the Track tab's Edit
   // sub-tab on a phone) instead of on every render of the app.
   const editShowing = layout.isPhone ? mobileTab === "track" && trackSubTab === "edit" : sidePanelView === "edit";
-  const { clipboardRows, barTools } = editShowing
+  const { clipboardRows, barTools, chopTools } = editShowing
     ? buildEditPanelModel({
         project,
         selectedTrack,
@@ -1521,7 +1521,7 @@ export function App() {
     onAuditionSlice: handleAuditionSlice,
     getAssetBytes,
   };
-  const editProps = { clipboard: clipboardRows, barTools, feedback: clipboardStatus, composer: mainView === "composer" ? composer.details : undefined, history: { canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo } };
+  const editProps = { clipboard: clipboardRows, barTools, chopTools, feedback: clipboardStatus, composer: mainView === "composer" ? composer.details : undefined, history: { canUndo, canRedo, onUndo: handleUndo, onRedo: handleRedo } };
   const trackHeaderProps = {
     track: selectedTrack ?? null,
     label: trackHeadLabel,

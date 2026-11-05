@@ -342,3 +342,22 @@ export function extendTrackLastBar(pattern: Pattern, trackId: TrackId, beatsPerB
   }
   return { ...pattern, notes: { ...pattern.notes, ...added } };
 }
+
+/** Replaces the track's steps in bars `fromBar`..`fromBar + bars - 1` with one one-step note per entry of
+ * `slices` (a chop slice index each, used as the note's pitch), laid on consecutive steps from the first
+ * bar's start; steps beyond `slices` stay empty, and entries past the range or pattern end are dropped.
+ * Notes of other tracks and bars are untouched. */
+export function setTrackChopSteps(pattern: Pattern, beatsPerBar: number, trackId: TrackId, fromBar: number, bars: number, slices: readonly number[]): Pattern {
+  const from = Math.max(0, fromBar) * beatsPerBar;
+  const to = Math.min(pattern.bars, Math.max(0, fromBar) + bars) * beatsPerBar;
+  if (to <= from) return pattern;
+  const kept: Pattern["notes"] = {};
+  for (const [id, n] of Object.entries(pattern.notes)) {
+    if (n.trackId !== trackId || n.start < from || n.start >= to) kept[id] = n;
+  }
+  for (let i = 0; i < slices.length && from + i < to; i++) {
+    const id = nextId("note");
+    kept[id] = { id, trackId, start: from + i, duration: DEFAULT_NOTE_DURATION, velocity: DEFAULT_VELOCITY, pitch: slices[i] };
+  }
+  return { ...pattern, notes: kept };
+}

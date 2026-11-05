@@ -22,7 +22,7 @@ import type {
   VoiceMode,
 } from "./types";
 import { trackById } from "./types";
-import { appendBarsCopy, extendTrackLastBar, type CopiedNote } from "./notes";
+import { appendBarsCopy, extendTrackLastBar, setTrackChopSteps, type CopiedNote } from "./notes";
 import { INSTRUMENT_DEFS } from "./instruments";
 import { clearTrackNotes, pasteNotes, tracksInBank, updatePattern } from "./project";
 import { cloneFxChain, cloneInstrument, copyTrackConfig, pasteTrackConfig, type CopiedTrackConfig } from "./trackConfig";
@@ -221,4 +221,10 @@ export function duplicateBar(project: Project, patternId: PatternId, bar: number
  * omitted), within the existing pattern length. Other tracks and Pattern.bars are untouched. */
 export function extendTrack(project: Project, patternId: PatternId, trackId: TrackId, bars?: number): Project {
   return updatePattern(project, patternId, (p) => extendTrackLastBar(p, trackId, project.beatsPerBar, bars));
+}
+
+/** Writes chop steps (slice indices, one per step) onto the track from the start of `fromBar`, replacing its steps in
+ * the `bars` bars that range covers. The slices are chosen by the caller so this stays deterministic. */
+export function setChopSteps(project: Project, patternId: PatternId, trackId: TrackId, fromBar: number, bars: number, slices: readonly number[]): Project {
+  return updatePattern(project, patternId, (p) => setTrackChopSteps(p, project.beatsPerBar, trackId, fromBar, bars, slices));
 }

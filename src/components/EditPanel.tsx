@@ -30,6 +30,8 @@ interface Props {
   history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
   clipboard: ClipboardRow[];
   barTools: BarTool[];
+  /** Tools for sample-chop tracks; their own section so the Bar Tools list stays short. */
+  chopTools: BarTool[];
   /** Transient result of the last action, cleared by App.tsx after a couple of seconds. */
   feedback: string | null;
   /** Present while the Composer view is up: the details of the selected sequence and lane (the Composer's own toolbar
@@ -37,9 +39,25 @@ interface Props {
   composer?: ComposerDetailsProps;
 }
 
+function ToolGroup({ title, tools }: { title: string; tools: BarTool[] }) {
+  return (
+    <section className="edit-group">
+      <div className="edit-group-title">{title}</div>
+      {tools.map((tool) => (
+        <div key={tool.id} className="edit-row">
+          <button className="track-copy-btn edit-tool-btn" disabled={tool.blocked !== null} title={tool.blocked ?? tool.label} onClick={tool.onRun}>
+            {tool.label}
+          </button>
+          <span className="edit-row-status">{tool.blocked ?? tool.hint ?? ""}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /** The Edit tab: project-level editing operations grouped by what they act on. Presentational —
  * all state and model calls live in App.tsx. */
-export function EditPanel({ history, clipboard, barTools, feedback, composer }: Props) {
+export function EditPanel({ history, clipboard, barTools, chopTools, feedback, composer }: Props) {
   return (
     <div className="edit-panel">
       {composer && <ComposerDetails {...composer} />}
@@ -73,17 +91,8 @@ export function EditPanel({ history, clipboard, barTools, feedback, composer }: 
           </div>
         ))}
       </section>
-      <section className="edit-group">
-        <div className="edit-group-title">Bar Tools</div>
-        {barTools.map((tool) => (
-          <div key={tool.id} className="edit-row">
-            <button className="track-copy-btn edit-tool-btn" disabled={tool.blocked !== null} title={tool.blocked ?? tool.label} onClick={tool.onRun}>
-              {tool.label}
-            </button>
-            <span className="edit-row-status">{tool.blocked ?? tool.hint ?? ""}</span>
-          </div>
-        ))}
-      </section>
+      <ToolGroup title="Bar Tools" tools={barTools} />
+      <ToolGroup title="Chop Tools" tools={chopTools} />
         </>
       )}
       {feedback && <div className="clipboard-status edit-feedback">{feedback}</div>}

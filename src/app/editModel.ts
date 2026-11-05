@@ -5,6 +5,7 @@
 import type { Dispatch } from "react";
 import type { Action } from "../model/reducer";
 import type { Note, Pattern, Project, Track, TrackId } from "../model/types";
+import { randomChopSlices, sequentialChopSlices, sliceCount, effectiveSampleMode } from "../model/chop";
 import { BANK_SIZE } from "../model/project";
 import { MAX_PATTERN_BARS, trackBarExtent } from "../model/notes";
 import type { CopiedNote } from "../model/notes";
@@ -62,7 +63,7 @@ export interface EditPanelContext {
   onClearSequence: (trackId: TrackId) => void;
 }
 
-export function buildEditPanelModel(ctx: EditPanelContext): { clipboardRows: ClipboardRow[]; barTools: BarTool[] } {
+export function buildEditPanelModel(ctx: EditPanelContext): { clipboardRows: ClipboardRow[]; barTools: BarTool[]; chopTools: BarTool[] } {
   const {
     project,
     selectedTrack,
@@ -239,5 +240,34 @@ export function buildEditPanelModel(ctx: EditPanelContext): { clipboardRows: Cli
     },
   });
   barTools.push(extendTool("extend-track-1", "Extend Track 1 Bar", 1), extendTool("extend-track-end", "Extend Track to Sequence End", undefined));
-  return { clipboardRows, barTools };
+  // Chop tools: write one slice per step of the target bars. Chop-mode sample tracks only.
+  const chopAsset = selectedTrack?.assetId != null ? project.assets.find((a) => a.id === selectedTrack.assetId) : undefined;
+  const chops = sliceCount(chopAsset);
+  const chopBlocked = !selectedTrack
+    ? noTrack
+    : effectiveSampleMode(selectedTrack) !== "chop"
+      ? "Needs a sample chop track"
+      : !chopAsset
+        ? "Track has no sample"
+        : null;
+  const bpb = project.beatsPerBar;
+  // Bar to randomise: the selected step's bar, else the first (a one-bar sequence has no choice to make).
+  const randomBar = selectedStepBar ?? 0;
+  const chopTool = (id: string, label: string, hint: string, fromBar: number, bars: number, pick: (steps: number, n: number) => number[]): BarTool => ({
+    id, label, blocked: chopBlocked, hint: chopBlocked ? null : hint,
+    onRun: () => {
+      if (!selectedTrack || chopBlocked) return;
+      dispatch({ type: "SET_CHOP_STEPS", patternId: selectedPattern.id, trackId: selectedTrack.id, fromBar, bars, slices: pick(bars * bpb, chops) });
+      setClipboardStatus(`${trackLabel(project.tracks, selectedTrack.id)} · ${label.toLowerCase()}`);
+    },
+  });
+  const barHint = (verb: string) =>
+    selectedPattern.bars > 1 && selectedStepBar === null ? `${verb} bar 1 (select a step to pick another)` : `${verb} bar ${randomBar + 1}`;
+  const chopTools: BarTool[] = [
+    chopTool("fill-bar-chops", "Fill Bar with Chop Steps", barHint("Chops 1…"), randomBar, 1, sequentialChopSlices),
+    chopTool("fill-sequence-chops", "Fill Sequence with Chop Steps", `Chops 1… over ${selectedPattern.bars} bar${selectedPattern.bars === 1 ? "" : "s"}`, 0, selectedPattern.bars, sequentialChopSlices),
+    chopTool("randomise-bar-chops", "Randomise Bar with Chop Steps", barHint("Random chops,"), randomBar, 1, randomChopSlices),
+    chopTool("randomise-sequence-chops", "Randomise Sequence with Chops", `Random chops over ${selectedPattern.bars} bar${selectedPattern.bars === 1 ? "" : "s"}`, 0, selectedPattern.bars, randomChopSlices),
+  ];
+  return { clipboardRows, barTools, chopTools };
 }

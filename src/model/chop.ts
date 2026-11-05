@@ -58,3 +58,14 @@ export function sliceCount(asset: Pick<Asset, "cues"> | null | undefined): numbe
 export function assetLengthFrames(asset: Pick<Asset, "duration" | "sampleRate">): number {
   return Math.round(asset.duration * asset.sampleRate);
 }
+
+/** Chop slice index for each of `steps` steps, counting up from slice 0 and wrapping at `slices`. */
+export function sequentialChopSlices(steps: number, slices: number): number[] {
+  return Array.from({ length: steps }, (_, i) => i % Math.max(1, slices));
+}
+
+/** A random slice index (0..slices-1) for each of `steps` steps. `random` is injectable for tests. */
+export function randomChopSlices(steps: number, slices: number, random: () => number = Math.random): number[] {
+  const n = Math.max(1, slices);
+  return Array.from({ length: steps }, () => Math.min(n - 1, Math.floor(random() * n)));
+}

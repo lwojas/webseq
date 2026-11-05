@@ -72,6 +72,7 @@ export type Action =
   | { type: "PASTE_BANK"; bank: number; clip: edit.BankClip }
   | { type: "DUPLICATE_SEQUENCE"; patternId: PatternId }
   | { type: "DUPLICATE_BAR"; patternId: PatternId; bar: number }
+  | { type: "SET_CHOP_STEPS"; patternId: PatternId; trackId: TrackId; fromBar: number; bars: number; slices: number[] }
   | { type: "EXTEND_TRACK"; patternId: PatternId; trackId: TrackId; bars?: number }
   | { type: "RESIZE_NOTE"; patternId: PatternId; noteId: NoteId; duration: number; resolution?: number }
   | { type: "MOVE_NOTE"; patternId: PatternId; noteId: NoteId; start: number; resolution?: number }
@@ -238,6 +239,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return edit.duplicateSequence(state, action.patternId);
     case "DUPLICATE_BAR":
       return edit.duplicateBar(state, action.patternId, action.bar);
+    case "SET_CHOP_STEPS":
+      return edit.setChopSteps(state, action.patternId, action.trackId, action.fromBar, action.bars, action.slices);
     case "EXTEND_TRACK":
       return edit.extendTrack(state, action.patternId, action.trackId, action.bars);
     case "RESIZE_NOTE":
