@@ -6,7 +6,7 @@ import { AutomationLane } from "./AutomationLane";
 import type { AutomationRowProps } from "./AutomationRow";
 import { RafText } from "./RafText";
 
-/** Pixels per bar. Fixed: the timeline is a compact overview, not a zoomable editor. */
+/** Pixels per bar at 100% zoom. */
 export const COMPOSER_BAR_PX = 96;
 /** Empty space kept inside the timeline before bar 1 and after the last bar: the canvas has its own inset, so
  * the first sequence never touches the lane header or the edge, and there is always room to drop one at the end. */
@@ -17,6 +17,20 @@ export const COMPOSER_HEADER_PX = 168;
 const TAIL_BARS = 4;
 const MIN_BARS = 16;
 const CLICK_VS_DRAG_PX = 4;
+/** Discrete zoom levels, as a percentage of COMPOSER_BAR_PX (100 = the default view). */
+const ZOOM_PERCENTS = [25, 50, 100, 125, 150] as const;
+const DEFAULT_ZOOM_INDEX = ZOOM_PERCENTS.indexOf(100);
+const ZOOM_STORAGE_KEY = "webseq.composerZoomIndex";
+
+function loadZoomIndex(): number {
+  try {
+    const stored = Number(localStorage.getItem(ZOOM_STORAGE_KEY));
+    if (Number.isInteger(stored) && stored >= 0 && stored < ZOOM_PERCENTS.length) return stored;
+  } catch {
+    // storage unavailable: fall back to the default
+  }
+  return DEFAULT_ZOOM_INDEX;
+}
 
 interface Drag {
   id: SequenceId;
@@ -105,9 +119,13 @@ export function ComposerTimeline({
   const [drag, setDrag] = useState<Drag | null>(null);
   const lanes = composerLanes(project);
   const bpb = project.beatsPerBar;
+  const [zoomIndex, setZoomIndex] = useState(loadZoomIndex);
+  const zoomPercent = ZOOM_PERCENTS[zoomIndex];
+  const barPx = (COMPOSER_BAR_PX * zoomPercent) / 100;
   const totalBars = Math.max(MIN_BARS, timelineEnd(project) + TAIL_BARS);
-  const trackWidth = COMPOSER_INSET_PX * 2 + totalBars * COMPOSER_BAR_PX;
-  const playheadRef = usePlayheadAnimation(getSongBeat, COMPOSER_BAR_PX / bpb, true);
+  const prevBarPx = useRef(barPx);
+  const trackWidth = COMPOSER_INSET_PX * 2 + totalBars * barPx;
+  const playheadRef = usePlayheadAnimation(getSongBeat, barPx / bpb, true);
   const selectedSeq = selectedSequenceId ? lanes.flatMap((l) => l.sequences).find((s) => s.id === selectedSequenceId) : undefined;
 
   // Horizontal navigation belongs to the timeline. A mostly-sideways wheel/trackpad gesture is consumed here (so the
@@ -125,19 +143,35 @@ export function ComposerTimeline({
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  // Remember the zoom, and keep the bar at the centre of the view under the centre when it changes.
+  useLayoutEffect(() => {
+    try {
+      localStorage.setItem(ZOOM_STORAGE_KEY, String(zoomIndex));
+    } catch {
+      // not persisted; still works for this session
+    }
+    const el = viewportRef.current;
+    const oldPx = prevBarPx.current;
+    prevBarPx.current = barPx;
+    if (!el || oldPx === barPx) return;
+    const half = (el.clientWidth - COMPOSER_HEADER_PX) / 2;
+    const centreBar = (el.scrollLeft + half - COMPOSER_INSET_PX) / oldPx;
+    el.scrollLeft = Math.max(0, COMPOSER_INSET_PX + centreBar * barPx - half);
+  }, [zoomIndex, barPx]);
+
   // Back from the sequencer: restore the scroll, then bring the selection into view only if it is off screen.
   useLayoutEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
     el.scrollLeft = scrollMemory.current;
-    revealSelection(el, selectedSeq?.start, selectedSeq && sequenceBars(project, selectedSeq));
+    revealSelection(el, barPx, selectedSeq?.start, selectedSeq && sequenceBars(project, selectedSeq));
     // Only when the view appears — not on every project edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // Keep the selection in view when it changes while here (e.g. a duplicate lands off screen).
   useEffect(() => {
     const el = viewportRef.current;
-    if (el) revealSelection(el, selectedSeq?.start, selectedSeq && sequenceBars(project, selectedSeq));
+    if (el) revealSelection(el, barPx, selectedSeq?.start, selectedSeq && sequenceBars(project, selectedSeq));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSequenceId]);
 
@@ -155,7 +189,7 @@ export function ComposerTimeline({
     const onMoveEvt = (ev: PointerEvent) => {
       if (Math.abs(ev.clientX - startX) > CLICK_VS_DRAG_PX) moved = true;
       if (!moved) return;
-      const delta = Math.round((ev.clientX - startX) / COMPOSER_BAR_PX);
+      const delta = Math.round((ev.clientX - startX) / barPx);
       if (mode === "move") {
         const under = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-lane-id]")?.dataset.laneId;
         const target = under ?? current.laneId;
@@ -181,12 +215,20 @@ export function ComposerTimeline({
     window.addEventListener("pointercancel", onUp);
   };
 
-  const left = (bar: number) => COMPOSER_INSET_PX + bar * COMPOSER_BAR_PX;
-  const gridStyle = { width: trackWidth, backgroundSize: `${COMPOSER_BAR_PX}px 100%`, backgroundPosition: `${COMPOSER_INSET_PX}px 0` };
+  const left = (bar: number) => COMPOSER_INSET_PX + bar * barPx;
+  const gridStyle = { width: trackWidth, backgroundSize: `${barPx}px 100%`, backgroundPosition: `${COMPOSER_INSET_PX}px 0` };
 
   return (
     <div className="composer">
-      <ComposerToolbar {...toolbar} getSongText={getSongText} />
+      <ComposerToolbar
+        {...toolbar}
+        getSongText={getSongText}
+        zoomPercent={zoomPercent}
+        canZoomIn={zoomIndex < ZOOM_PERCENTS.length - 1}
+        canZoomOut={zoomIndex > 0}
+        onZoomIn={() => setZoomIndex((i) => Math.min(ZOOM_PERCENTS.length - 1, i + 1))}
+        onZoomOut={() => setZoomIndex((i) => Math.max(0, i - 1))}
+      />
       <div className="composer-viewport" ref={viewportRef} onScroll={(e) => (scrollMemory.current = e.currentTarget.scrollLeft)}>
         <div className="composer-canvas" style={{ width: COMPOSER_HEADER_PX + trackWidth }}>
           <div className="composer-ruler">
@@ -197,7 +239,7 @@ export function ComposerTimeline({
               title="Click to put the marker on the nearest bar line (click it again to clear)"
               onPointerDown={(e) => {
                 const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
-                const bar = Math.max(0, Math.round((x - COMPOSER_INSET_PX) / COMPOSER_BAR_PX));
+                const bar = Math.max(0, Math.round((x - COMPOSER_INSET_PX) / barPx));
                 onSetMarker(bar === marker ? null : bar);
               }}
             >
@@ -251,7 +293,7 @@ export function ComposerTimeline({
                         <div
                           key={seq.id}
                           className={`composer-seq ${seq.id === selectedSequenceId ? "selected" : ""} ${playingSequenceIds.has(seq.id) ? "playing" : ""} ${dragged?.mode === "move" ? "dragging" : ""}`}
-                          style={{ left: left(seq.start), width: (dragged?.mode === "resize" ? dragged.bars : bars) * COMPOSER_BAR_PX - 2, background: seq.color }}
+                          style={{ left: left(seq.start), width: (dragged?.mode === "resize" ? dragged.bars : bars) * barPx - 2, background: seq.color }}
                           role="button"
                           tabIndex={0}
                           aria-pressed={seq.id === selectedSequenceId}
@@ -271,7 +313,7 @@ export function ComposerTimeline({
                     {drag?.mode === "move" && drag.laneId === lane.id && (
                       <div
                         className={`composer-seq ghost ${drag.valid ? "" : "invalid"}`}
-                        style={{ left: left(drag.start), width: drag.bars * COMPOSER_BAR_PX - 2 }}
+                        style={{ left: left(drag.start), width: drag.bars * barPx - 2 }}
                       />
                     )}
                   </div>
@@ -304,7 +346,7 @@ export function ComposerTimeline({
                         paramDef={automation.row!.paramDef}
                         totalBeats={span.beats}
                         beatsPerBar={bpb}
-                        pxPerBeat={COMPOSER_BAR_PX / bpb}
+                        pxPerBeat={barPx / bpb}
                         onSetPoint={automation.row!.onSetPoint}
                         onRemovePoint={automation.row!.onRemovePoint}
                       />
@@ -331,22 +373,34 @@ export function ComposerTimeline({
 
 /** Scrolls `el` just enough to show bars [start, start + bars) if they are off screen. The lane headers are sticky at the
  * left, so the visible part of the timeline is the viewport minus that column. */
-function revealSelection(el: HTMLElement, start: number | undefined, bars: number | undefined): void {
+function revealSelection(el: HTMLElement, barPx: number, start: number | undefined, bars: number | undefined): void {
   if (start === undefined || bars === undefined) return;
-  const from = COMPOSER_INSET_PX + start * COMPOSER_BAR_PX; // within the lane track
-  const to = from + bars * COMPOSER_BAR_PX;
+  const from = COMPOSER_INSET_PX + start * barPx; // within the lane track
+  const to = from + bars * barPx;
   const visibleFrom = el.scrollLeft; // track coordinates: the track's own origin sits right of the sticky header
   const visibleTo = el.scrollLeft + el.clientWidth - COMPOSER_HEADER_PX;
   if (from < visibleFrom || to > visibleTo) el.scrollLeft = Math.max(0, from - COMPOSER_INSET_PX);
 }
 
-function ComposerToolbar(p: ComposerToolbarProps & { getSongText: () => string }) {
+function ComposerToolbar(
+  p: ComposerToolbarProps & { getSongText: () => string; zoomPercent: number; canZoomIn: boolean; canZoomOut: boolean; onZoomIn: () => void; onZoomOut: () => void },
+) {
   const needs = p.hasSelection ? undefined : "Select a sequence first";
   return (
     <div className="composer-toolbar">
       <span className="composer-status-label">Song</span>
       <RafText className="composer-status-text" getText={p.getSongText} />
       <span className="composer-toolbar-spacer" />
+      <div className="field zoom-control">
+        <span>Zoom</span>
+        <button className="btn small" onClick={p.onZoomOut} disabled={!p.canZoomOut} aria-label="Zoom out" title="Zoom out">
+          −
+        </button>
+        <span className="zoom-level">{p.zoomPercent}%</span>
+        <button className="btn small" onClick={p.onZoomIn} disabled={!p.canZoomIn} aria-label="Zoom in" title="Zoom in">
+          +
+        </button>
+      </div>
       <button className="btn small" disabled={!p.canNewSequence} onClick={p.onNewSequence} title={p.canNewSequence ? "New empty sequence at the marker (or the end of the selected lane if there is no marker)" : p.blockedReason}>
         + Sequence
       </button>
