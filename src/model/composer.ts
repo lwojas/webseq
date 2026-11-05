@@ -22,6 +22,7 @@
 // Nothing here is converted into a patternChain. Audio automation is not part of it either: tracks' and the master's
 // existing automation lanes are replayed over the sequences they apply to (automationAppliesTo).
 import { MAX_NOTE_PITCH, MAX_PATTERN_BARS, MIN_NOTE_PITCH, extendBarsByRepeat } from "./notes";
+import { lanesInPattern } from "./patternAutomation";
 
 /** The shortest a modifier can make a note (a quarter of a beat). */
 const MIN_NOTE_DURATION = 0.25;
@@ -439,7 +440,7 @@ export interface SongInstance {
   startBeat: number;
   /** Length in beats (always > 0). */
   beats: number;
-  /** The tracks the pattern has notes for: what "this sequence plays a track" means for that track's automation. */
+  /** The tracks the pattern has notes or automation for: what "this sequence plays a track" means for that track's automation. */
   noteTracks: ReadonlySet<TrackId>;
 }
 
@@ -456,6 +457,8 @@ export function songInstances(project: Project): SongInstance[] {
       const pattern = patternOf(project, seq);
       if (!pattern || pattern.bars < 1) continue;
       const noteTracks = new Set(Object.values(pattern.notes).map((n) => n.trackId));
+      // A track with automation in this pattern (e.g. a filter on an empty FX-send track) plays it here, notes or not.
+      for (const t of project.tracks) if (lanesInPattern(project, pattern, t.id).some((l) => l.events.length > 0)) noteTracks.add(t.id);
       out.push({ sequenceId: seq.id, laneId: lane.id, laneIndex, pattern, modifiers, startBeat: seq.start * bpb, beats: pattern.bars * bpb, noteTracks });
     }
   });
