@@ -512,6 +512,35 @@ export const INSTRUMENT_DEFS: Record<InstrumentKindId, InstrumentDef> = {
       ...matrixCells(),
     ],
   },
+  // Noise (webdsp docs/noise-instrument.md): noise as the primary source. Six sources, a one-knob spectral tilt
+  // (Color), a grain gate (Texture, rate = Density), a six-band resonator bank (Tune, Resonance, Spread, Sweep),
+  // a bounded drive with regenerative feedback and an output tilt (Tone); ids are the engine's own (lowercase)
+  // names. Sustained: a hit (Sustain 0, the default) ends itself within the note, a drone or riser (Sustain 1,
+  // long Attack) holds for the note's length. Tune is the resonator root, not a played pitch: the track's root
+  // note is derived from it, so that note plays it as set and others shift it by semitones.
+  noise: {
+    kind: "noise",
+    label: "Noise",
+    category: "synth",
+    sustained: true,
+    params: [
+      { id: "source", label: "Source", min: 0, max: 5, step: 1, default: 0, options: stepOptions(["White", "Pink", "Brown", "Metal", "Crackle", "Burst"]) },
+      { id: "color", label: "Color", min: 0, max: 1, step: 0.01, default: 0.6 },
+      { id: "texture", label: "Texture", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "density", label: "Density", min: 2, max: 4000, step: 1, unit: "Hz", default: 40 },
+      { id: "tune", label: "Tune", min: 40, max: 12000, step: 1, unit: "Hz", default: 900 },
+      { id: "resonance", label: "Resonance", min: 0, max: 1, step: 0.01, default: 0.4 },
+      { id: "spread", label: "Spread", min: 0, max: 1, step: 0.01, default: 0.45 },
+      { id: "sweep", label: "Sweep", min: -4, max: 4, step: 0.05, unit: "oct", default: 0 },
+      { id: "attack", label: "Attack", min: 0.0005, max: 8, step: 0.0005, unit: "s", default: 0.001 },
+      { id: "decay", label: "Decay", min: 0.02, max: 8, step: 0.01, unit: "s", default: 0.25 },
+      { id: "sustain", label: "Sustain", min: 0, max: 1, step: 0.01, default: 0 },
+      { id: "release", label: "Release", min: 0.005, max: 8, step: 0.005, unit: "s", default: 0.2 },
+      { id: "drive", label: "Drive", min: 0, max: 1, step: 0.01, default: 0.15 },
+      { id: "tone", label: "Tone", min: 0, max: 1, step: 0.01, default: 0.5 },
+      { id: "mix", label: "Mix", min: 0, max: 1, step: 0.01, default: 0.5 },
+    ],
+  },
 };
 
 // Source gain: webdsp gives every instrument kind a shared "gain" control (dB, default 0 = unity)

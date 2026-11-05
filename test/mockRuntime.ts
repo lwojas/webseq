@@ -23,6 +23,7 @@ export const INSTRUMENT_PARAM_NAMES: Record<string, string[]> = {
   percsynth: ["tune", "osc1wave", "osc1level", "osc2wave", "osc2pitch", "osc2level", "osc2fm", "pitchenv", "pitchdecay", "osc2env", "noise", "noisetone", "noisedecay", "filtertype", "cutoff", "resonance", "filterenv", "filterdecay", "attack", "decay", "sustain", "release", "drive"],
   edge: ["tune", "shape", "bright", "brightenv", "detune", "pitchenv", "pitchdecay", "routing", "filtera", "filterb", "cutoff", "spread", "resonance", "filterenv", "tonedecay", "lforate", "lfopitch", "lfofilter", "attack", "decay", "sustain", "release"],
   matrix: [...MATRIX_NAMES, ...MATRIX_CELLS],
+  noise: ["source", "color", "texture", "density", "tune", "resonance", "spread", "sweep", "attack", "decay", "sustain", "release", "drive", "tone", "mix"],
   fm: ["tune", "ratio", "timbre", "snap", "tone", "attack", "decay", "sustain", "release", "legato", "slide"],
   bass: ["tune", "body", "bite", "cutoff", "resonance", "attack", "decay", "sustain", "release", "legato", "slide"],
 };
@@ -63,6 +64,7 @@ const KIND_IDS: [string, InstrumentKind][] = [
   ["percsynth", InstrumentKind.PercSynth],
   ["edge", InstrumentKind.Edge],
   ["matrix", InstrumentKind.Matrix],
+  ["noise", InstrumentKind.Noise],
 ];
 
 export function mockRuntime() {

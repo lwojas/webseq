@@ -180,7 +180,7 @@ describe("compileInstrumentNotes", () => {
   });
 
   it("has no Filter Mod control: the shared filter modulation was removed from Bass and Pulse", () => {
-    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth", "edge", "matrix"] as const) {
+    for (const kind of ["bass", "pulse", "pad", "fm", "hypersaw", "pwmbeast", "dm_thump", "dm_metal", "dm_tone", "dm_crack", "dm_chaos", "percsynth", "edge", "matrix", "noise"] as const) {
       expect(INSTRUMENT_DEFS[kind].params.some((p) => p.id === "filterMod")).toBe(false);
     }
   });
@@ -249,6 +249,24 @@ describe("compileInstrumentNotes", () => {
     expect(def.params.find((p) => p.id === "pitchenv")!.min).toBeLessThan(0);   // a signed transient
     const proj = projectWithNotes("edge");
     expect(rootMidiNote(proj.tracks[0])).toBeCloseTo(57);   // 220 Hz = A3
+    expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeGreaterThan(0);
+  });
+
+  it("lists Noise as sustained, with every engine param and the six sources as options", () => {
+    const def = INSTRUMENT_DEFS.noise;
+    expect(def.sustained).toBe(true);
+    expect(def.params.map((p) => p.id)).toEqual(["gain", ...INSTRUMENT_PARAM_NAMES.noise]);
+    expect(new Set(def.params.map((p) => p.id)).size).toBe(def.params.length);
+    for (const p of def.params) {
+      expect(p.default).toBeGreaterThanOrEqual(p.min);
+      expect(p.default).toBeLessThanOrEqual(p.max);
+    }
+    expect(def.params.find((p) => p.id === "source")?.options?.map((o) => o.label)).toEqual(["White", "Pink", "Brown", "Metal", "Crackle", "Burst"]);
+    expect(def.params.find((p) => p.id === "sweep")!.min).toBeLessThan(0);   // signed
+    expect(def.params.find((p) => p.id === "sustain")!.default).toBe(0);     // a one-shot hit out of the box
+    expect(def.params.find((p) => p.id === "attack")!.max).toBeGreaterThanOrEqual(8);   // risers
+    const proj = projectWithNotes("noise");
+    expect(rootMidiNote(proj.tracks[0])).toBeCloseTo(12 * Math.log2(900 / 440) + 69);   // 900 Hz
     expect(compileInstrumentNotes(proj.patterns[0], proj.tracks, 120, 10)[0].params.duration).toBeGreaterThan(0);
   });
 
