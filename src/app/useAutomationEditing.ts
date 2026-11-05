@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState, type Dispatch } from "react";
 import type { Action } from "../model/reducer";
 import { applyTemplate, templateById, type TemplateRange } from "../model/automationTemplates";
 import { findLane } from "../model/automation";
+import { lanesInPattern } from "../model/patternAutomation";
 import { FX_DEFS } from "../model/fx";
 import { fxParamDefs, sourceParamDefs, type ModParamDef } from "../model/modulation";
 import { DEFAULT_ENVELOPE, totalBeats, trackById, type FxId, type FxInstance, type FxTarget, type Pattern, type Project, type Track } from "../model/types";
@@ -46,6 +47,9 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
 
   const owner = selectedTarget === "master" ? project.master : trackById(project, selectedTarget);
   const track = selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null);
+  // The lanes this pattern plays for the owner (its own, else the owner's); every edit below lands on the pattern.
+  const ownerLanes = lanesInPattern(project, pattern, selectedTarget);
+  const patternId = pattern.id;
   const beats = totalBeats(pattern, project.beatsPerBar);
   const beatsPerBar = project.beatsPerBar;
 
@@ -56,13 +60,13 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
       if (fxId && !fx) return undefined;
       const params = fx ? fxParamDefs(fx) : track ? sourceParamDefs(track) : [];
       if (params.length === 0) return undefined;
-      const lanes = owner.automation.filter((l) => (l.fxId ?? null) === fxId);
+      const lanes = ownerLanes.filter((l) => (l.fxId ?? null) === fxId);
       const def = (p: string) => params.find((d) => d.id === p);
       const setFocus = (parameter: string | null) => setLaneFocus(parameter ? { target: selectedTarget, fxId, parameter } : null);
       const startFlat = (parameter: string) => {
         const d = def(parameter);
         if (!d) return;
-        dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position: 0, value: baseValue(d, fx, track, project) });
+        dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position: 0, value: baseValue(d, fx, track, project), patternId });
       };
       return {
         params,
@@ -79,15 +83,15 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
         },
         onFocus: setFocus,
         onReset: (parameter) => {
-          dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter });
+          dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter, patternId });
           startFlat(parameter);
         },
         onRemove: (parameter) => {
-          dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter });
+          dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter, patternId });
           if (focus && focus.fxId === fxId && focus.parameter === parameter) setLaneFocus(null);
         },
         onMove: (from, to) => {
-          dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter: from });
+          dispatch({ type: "CLEAR_AUTOMATION_LANE", target: selectedTarget, fxId, parameter: from, patternId });
           startFlat(to);
           setFocus(to);
         },
@@ -96,14 +100,14 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
           const t = templateById(templateId);
           if (!d || !t) return;
           const { from, to, events } = applyTemplate(t, range, d, beats, beatsPerBar);
-          dispatch({ type: "REPLACE_AUTOMATION_RANGE", target: selectedTarget, fxId, parameter, from, to, events });
+          dispatch({ type: "REPLACE_AUTOMATION_RANGE", target: selectedTarget, fxId, parameter, from, to, events, patternId });
           setFocus(parameter);
         },
-        onSetPoint: (parameter, position, value) => dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, value }),
-        onRemovePoint: (parameter, position) => dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position }),
+        onSetPoint: (parameter, position, value) => dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, value, patternId }),
+        onRemovePoint: (parameter, position) => dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, patternId }),
       };
     },
-    [owner, track, project, dispatch, selectedTarget, focus, beats, beatsPerBar, pxPerBeat, timelineVisible],
+    [owner, ownerLanes, patternId, track, project, dispatch, selectedTarget, focus, beats, beatsPerBar, pxPerBeat, timelineVisible],
   );
 
   // Handlers depend only on the focus and the target, never on the project, so they keep their
@@ -112,11 +116,11 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
     if (!focus) return null;
     const { fxId, parameter } = focus;
     return {
-      onSetPoint: (position: number, value: number) => dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, value }),
-      onRemovePoint: (position: number) => dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position }),
+      onSetPoint: (position: number, value: number) => dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, value, patternId }),
+      onRemovePoint: (position: number) => dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, patternId }),
       onClose: () => setLaneFocus(null),
     };
-  }, [focus, dispatch, selectedTarget]);
+  }, [focus, dispatch, selectedTarget, patternId]);
 
   /** The focused lane as a row of the timeline, or null when nothing is focused (or it is gone). */
   const row = useMemo<AutomationRowProps | null>(() => {
@@ -125,11 +129,11 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
     if (focus.fxId && !fx) return null;
     const params = fx ? fxParamDefs(fx) : track ? sourceParamDefs(track) : [];
     const def = params.find((p) => p.id === focus.parameter);
-    const lane = findLane(owner.automation, focus.fxId, focus.parameter);
+    const lane = findLane(ownerLanes, focus.fxId, focus.parameter);
     if (!def || !lane) return null;
     const owned = fx ? FX_DEFS[fx.type].label : (track?.name ?? "");
     return { label: `${owned} · ${def.label}`, lane, paramDef: def, ...rowHandlers };
-  }, [focus, owner, track, rowHandlers]);
+  }, [focus, owner, ownerLanes, track, rowHandlers]);
 
   return { automationFor, row, clearFocus: useCallback(() => setLaneFocus(null), []) };
 }

@@ -8,10 +8,13 @@
 // parameter (the other being its LFO stack, model/modulation.ts); it supplies the parameter's
 // base value and the engine's LFOs ride on top.
 
-import type { AutomationEvent, AutomationLane, FxId, FxTarget, Project } from "./types";
+import type { AutomationEvent, AutomationLane, FxId, FxTarget, PatternId, Project } from "./types";
 import { fxOwner } from "./types";
+import { updatePatternAutomation } from "./patternAutomation";
 
-function updateAutomation(project: Project, target: FxTarget, update: (lanes: AutomationLane[]) => AutomationLane[]): Project {
+/** With a `patternId` the edit lands on that pattern's own lanes for the owner (model/patternAutomation.ts), else on the owner's. */
+function updateAutomation(project: Project, target: FxTarget, update: (lanes: AutomationLane[]) => AutomationLane[], patternId?: PatternId): Project {
+  if (patternId) return updatePatternAutomation(project, patternId, target, update);
   const owner = fxOwner(project, target);
   if (!owner) return project;
   const automation = update(owner.automation);
@@ -36,6 +39,7 @@ export function setAutomationPoint(
   parameter: string,
   position: number,
   value: number,
+  patternId?: PatternId,
 ): Project {
   const roundedPosition = Math.max(0, Math.round(position * 4) / 4); // quarter-beat resolution
   return updateAutomation(project, target, (lanes) => {
@@ -47,7 +51,7 @@ export function setAutomationPoint(
     const withoutSamePosition = existing.events.filter((e) => e.position !== roundedPosition);
     const events = [...withoutSamePosition, nextEvent].sort((a, b) => a.position - b.position);
     return lanes.map((l) => (l === existing ? { ...l, events } : l));
-  });
+  }, patternId);
 }
 
 export function removeAutomationPoint(
@@ -56,6 +60,7 @@ export function removeAutomationPoint(
   fxId: FxId | null,
   parameter: string,
   position: number,
+  patternId?: PatternId,
 ): Project {
   return updateAutomation(project, target, (lanes) =>
     lanes
@@ -65,11 +70,11 @@ export function removeAutomationPoint(
           : l,
       )
       .filter((l) => l.events.length > 0),
-  );
+  patternId);
 }
 
-export function clearAutomationLane(project: Project, target: FxTarget, fxId: FxId | null, parameter: string): Project {
-  return updateAutomation(project, target, (lanes) => lanes.filter((l) => laneKey(l.fxId, l.parameter) !== laneKey(fxId, parameter)));
+export function clearAutomationLane(project: Project, target: FxTarget, fxId: FxId | null, parameter: string, patternId?: PatternId): Project {
+  return updateAutomation(project, target, (lanes) => lanes.filter((l) => laneKey(l.fxId, l.parameter) !== laneKey(fxId, parameter)), patternId);
 }
 
 /** Replaces every point in [from, to] (beats, inclusive) of one lane with `events`, leaving the
@@ -83,6 +88,7 @@ export function replaceAutomationRange(
   from: number,
   to: number,
   events: AutomationEvent[],
+  patternId?: PatternId,
 ): Project {
   return updateAutomation(project, target, (lanes) => {
     const key = laneKey(fxId, parameter);
@@ -92,7 +98,7 @@ export function replaceAutomationRange(
     if (merged.length === 0) return lanes.filter((l) => laneKey(l.fxId, l.parameter) !== key);
     if (!existing) return [...lanes, fxId != null ? { fxId, parameter, events: merged } : { parameter, events: merged }];
     return lanes.map((l) => (l === existing ? { ...l, events: merged } : l));
-  });
+  }, patternId);
 }
 
 /** Drops source lanes (no fxId) whose parameter the track's current source doesn't have — after

@@ -22,7 +22,8 @@
 // lane's next event.
 import { SampleParam, type AudioRuntime, type BusId, type ScheduledParam, type SequenceParamEvent } from "webdsp";
 import { valueAtBeat } from "../model/automation";
-import type { AutomationLane, FxTarget, Project, Track, TrackId } from "../model/types";
+import { projectInPattern } from "../model/patternAutomation";
+import type { AutomationLane, FxTarget, Pattern, PatternId, Project, Track, TrackId } from "../model/types";
 import { DEFAULT_ENVELOPE } from "../model/types";
 import { fxChainsFor } from "./fxChain";
 import { instrumentHostFor } from "./instruments";
@@ -87,6 +88,8 @@ export function laneStateAt(lane: AutomationLane, beat: number): LaneEvent | nul
 interface StepWindowLike {
   startTime: number;
   endTime: number;
+  /** The pattern this window plays: its own automation (Pattern.automation) replaces the owner's lanes there. */
+  patternId?: PatternId;
 }
 
 /** Who owns an automation lane: the master or a track. Their lanes are pattern-local (they replay from the start of
@@ -229,12 +232,22 @@ export function scheduleAutomation(
   // A plain window list is Pattern mode: every lane replays over every step. A WindowsFor is Song mode, where each
   // owner has its own windows.
   const windowsFor: WindowsFor = typeof windows === "function" ? windows : () => windows;
-  const refs = automationRefs(runtime, project, getBusId, state, { master: true, tracks: null });
   const events: ScheduledParam[] = [];
 
-  for (const ref of refs) {
-    const windows = windowsFor(ref.owner);
+  // A pattern may carry its own lanes for an owner (Pattern.automation). Each such pattern is a variant that schedules only its own
+  // windows; the base variant (the owners' own lanes) schedules the windows of patterns without an override for that owner.
+  const patternById = new Map(project.patterns.map((p) => [p.id, p] as const));
+  const variants: (Pattern | undefined)[] = [undefined, ...project.patterns.filter((p) => p.automation && Object.keys(p.automation).length > 0)];
+  for (const variant of variants) {
+   const refs = automationRefs(runtime, projectInPattern(project, variant), getBusId, state, { master: true, tracks: null });
+   for (const ref of refs) {
+    const ownerKey = ref.owner.kind === "master" ? "master" : ref.owner.id;
+    if (variant && !variant.automation?.[ownerKey]) continue;
+    const windows = windowsFor(ref.owner).filter((w) =>
+      variant ? w.patternId === variant.id : w.patternId === undefined || !patternById.get(w.patternId)?.automation?.[ownerKey],
+    );
     if (windows.length === 0) continue;
+    const seenKey = `${variant?.id ?? ""}::${ref.key}`;
     const current = windows.find((w) => w.startTime <= now && now < w.endTime);
     const resolved = ref.target();
     if (!resolved) continue;
@@ -244,8 +257,8 @@ export function scheduleAutomation(
       }
       resolved.mark(e.value);
     };
-    const changed = state.seen.get(ref.key) !== ref.lane;
-    state.seen.set(ref.key, ref.lane);
+    const changed = state.seen.get(seenKey) !== ref.lane;
+    state.seen.set(seenKey, ref.lane);
     // A refresh stands in for everything up to now, so events at or before it are not repeated.
     const coveredUntil = changed && current ? now : -Infinity;
 
@@ -265,6 +278,7 @@ export function scheduleAutomation(
         emit(t, { value: e.value, from: e.from, ramp: e.rampBeats !== undefined ? e.rampBeats * spb : undefined });
       }
     }
+   }
   }
   if (events.length > 0) runtime.scheduleParams(events);
 }
@@ -280,9 +294,11 @@ export function automationSequenceEvents(
   stepStartBeats: number,
   stepBeats: number,
   scope: AutomationScope = { master: true, tracks: null },
+  /** The pattern the step plays: its own lanes replace the owners' (Pattern.automation). */
+  pattern?: Pattern,
 ): SequenceParamEvent[] {
   const state = stateFor(runtime);
-  const refs = automationRefs(runtime, project, getBusId, state, scope);
+  const refs = automationRefs(runtime, projectInPattern(project, pattern), getBusId, state, scope);
   const out: SequenceParamEvent[] = [];
   for (const ref of refs) {
     const resolved = ref.target();

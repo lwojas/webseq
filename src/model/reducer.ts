@@ -9,6 +9,7 @@ import * as instruments from "./instruments";
 import * as eventLfo from "./eventLfo";
 import * as patternSettings from "./patternSettings";
 import * as automation from "./automation";
+import * as patternAutomation from "./patternAutomation";
 import { sourceParamDefs } from "./modulation";
 import * as trackConfig from "./trackConfig";
 import * as edit from "./edit";
@@ -112,10 +113,11 @@ export type Action =
   | { type: "SET_FX_PARAM"; target: FxTarget; fxId: FxId; paramId: string; value: number }
   | { type: "SET_FX_ENABLED"; target: FxTarget; fxId: FxId; enabled: boolean }
   // Automation lanes: `fxId` null = the track's source (synth control / sample parameter).
-  | { type: "SET_AUTOMATION_POINT"; target: FxTarget; fxId: FxId | null; parameter: string; position: number; value: number }
-  | { type: "REMOVE_AUTOMATION_POINT"; target: FxTarget; fxId: FxId | null; parameter: string; position: number }
-  | { type: "CLEAR_AUTOMATION_LANE"; target: FxTarget; fxId: FxId | null; parameter: string }
-  | { type: "REPLACE_AUTOMATION_RANGE"; target: FxTarget; fxId: FxId | null; parameter: string; from: number; to: number; events: AutomationEvent[] }
+  | { type: "SET_AUTOMATION_POINT"; target: FxTarget; fxId: FxId | null; parameter: string; position: number; value: number; /** With a pattern: that pattern's own lane, else the owner's. */ patternId?: PatternId }
+  | { type: "REMOVE_AUTOMATION_POINT"; target: FxTarget; fxId: FxId | null; parameter: string; position: number; patternId?: PatternId }
+  | { type: "CLEAR_AUTOMATION_LANE"; target: FxTarget; fxId: FxId | null; parameter: string; patternId?: PatternId }
+  | { type: "RESET_PATTERN_AUTOMATION"; patternId: PatternId; target: FxTarget }
+  | { type: "REPLACE_AUTOMATION_RANGE"; target: FxTarget; fxId: FxId | null; parameter: string; from: number; to: number; events: AutomationEvent[]; patternId?: PatternId }
   | { type: "LOAD_PROJECT"; project: Project };
 
 /** After a track's source changes, drops source automation lanes the new source can't honour. */
@@ -315,13 +317,15 @@ export function projectReducer(state: Project, action: Action): Project {
     case "REMOVE_FX_LFO":
       return fx.removeFxLfo(state, action.target, action.fxId, action.index);
     case "REPLACE_AUTOMATION_RANGE":
-      return automation.replaceAutomationRange(state, action.target, action.fxId, action.parameter, action.from, action.to, action.events);
+      return automation.replaceAutomationRange(state, action.target, action.fxId, action.parameter, action.from, action.to, action.events, action.patternId);
     case "SET_AUTOMATION_POINT":
-      return automation.setAutomationPoint(state, action.target, action.fxId, action.parameter, action.position, action.value);
+      return automation.setAutomationPoint(state, action.target, action.fxId, action.parameter, action.position, action.value, action.patternId);
     case "REMOVE_AUTOMATION_POINT":
-      return automation.removeAutomationPoint(state, action.target, action.fxId, action.parameter, action.position);
+      return automation.removeAutomationPoint(state, action.target, action.fxId, action.parameter, action.position, action.patternId);
     case "CLEAR_AUTOMATION_LANE":
-      return automation.clearAutomationLane(state, action.target, action.fxId, action.parameter);
+      return automation.clearAutomationLane(state, action.target, action.fxId, action.parameter, action.patternId);
+    case "RESET_PATTERN_AUTOMATION":
+      return patternAutomation.clearPatternAutomation(state, action.patternId, action.target);
     case "LOAD_PROJECT":
       return composer.migrateComposer(action.project); // a project saved by the single-timeline Composer gets a lane
   }

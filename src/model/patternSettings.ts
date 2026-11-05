@@ -17,8 +17,9 @@ export function hasPatternSettings(pattern: Pattern | undefined, trackId: TrackI
 /** `track` as it plays in `pattern`: its arp / Track LFO replaced by the pattern's own where it has them. The same object when it has none. */
 export function trackInPattern(track: Track, pattern: Pattern): Track {
   const own = pattern.trackSettings?.[track.id];
-  if (!own) return track;
-  return { ...track, ...(own.arp ? { arp: own.arp } : {}), ...(own.eventLfo ? { eventLfo: own.eventLfo } : {}) };
+  const automation = pattern.automation?.[track.id];
+  if (!own && !automation) return track;
+  return { ...track, ...(own?.arp ? { arp: own.arp } : {}), ...(own?.eventLfo ? { eventLfo: own.eventLfo } : {}), ...(automation ? { automation } : {}) };
 }
 
 function withSettings(project: Project, patternId: PatternId, trackId: TrackId, update: (own: PatternTrackSettings, track: Track) => PatternTrackSettings): Project {

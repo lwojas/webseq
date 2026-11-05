@@ -27,7 +27,7 @@ export interface NativeSequenceContext {
   hasSample: (sampleId: number) => boolean;
   /** Lane events for one step iteration (webseq beats from the cycle start) of the owners in `scope` (default: master and
    * every track); see automation.ts's automationSequenceEvents. */
-  automation: (stepStartBeats: number, stepBeats: number, scope?: AutomationScope) => SequenceParamEvent[];
+  automation: (stepStartBeats: number, stepBeats: number, scope?: AutomationScope, pattern?: Pattern) => SequenceParamEvent[];
   /** What the sequence is of: the pattern queue (default) or the Composer song. In Song mode every lane's sequences are
    * laid out at their song positions, overlapping across lanes, and a gap is just the absence of events. */
   source?: PlaybackSource;
@@ -119,7 +119,7 @@ export function compileNativeSequence(project: Project, ctx: NativeSequenceConte
         ...(params.tie ? { tie: true } : {}),
       });
     }
-    events.push(...ctx.automation(step.startBeat, beats, step.scope));
+    events.push(...ctx.automation(step.startBeat, beats, step.scope, step.pattern));
   }
 
   if (cycleBeats <= 0 || events.length === 0) return null;

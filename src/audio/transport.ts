@@ -645,7 +645,7 @@ export class Transport {
     const masterLane = masterLaneIndex(instances);
     const windowsFor: WindowsFor = (owner) => {
       const target = owner.kind === "master" ? "master" : owner.id;
-      return this.songWindows.filter((w) => automationAppliesTo(w.instance, target, masterLane));
+      return this.songWindows.filter((w) => automationAppliesTo(w.instance, target, masterLane)).map((w) => ({ startTime: w.startTime, endTime: w.endTime, patternId: w.instance.pattern.id }));
     };
     scheduleAutomation(this.runtime, project, this.getBusId, windowsFor, spb, now, horizon);
   }

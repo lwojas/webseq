@@ -312,6 +312,10 @@ export interface Pattern {
   /** This pattern's own arp / Track LFO, per track (model/patternSettings.ts). Where a track has an entry the pattern plays
    * that instead of the track's; absent = the pattern plays every track's own, so older projects are unchanged. */
   trackSettings?: Record<TrackId, PatternTrackSettings>;
+  /** This pattern's own automation lanes, per owner ("master" or a track id; model/patternAutomation.ts). Where an owner has an
+   * entry the pattern replays that instead of the owner's lanes (an empty list = no automation in this pattern); absent = the
+   * owner's lanes, so older projects are unchanged. */
+  automation?: Record<string, AutomationLane[]>;
 }
 
 /** What a pattern overrides on one track: either, both, or (not stored) neither. */

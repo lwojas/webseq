@@ -263,7 +263,7 @@ export function App() {
       getBusId,
       instrumentIdFor: (trackId, voice) => instruments.instrumentIdFor(trackId, voice),
       hasSample: (id) => runtime.getSample(id) !== undefined,
-      automation: (start, beats) => automationSequenceEvents(runtime, current, getBusId, start, beats),
+      automation: (start, beats, scope, pattern) => automationSequenceEvents(runtime, current, getBusId, start, beats, scope, pattern),
       source: playbackSourceRef.current,
     });
     const json = JSON.stringify(sequence);
@@ -1413,8 +1413,8 @@ export function App() {
   };
   // Where the focused automation lane plays in the song (the same lane the grid shows) -- for the Composer to draw it over.
   const composerAutomationSpans = useMemo(
-    () => (mainView === "composer" && automationRow ? automationSpans(project, selectedTarget) : NO_SPANS),
-    [mainView, automationRow, project, selectedTarget],
+    () => (mainView === "composer" && automationRow ? automationSpans(project, selectedTarget, selectedPattern.id) : NO_SPANS),
+    [mainView, automationRow, project, selectedTarget, selectedPattern.id],
   );
   const composer = useComposer({
     project,
