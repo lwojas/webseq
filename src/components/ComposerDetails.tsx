@@ -6,7 +6,7 @@ export interface ComposerDetailsProps {
   project: Project;
   sequence: ComposerSequence | undefined;
   lane: ComposerLane | undefined;
-  /** Launcher patterns that can be copied onto the selected lane. */
+  /** Every pattern in the project; any can be placed on the selected lane. */
   launcher: Pattern[];
   onRename: (name: string) => void;
   onResize: (bars: number) => void;
@@ -61,8 +61,8 @@ export function ComposerDetails({ project, sequence, lane, launcher, onRename, o
           <select
             className="composer-add-select"
             value=""
-            aria-label="Add a launcher pattern to the selected lane"
-            title="Add a copy of a launcher pattern at the marker (or the end of the selected lane if there is no marker)"
+            aria-label="Place a pattern on the selected lane"
+            title="Place a pattern (not a copy: editing it changes every placement) at the marker (or the end of the selected lane if there is no marker)"
             onChange={(e) => e.target.value && onAddPattern(e.target.value)}
           >
             <option value="">+ Add pattern…</option>

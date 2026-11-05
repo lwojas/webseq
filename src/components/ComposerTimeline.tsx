@@ -42,7 +42,7 @@ interface Drag {
 }
 
 /** The few actions arranging needs, always at hand. Everything finer (name, length, colour, lane tracks, adding a
- * launcher pattern) is in the Edit panel's Composer group, not here. */
+ * pattern) is in the Edit panel's Composer group, not here. */
 export interface ComposerToolbarProps {
   hasSelection: boolean;
   hasMarker: boolean;
@@ -407,7 +407,7 @@ function ComposerToolbar(
       <button className="btn small" onClick={p.onAddLane} title="Add a lane">
         + Lane
       </button>
-      <button className="btn small" disabled={!p.hasSelection} title={needs ?? "Duplicate as an independent sequence"} onClick={p.onDuplicate}>
+      <button className="btn small" disabled={!p.hasSelection} title={needs ?? "Duplicate as an independent sequence (a new pattern in the Patterns page)"} onClick={p.onDuplicate}>
         Duplicate
       </button>
       <button className="btn small" disabled={!p.hasSelection} title={needs ?? "Copy this sequence"} onClick={p.onCopy}>

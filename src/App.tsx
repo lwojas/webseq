@@ -46,7 +46,7 @@ import { blockWhileGuideOpen, pauseForGuide } from "./guide/session";
 import { Workspace } from "./app/Workspace";
 import { PatternsView } from "./app/PatternsView";
 import { MobileTabBar } from "./app/MobileTabBar";
-import { automationSpans, describeSongPosition, launcherPatterns, maxSequenceBars, type PlaybackSource } from "./model/composer";
+import { automationSpans, describeSongPosition, maxPatternBars, sequencesOfPattern, type PlaybackSource } from "./model/composer";
 import { useComposer } from "./app/useComposer";
 import { deriveLayout, effectiveSideView, useLayout, type BottomPanelView, type LibraryView, type MainView, type MobileTab, type SidePanelView, type Takeover, type TrackSubTab } from "./app/layout";
 import { useMidiControls } from "./midi/useMidiControls";
@@ -74,8 +74,8 @@ export function App() {
   // Undo/redo wraps the project reducer (model/history.ts): `project` is still the single source of truth.
   const [history, dispatch] = useReducer(historyReducer, undefined, () => createHistory(createInitialProject()));
   const project = history.present;
-  // What the launcher, queue and pickers list: Composer-owned patterns are not part of it.
-  const launcher = useMemo(() => launcherPatterns(project.patterns), [project.patterns]);
+  // What the pattern strip, Patterns page, queue and pickers list: every pattern, Composer ones included.
+  const launcher = project.patterns;
   const canUndo = history.past.length > 0;
   const canRedo = history.future.length > 0;
   const handleUndo = useCallback(() => dispatch({ type: "UNDO" }), []);
@@ -305,8 +305,7 @@ export function App() {
     const added = ids.find((id) => !prevPatternIds.current.includes(id));
     if (added) {
       setSelectedPatternId(added);
-      composer.onPatternAdded(added); // a new Composer sequence (added, duplicated, pasted) becomes the selected one
-    } else if (!ids.includes(selectedPatternId)) setSelectedPatternId(launcherPatterns(projectRef.current.patterns)[0].id);
+    } else if (!ids.includes(selectedPatternId)) setSelectedPatternId(projectRef.current.patterns[0].id);
     prevPatternIds.current = ids;
   }, [project.patterns, selectedPatternId]);
 
@@ -663,7 +662,7 @@ export function App() {
   // Pattern navigation. ◀ ▶ and the [ ] keys step without opening the picker; picking from the
   // picker selects AND closes it.
   const handleStepPattern = useCallback(
-    (direction: -1 | 1) => setSelectedPatternId((current) => adjacentPatternId(launcherPatterns(projectRef.current.patterns), current, direction)),
+    (direction: -1 | 1) => setSelectedPatternId((current) => adjacentPatternId(projectRef.current.patterns, current, direction)),
     [],
   );
   const handlePickPattern = useCallback((id: PatternId) => {
@@ -1420,6 +1419,11 @@ export function App() {
     selectedPatternId,
     setSelectedPatternId,
     setMainView,
+    makePlayable: (patternId) => {
+      // Opened from the Composer: Play (Pattern mode) plays this pattern, with no trip to the Patterns page to queue it first.
+      dispatch({ type: "ENSURE_PATTERN_QUEUED", patternId });
+      if (status === "stopped") handleSetSource("pattern");
+    },
     playSongFrom: (beat) => void handlePlaySongFrom(beat),
   });
   // "+ Composer" (pattern strip, Patterns page): copy the pattern onto the selected lane and go to the Composer. The new
@@ -1536,7 +1540,11 @@ export function App() {
   const addPattern = () => dispatch({ type: "ADD_PATTERN" });
   const setPatternBars = (id: PatternId, bars: number) => dispatch({ type: "SET_PATTERN_BARS", patternId: id, bars });
   const duplicatePattern = (id: PatternId) => dispatch({ type: "DUPLICATE_PATTERN", patternId: id });
-  const removePattern = (id: PatternId) => dispatch({ type: "REMOVE_PATTERN", patternId: id });
+  const removePattern = (id: PatternId) => {
+    const placed = sequencesOfPattern(project, id).length;
+    if (placed > 0 && !window.confirm(`This pattern is placed ${placed} time${placed === 1 ? "" : "s"} in the Composer. Delete it and remove those sequences?`)) return;
+    dispatch({ type: "REMOVE_PATTERN", patternId: id });
+  };
   const renamePattern = (id: PatternId, name: string) => dispatch({ type: "RENAME_PATTERN", patternId: id, name });
 
   return (
@@ -1571,9 +1579,9 @@ export function App() {
         projectBar={projectBarProps}
         transport={transportProps}
         patternStrip={{
-          patterns: composer.editingSequence ? [selectedPattern] : launcher,
+          patterns: launcher,
           composer: composer.editingSequence ? { onReturn: composer.returnToComposer } : undefined,
-          maxBars: composer.editingSequence ? maxSequenceBars(project, composer.editingSequence) : undefined,
+          maxBars: maxPatternBars(project, selectedPatternId),
           onAddToComposer: () => handleAddToComposer(selectedPatternId),
           selectedPatternId,
           playingPatternId,

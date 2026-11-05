@@ -4,7 +4,7 @@
 // things it owns that the Composer has to drive: pattern selection, the view, the FX target and the transport.
 import { useCallback, useEffect, useRef, useState, type Dispatch } from "react";
 import type { Action } from "../model/reducer";
-import { canInsertAt, composerLanes, copySequence, laneById, laneEnd, laneOfSequence, sequenceById, sequenceForPattern, type SequenceClip } from "../model/composer";
+import { allSequences, canInsertAt, composerLanes, copySequence, laneById, laneEnd, laneOfSequence, sequenceById, sequenceForPattern, type SequenceClip } from "../model/composer";
 import type { LaneId, LaneModifiers, Pattern, PatternId, Project, SequenceId } from "../model/types";
 import type { ComposerToolbarProps } from "../components/ComposerTimeline";
 import type { ComposerDetailsProps } from "../components/ComposerDetails";
@@ -17,11 +17,13 @@ interface Deps {
   selectedPatternId: PatternId;
   setSelectedPatternId: (id: PatternId) => void;
   setMainView: (view: MainView) => void;
+  /** Called when a sequence is opened in the Sequencer, so Play there plays its pattern. */
+  makePlayable: (patternId: PatternId) => void;
   /** Starts the song from `beat` (switching the transport to Song mode). */
   playSongFrom: (beat: number) => void;
 }
 
-export function useComposer({ project, dispatch, launcher, selectedPatternId, setSelectedPatternId, setMainView, playSongFrom }: Deps) {
+export function useComposer({ project, dispatch, launcher, selectedPatternId, setSelectedPatternId, setMainView, makePlayable, playSongFrom }: Deps) {
   const [selectedSequenceId, setSelectedSequenceId] = useState<SequenceId | null>(null);
   const [selectedLaneId, setSelectedLaneId] = useState<LaneId | null>(null);
   const [clip, setClip] = useState<SequenceClip | null>(null);
@@ -34,8 +36,11 @@ export function useComposer({ project, dispatch, launcher, selectedPatternId, se
 
   const sequence = sequenceById(project, selectedSequenceId);
   const lane = laneById(project, sequence ? (laneOfSequence(project, sequence.id)?.id ?? null) : selectedLaneId);
-  /** The sequence the Sequencer is editing, if its pattern belongs to one: it is what "back to Composer" returns to. */
-  const editingSequence = sequenceForPattern(project, selectedPatternId);
+  /** The sequence "Edit Sequence" opened in the Sequencer (while it is still on that pattern), else any sequence playing the edited
+   * pattern: it is what "back to Composer" returns to. */
+  const [openedSequenceId, setOpenedSequenceId] = useState<SequenceId | null>(null);
+  const opened = sequenceById(project, openedSequenceId);
+  const editingSequence = opened?.patternId === selectedPatternId ? opened : sequenceForPattern(project, selectedPatternId);
 
   const selectSequence = useCallback(
     (id: SequenceId) => {
@@ -62,15 +67,16 @@ export function useComposer({ project, dispatch, launcher, selectedPatternId, se
     [project, selectedSequenceId],
   );
 
-  /** A pattern appeared in the project (App's selection effect): if it is a Composer sequence's — added, duplicated or
-   * pasted — that sequence becomes the selected one. */
-  const onPatternAdded = useCallback(
-    (patternId: PatternId) => {
-      const seq = sequenceForPattern(project, patternId);
-      if (seq) selectSequence(seq.id);
-    },
-    [project, selectSequence],
-  );
+  // A sequence appeared on the timeline (added, placed from the Patterns page, duplicated, pasted): it becomes the selected one.
+  // Several at once is a project being loaded, not an edit.
+  const sequenceIds = allSequences(project).map((e) => e.seq.id);
+  const prevSequenceIds = useRef(sequenceIds);
+  useEffect(() => {
+    const added = sequenceIds.filter((id) => !prevSequenceIds.current.includes(id));
+    prevSequenceIds.current = sequenceIds;
+    if (added.length === 1) selectSequence(added[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sequenceIds.join(",")]);
 
   // A freshly added, empty lane becomes the selected one (a lane created along with its first sequence is left to
   // onPatternAdded, which selects that sequence and so its lane).
@@ -89,8 +95,10 @@ export function useComposer({ project, dispatch, launcher, selectedPatternId, se
   const edit = useCallback(() => {
     if (!sequence) return;
     setSelectedPatternId(sequence.patternId);
+    setOpenedSequenceId(sequence.id);
+    makePlayable(sequence.patternId);
     setMainView("sequencer");
-  }, [sequence, setSelectedPatternId, setMainView]);
+  }, [sequence, setSelectedPatternId, setMainView, makePlayable]);
 
   const returnToComposer = useCallback(() => {
     if (editingSequence) selectSequence(editingSequence.id);
@@ -177,7 +185,6 @@ export function useComposer({ project, dispatch, launcher, selectedPatternId, se
     setMarker,
     selectSequence,
     selectLane,
-    onPatternAdded,
     returnToComposer,
     toolbar,
     details,

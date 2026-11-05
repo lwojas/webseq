@@ -43,12 +43,11 @@ interface Props extends GridZoomProps {
   onEditPlaying: () => void;
   /** "bar 2 / 4" for the playing pattern, read per frame (see RafText). */
   getPlayingBarText: () => string;
-  /** Set while the edited pattern is a Composer sequence: the strip then drops launcher stepping / duplicating (a sequence is
-   * not a launcher pattern) and the button at its right end returns to the Composer. */
+  /** Set while the edited pattern is on the Composer timeline: the button at the strip's right end then returns there. */
   composer?: { onReturn: () => void };
-  /** For a launcher pattern, that same button adds a copy of it to the Composer and goes there. */
+  /** For a pattern not on the timeline, that same button places it there and goes to the Composer. */
   onAddToComposer: () => void;
-  /** Longest length the edited pattern may have right now (a Composer sequence stops at its neighbour). */
+  /** Longest length the edited pattern may have right now (on the timeline it stops at its neighbour). */
   maxBars?: number;
 }
 
@@ -78,12 +77,10 @@ export function PatternStrip({
 
   return (
     <div className="pattern-strip">
-      <span className="pattern-strip-label editing">{composer ? "Sequence" : "Editing"}</span>
-      {!composer && (
-        <button className="btn small pattern-step" onClick={() => onStep(-1)} disabled={index <= 0} aria-label="Previous pattern" title="Previous pattern  [">
-          ◀
-        </button>
-      )}
+      <span className="pattern-strip-label editing">Editing</span>
+      <button className="btn small pattern-step" onClick={() => onStep(-1)} disabled={index <= 0} aria-label="Previous pattern" title="Previous pattern  [">
+        ◀
+      </button>
       {selected && (
         <input
           className="pattern-name-input pattern-strip-input"
@@ -93,30 +90,24 @@ export function PatternStrip({
           onChange={(e) => onRename(selected.id, e.target.value)}
         />
       )}
-      {!composer && (
-        <button
-          className="btn small pattern-step"
-          onClick={() => onStep(1)}
-          disabled={index >= patterns.length - 1}
-          aria-label="Next pattern"
-          title="Next pattern  ]"
-        >
-          ▶
-        </button>
-      )}
+      <button
+        className="btn small pattern-step"
+        onClick={() => onStep(1)}
+        disabled={index >= patterns.length - 1}
+        aria-label="Next pattern"
+        title="Next pattern  ]"
+      >
+        ▶
+      </button>
       {selected && <BarsStepper bars={selected.bars} max={maxBars} onSetBars={(bars) => onSetBars(selected.id, bars)} />}
-      {selected && !composer && (
+      {selected && (
         <button className="btn small" onClick={() => onDuplicate(selected.id)} title="Duplicate this pattern and open the copy">
           Duplicate
         </button>
       )}
-      {!composer && (
-        <>
-          <button className="btn small" onClick={onAddPattern} title="Add an empty pattern">
-            + New
-          </button>
-        </>
-      )}
+      <button className="btn small" onClick={onAddPattern} title="Add an empty pattern">
+        + New
+      </button>
 
       <span className="pattern-strip-divider" aria-hidden="true" />
 
@@ -142,11 +133,11 @@ export function PatternStrip({
       {/* The one way into the Composer, always at the strip's right end: the Sequencer's half of the Composer's own
           "Edit Sequence ▸" button, which sits at the right end of its toolbar. */}
       {composer ? (
-        <button className="btn small view-switch-btn" onClick={composer.onReturn} title="Back to the Composer timeline, this sequence still selected">
+        <button className="btn small view-switch-btn" onClick={composer.onReturn} title="Back to the Composer timeline">
           ◂ Composer
         </button>
       ) : (
-        <button className="btn small view-switch-btn" onClick={onAddToComposer} title="Add a copy of this pattern to the Composer timeline and go there">
+        <button className="btn small view-switch-btn" onClick={onAddToComposer} title="Place this pattern on the Composer timeline and go there">
           + Composer
         </button>
       )}

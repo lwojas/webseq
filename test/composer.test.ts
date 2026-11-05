@@ -19,8 +19,8 @@ import {
   describeModifiers,
   laneModifiers,
   masterLaneIndex,
+  maxPatternBars,
   setLaneModifiers,
-  launcherPatterns,
   migrateComposer,
   moveLane,
   moveSequence,
@@ -36,7 +36,7 @@ import {
   songInstances,
 } from "../src/model/composer";
 import { projectReducer } from "../src/model/reducer";
-import { addPattern, createInitialProject, removePattern, setPatternBars } from "../src/model/project";
+import { createInitialProject, ensurePatternQueued, removePattern, setPatternBars } from "../src/model/project";
 import { createHistory, historyReducer } from "../src/model/history";
 import { fxOwner } from "../src/model/types";
 import { parseProjectFile, serializeProjectFile } from "../src/persistence/projectFile";
@@ -46,7 +46,7 @@ const laneIds = (p: Project) => composerLanes(p).map((l) => l.id);
 const seqs = (p: Project, lane = 0) => composerLanes(p)[lane].sequences;
 const patternOf = (p: Project, seqId: string) => p.patterns.find((x) => x.id === allSequences(p).find((e) => e.seq.id === seqId)!.seq.patternId)!;
 
-/** Launcher pattern A has a note; it is copied onto lane 1 twice (bars 0 and 1). */
+/** Pattern A has a note; it is placed on lane 1, then duplicated into an independent copy (patterns: A, "A copy"; bars 0 and 1). */
 function twoCopies(): Project {
   let p = createInitialProject("t", 4);
   p = { ...p, patterns: [addNote(p.patterns[0], p.beatsPerBar, "track-1", 0, 2, 1)] };
@@ -55,9 +55,10 @@ function twoCopies(): Project {
 }
 
 describe("sequences are independent instances", () => {
-  it("copies a launcher pattern without touching the launcher", () => {
+  it("places a pattern itself, and Duplicate makes a second pattern in the same list", () => {
     const p = twoCopies();
-    expect(launcherPatterns(p.patterns)).toHaveLength(1);
+    expect(p.patterns).toHaveLength(2);
+    expect(seqs(p)[0].patternId).toBe(p.patterns[0].id);
     expect(allSequences(p)).toHaveLength(2);
     expect(seqs(p)[0].patternId).not.toBe(seqs(p)[1].patternId);
     expect(Object.keys(patternOf(p, seqs(p)[1].id).notes)).toHaveLength(1);
@@ -79,9 +80,22 @@ describe("sequences are independent instances", () => {
     expect(seqs(p)[1].color).toBe("#112233");
   });
 
-  it("keeps Composer patterns after launcher patterns, so launcher indices are stable", () => {
-    const p = addPattern(twoCopies());
-    expect(p.patterns.map((x) => !!x.composerOwned)).toEqual([false, false, true, true]);
+  it("a pattern placed twice is one pattern: editing and resizing it changes both, within the room they have", () => {
+    let p = createInitialProject("t", 4);
+    const id = p.patterns[0].id;
+    p = addPatternToComposer(p, id, undefined, 0);
+    p = addPatternToComposer(p, id, laneIds(p)[0], 3); // bar 3, one gap bar between them
+    expect(p.patterns).toHaveLength(1);
+    expect(seqs(p).map((s) => s.patternId)).toEqual([id, id]);
+    expect(maxPatternBars(p, id)).toBe(3);
+    expect(resizeSequence(p, seqs(p)[0].id, 4)).toBe(p);
+    expect(patternOf(resizeSequence(p, seqs(p)[1].id, 3), seqs(p)[0].id).bars).toBe(3);
+  });
+
+  it("a new sequence's pattern shows in the Patterns page list", () => {
+    const p = addBlankSequence(createInitialProject("t", 4));
+    expect(p.patterns).toHaveLength(2);
+    expect(patternOf(p, seqs(p)[0].id).name).toBe("Pattern B");
   });
 });
 
@@ -129,12 +143,11 @@ describe("lanes", () => {
     expect(seqs(pasteSequence(p, clip, l1, 0), 0)[2].start).toBe(2);
   });
 
-  it("removing a lane removes its sequences' patterns", () => {
+  it("removing a lane leaves its patterns in the list", () => {
     let p = twoCopies();
     p = removeLane(p, laneIds(p)[0]);
     expect(composerLanes(p)).toEqual([]);
-    expect(p.patterns.filter((x) => x.composerOwned)).toHaveLength(0);
-    expect(launcherPatterns(p.patterns)).toHaveLength(1);
+    expect(p.patterns).toHaveLength(2);
   });
 });
 
@@ -287,21 +300,30 @@ describe("duplicate / copy / paste / remove", () => {
     expect(Object.keys(patternOf(p, seqs(p)[0].id).notes)).toHaveLength(1);
   });
 
-  it("removing a sequence removes its pattern only", () => {
+  it("removing a sequence keeps its pattern in the list", () => {
     const p = twoCopies();
-    const gone = seqs(p)[0].patternId;
+    const kept = seqs(p)[0].patternId;
     const q = removeSequence(p, seqs(p)[0].id);
-    expect(q.patterns.some((x) => x.id === gone)).toBe(false);
-    expect(sequenceForPattern(q, gone)).toBeUndefined();
+    expect(q.patterns.some((x) => x.id === kept)).toBe(true);
+    expect(sequenceForPattern(q, kept)).toBeUndefined();
   });
 
-  it("the launcher cannot delete or fall back to a Composer pattern", () => {
+  it("deleting a pattern from the list takes its placements off the timeline", () => {
     const p = twoCopies();
-    expect(removePattern(p, seqs(p)[0].patternId)).toBe(p);
-    expect(removePattern(p, p.patterns[0].id)).toBe(p);
-    const two = addPattern(p);
-    const q = removePattern(two, two.patterns[0].id);
-    expect(q.patternChain.every((e) => !q.patterns.find((x) => x.id === e.patternId)?.composerOwned)).toBe(true);
+    const gone = seqs(p)[1].patternId;
+    const q = removePattern(p, gone);
+    expect(q.patterns.some((x) => x.id === gone)).toBe(false);
+    expect(allSequences(q)).toHaveLength(1);
+    expect(removePattern(removePattern(p, gone), p.patterns[0].id).patterns).toHaveLength(1); // the last pattern stays
+  });
+
+  it("opening a sequence in the Sequencer makes its pattern playable", () => {
+    const p = addBlankSequence(createInitialProject("t", 4));
+    const id = seqs(p)[0].patternId;
+    expect(p.patternChain.some((e) => e.patternId === id)).toBe(false);
+    const q = ensurePatternQueued(p, id);
+    expect(q.patternChain.map((e) => e.patternId)).toEqual([id]);
+    expect(ensurePatternQueued(q, id)).toBe(q);
   });
 });
 
@@ -343,7 +365,7 @@ describe("the song", () => {
   it("describes what sounds on all lanes and when it changes", () => {
     const p = song();
     expect(describeSongPosition(p, 0)).toBe("Pattern A · bar 1 · change in 1 bar");
-    expect(describeSongPosition(p, 2 * 16 + 4)).toBe("Sequence 3 + Pattern A · bar 3 · change in 0.8 bars"); // earliest start first
+    expect(describeSongPosition(p, 2 * 16 + 4)).toBe("Pattern C + Pattern A copy · bar 3 · change in 0.8 bars"); // earliest start first
   });
 });
 

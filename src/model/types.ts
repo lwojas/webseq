@@ -309,18 +309,12 @@ export interface Pattern {
    * lengths — see Project.beatsPerBar for how this becomes a beat count. */
   bars: number;
   notes: Record<NoteId, Note>;
-  /** Owned by a Composer sequence (see ComposerSequence): the sequence's own editable content, kept
-   * in `Project.patterns` so the whole existing editor addresses it by id, but never listed in the
-   * pattern launcher / queue / MIDI slots. Absent = an ordinary launcher pattern, so older projects
-   * are byte-identical. Invariant (model/composer.ts): composer-owned patterns sit after every
-   * launcher pattern in `Project.patterns`, so launcher indices stay stable. */
-  composerOwned?: boolean;
 }
 
-/** One block on the Composer timeline. An independent instance: `patternId` points at a pattern that
- * only this sequence uses (a clone when it was added from the launcher or duplicated), so editing one
- * sequence never touches another. Its length is that pattern's `bars` (one source of truth, so the
- * sequencer's bars stepper and the timeline can never disagree); its name is the pattern's name. */
+/** One block on the Composer timeline: a placement of a pattern from `Project.patterns` (the Patterns page lists them all).
+ * Several sequences may play the same pattern, and editing it changes each of them; Duplicate and Paste give a sequence a copy
+ * of its own instead. Its length is that pattern's `bars` (one source of truth, so the sequencer's bars stepper and the
+ * timeline can never disagree); its name is the pattern's name. */
 export interface ComposerSequence {
   id: SequenceId;
   patternId: PatternId;

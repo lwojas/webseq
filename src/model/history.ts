@@ -22,8 +22,7 @@ interface Patch {
   id: string;
   before: Fields;
   after: Fields;
-  /** "composer" only: the Composer's patterns this step created and removed (a sequence owns a pattern, so adding or deleting
-   * one adds or removes it). `before`/`after` then hold the whole `composer` value (lanes and their sequences). */
+  /** "composer" only: the patterns this step created and removed (Duplicate, Paste and New sequence each make one). `before`/`after` then hold the whole `composer` value (lanes and their sequences). */
   added?: Pattern[];
   removed?: Pattern[];
 }
@@ -101,14 +100,15 @@ function diffList<T extends { id: string }>(kind: Patch["kind"], prev: T[], next
   return patches;
 }
 
-/** The Composer's part of a step: the `composer` value before and after, and the patterns of its sequences that appeared or went. Only
- * those patterns are touched on undo/redo, so other Composer patterns (notes edited since, renames) are left as they are. */
+/** The Composer's part of a step: the `composer` value before and after, and the patterns the step created or removed (a new
+ * sequence from Duplicate / Paste / New sequence makes one). Only those are touched on undo/redo, so other patterns (notes edited
+ * since, renames) are left as they are. */
 function diffComposer(prev: Project, next: Project): Patch[] {
-  const ids = (p: Project) => new Set(p.patterns.filter((x) => x.composerOwned).map((x) => x.id));
+  const ids = (p: Project) => new Set(p.patterns.map((x) => x.id));
   const before = ids(prev);
   const after = ids(next);
-  const added = next.patterns.filter((x) => x.composerOwned && !before.has(x.id));
-  const removed = prev.patterns.filter((x) => x.composerOwned && !after.has(x.id));
+  const added = next.patterns.filter((x) => !before.has(x.id));
+  const removed = prev.patterns.filter((x) => !after.has(x.id));
   if (prev.composer === next.composer && added.length === 0 && removed.length === 0) return [];
   return [{ kind: "composer", id: "composer", before: { composer: prev.composer }, after: { composer: next.composer }, added, removed }];
 }
@@ -136,8 +136,8 @@ function applyEntry(project: Project, entry: Entry, side: "before" | "after"): P
     if (patch.kind === "pattern") patterns = applyFields(patterns, patch.id, patch[side]);
     else if (patch.kind === "track") tracks = applyFields(tracks, patch.id, patch[side]);
     else {
-      // Going forward ("after") the step's removals go and its additions come back; going back, the reverse. Composer patterns
-      // stay last in the list (model/composer.ts), where the ones coming back are appended.
+      // Going forward ("after") the step's removals go and its additions come back; going back, the reverse. Patterns
+      // are appended when they come back.
       const gone = new Set((side === "after" ? patch.removed : patch.added)?.map((p) => p.id));
       const back = (side === "after" ? patch.added : patch.removed) ?? [];
       patterns = [...patterns.filter((p) => !gone.has(p.id)), ...back];

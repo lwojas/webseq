@@ -3,11 +3,12 @@
 //
 //   Composer -> lane[] -> sequence[]
 //
-// A SEQUENCE is not a pointer at a shared pattern. Each one owns a pattern of its own (a clone made when
-// it is added from the launcher or duplicated), stored in Project.patterns with `composerOwned: true`.
-// That is what makes instances independent AND lets the existing sequencer edit one through the same
-// patternId-based actions it already has — there is no second editing path. Its length is its pattern's
-// `bars`, and its name is the pattern's name.
+// A SEQUENCE is a placement of a pattern from the project's pattern list (the Patterns page is the bin of every
+// pattern, Composer ones included). Several sequences may point at the same pattern: editing it, in the Sequencer or
+// from any of them, changes them all, and its length (`bars`, one source of truth) is every one's length. Duplicate and
+// Paste make an independent copy (a new pattern), while "Add to Composer" from the bin places the pattern itself. The
+// existing sequencer edits a sequence through the same patternId-based actions it already has — there is no second
+// editing path.
 //
 // A LANE is a parallel stream: sequences on one lane never overlap (a rule of this module, not of the UI:
 // every mutator returns the project UNCHANGED, same reference, if the result would overlap or leave the
@@ -90,9 +91,9 @@ export function timelineEnd(project: Project): number {
   return composerLanes(project).reduce((end, lane) => Math.max(end, laneEnd(project, lane)), 0);
 }
 
-/** Patterns the launcher / queue / MIDI slots show: everything except Composer-owned content. */
-export function launcherPatterns(patterns: Pattern[]): Pattern[] {
-  return patterns.filter((p) => !p.composerOwned);
+/** Every sequence (any lane) that plays `patternId`. */
+export function sequencesOfPattern(project: Project, patternId: PatternId): ComposerSequence[] {
+  return allSequences(project).filter((e) => e.seq.patternId === patternId).map((e) => e.seq);
 }
 
 // --- placement within a lane ---
@@ -115,20 +116,27 @@ export function firstFreeStart(project: Project, laneId: LaneId, bars: number, f
   return start;
 }
 
-/** How many bars `seq` can grow to before it would touch the next sequence on its lane (or the pattern cap). */
-export function maxSequenceBars(project: Project, seq: ComposerSequence): number {
-  const lane = laneOfSequence(project, seq.id);
-  const next = (lane?.sequences ?? [])
-    .filter((s) => s.id !== seq.id && s.start >= seq.start)
-    .reduce((min, s) => Math.min(min, s.start), Infinity);
-  return Math.min(MAX_PATTERN_BARS, next - seq.start);
+/** How many bars `patternId` can grow to before ANY of its sequences would touch the next one on its lane (or the pattern
+ * cap). A pattern no sequence plays is limited by the cap only. */
+export function maxPatternBars(project: Project, patternId: PatternId): number {
+  let max = MAX_PATTERN_BARS;
+  for (const { seq, lane } of allSequences(project)) {
+    if (seq.patternId !== patternId) continue;
+    const next = lane.sequences.filter((s) => s.id !== seq.id && s.start >= seq.start).reduce((min, s) => Math.min(min, s.start), Infinity);
+    max = Math.min(max, next - seq.start);
+  }
+  return max;
 }
 
-/** Whether the sequencer's own bars stepper may set `bars` on `patternId`: always for a launcher
- * pattern, and for a sequence's pattern only if it still clears the next sequence on its lane. */
+/** How many bars `seq`'s pattern can grow to (see maxPatternBars). */
+export function maxSequenceBars(project: Project, seq: ComposerSequence): number {
+  return maxPatternBars(project, seq.patternId);
+}
+
+/** Whether the sequencer's own bars stepper may set `bars` on `patternId`: always for a pattern the Composer does not use, and
+ * otherwise only if every sequence of it still clears the next sequence on its lane. */
 export function barsAllowedForPattern(project: Project, patternId: PatternId, bars: number): boolean {
-  const seq = sequenceForPattern(project, patternId);
-  return !seq || Math.round(bars) <= maxSequenceBars(project, seq);
+  return Math.round(bars) <= maxPatternBars(project, patternId);
 }
 
 // --- writing ---
@@ -178,19 +186,22 @@ export function setLaneModifiers(project: Project, laneId: LaneId, patch: Partia
   return mapLane(project, laneId, ({ modifiers: _old, ...rest }) => (modifiers ? { ...rest, modifiers } : rest));
 }
 
-/** Removes a lane together with its sequences' patterns. */
+/** Removes a lane and its sequences. The patterns stay in the project's pattern list. */
 export function removeLane(project: Project, laneId: LaneId): Project {
-  const lane = laneById(project, laneId);
-  if (!lane) return project;
-  const gone = new Set(lane.sequences.map((s) => s.patternId));
-  return { ...withLanes(project, composerLanes(project).filter((l) => l.id !== laneId)), patterns: project.patterns.filter((p) => !gone.has(p.id)) };
+  return laneById(project, laneId) ? withLanes(project, composerLanes(project).filter((l) => l.id !== laneId)) : project;
+}
+
+/** Takes every sequence that plays `patternId` off the timeline (the pattern itself is being deleted). */
+export function removeSequencesOfPattern(project: Project, patternId: PatternId): Project {
+  if (sequencesOfPattern(project, patternId).length === 0) return project;
+  return withLanes(project, composerLanes(project).map((l) => ({ ...l, sequences: l.sequences.filter((s) => s.patternId !== patternId) })));
 }
 
 /** A pattern's content as an independent copy: fresh id, every note a fresh object. */
 function clonePattern(source: Pick<Pattern, "name" | "bars" | "notes">): Pattern {
   const notes: Record<string, Note> = {};
   for (const [id, note] of Object.entries(source.notes)) notes[id] = { ...note };
-  return { id: nextId("pattern"), name: source.name, bars: source.bars, notes, composerOwned: true };
+  return { id: nextId("pattern"), name: source.name, bars: source.bars, notes };
 }
 
 /** A sequence's content as plain data (the clipboard's contents). */
@@ -205,8 +216,8 @@ export function copySequence(project: Project, id: SequenceId): SequenceClip | n
   const seq = sequenceById(project, id);
   const pattern = seq && patternOf(project, seq);
   if (!seq || !pattern) return null;
-  const { name, bars, notes } = clonePattern(pattern);
-  return { name, bars, notes, color: seq.color };
+  const { bars, notes } = clonePattern(pattern);
+  return { name: `${pattern.name} copy`, bars, notes, color: seq.color };
 }
 
 function nextColor(project: Project): string {
@@ -229,7 +240,7 @@ export function addSequence(project: Project, laneId: LaneId | null | undefined,
   if (!canPlace(target.project, target.laneId, start, content.bars)) return project;
   const pattern = clonePattern({ ...content, notes: content.notes ?? {} });
   const seq: ComposerSequence = { id: nextId("seq"), patternId: pattern.id, start, color: content.color ?? nextColor(target.project) };
-  const withPattern = { ...target.project, patterns: [...target.project.patterns, pattern] }; // composer patterns stay last
+  const withPattern = { ...target.project, patterns: [...target.project.patterns, pattern] };
   return mapLane(withPattern, target.laneId, (l) => ({ ...l, sequences: [...l.sequences, seq].sort((a, b) => a.start - b.start) }));
 }
 
@@ -241,21 +252,23 @@ export function canInsertAt(project: Project, laneId: LaneId | null | undefined,
   return Number.isInteger(start) && Number.isInteger(bars) && start >= 0 && bars >= 1 && bars <= MAX_PATTERN_BARS;
 }
 
-/** "Add to Composer": a copy of launcher pattern `patternId`, at bar `at` of the lane (rejected if it does not fit there) or,
- * without `at`, after the last sequence of the lane. */
+/** "Add to Composer": places pattern `patternId` itself (not a copy: editing it changes every placement), at bar `at` of the lane
+ * (rejected if it does not fit there) or, without `at`, after the last sequence of the lane. */
 export function addPatternToComposer(project: Project, patternId: PatternId, laneId?: LaneId | null, at?: number): Project {
   const source = project.patterns.find((p) => p.id === patternId);
   if (!source) return project;
   const target = ensureLane(project, laneId);
-  const end = at ?? laneEnd(target.project, laneById(target.project, target.laneId));
-  return addSequence(target.project, target.laneId, end, { name: source.name, bars: source.bars, notes: source.notes, color: nextColor(project) });
+  const start = at ?? laneEnd(target.project, laneById(target.project, target.laneId));
+  if (!canPlace(target.project, target.laneId, start, source.bars)) return project;
+  const seq: ComposerSequence = { id: nextId("seq"), patternId, start, color: nextColor(target.project) };
+  return mapLane(target.project, target.laneId, (l) => ({ ...l, sequences: [...l.sequences, seq].sort((a, b) => a.start - b.start) }));
 }
 
 /** A new empty 1-bar sequence at bar `at` of the lane (rejected if it does not fit there) or, without `at`, after the last one. */
 export function addBlankSequence(project: Project, laneId?: LaneId | null, at?: number): Project {
   const target = ensureLane(project, laneId);
-  const n = allSequences(target.project).length + 1;
-  return addSequence(target.project, target.laneId, at ?? laneEnd(target.project, laneById(target.project, target.laneId)), { name: `Sequence ${n}`, bars: 1 });
+  const name = `Pattern ${String.fromCharCode(65 + target.project.patterns.length)}`; // the same naming as the pattern list's "+ Pattern"
+  return addSequence(target.project, target.laneId, at ?? laneEnd(target.project, laneById(target.project, target.laneId)), { name, bars: 1 });
 }
 
 /** An independent copy of `id`, on the same lane, in the first free slot at/after the original's end. */
@@ -322,18 +335,21 @@ export function setSequenceColor(project: Project, id: SequenceId, color: string
   return mapLane(project, lane.id, (l) => ({ ...l, sequences: l.sequences.map((s) => (s.id === id ? { ...s, color } : s)) }));
 }
 
-/** Removes a sequence together with the pattern it owned. */
+/** Removes a sequence from the timeline. Its pattern stays in the project's pattern list. */
 export function removeSequence(project: Project, id: SequenceId): Project {
-  const seq = sequenceById(project, id);
   const lane = laneOfSequence(project, id);
-  if (!seq || !lane) return project;
-  return { ...mapLane(project, lane.id, (l) => ({ ...l, sequences: l.sequences.filter((s) => s.id !== id) })), patterns: project.patterns.filter((p) => p.id !== seq.patternId) };
+  if (!lane) return project;
+  return mapLane(project, lane.id, (l) => ({ ...l, sequences: l.sequences.filter((s) => s.id !== id) }));
 }
 
 /** Brings a project saved by an earlier Composer up to the current shape: the first one had a single flat `sequences`
  * list (it becomes one lane); the next gave lanes audio fields (`trackIds`, `fx`, `automation`) that no longer exist (they
  * are dropped). Anything already current passes through unchanged. Applied when a project is loaded. */
 export function migrateComposer(project: Project): Project {
+  // The first Composer kept each sequence's pattern apart from the pattern list (`composerOwned`); they are ordinary patterns now.
+  if (project.patterns.some((p) => "composerOwned" in p)) {
+    project = { ...project, patterns: project.patterns.map(({ composerOwned: _owned, ...p }: Pattern & { composerOwned?: boolean }) => p) };
+  }
   const old = project.composer as (Partial<Composer> & { sequences?: ComposerSequence[] }) | undefined;
   if (!old) return project;
   if (!Array.isArray(old.lanes)) {
@@ -403,7 +419,7 @@ export function applyLaneModifiers(pattern: Pattern, m: LaneModifiers): Pattern 
 
 // --- Song mode: the Composer as a playback source ---
 
-/** What the transport plays: the launcher's pattern queue (`patternChain`) or the Composer song. */
+/** What the transport plays: the pattern queue (`patternChain`) or the Composer song. */
 export type PlaybackSource = "pattern" | "song";
 
 /** One sequence as the transport plays it: what, where in the song, and on which lane. */

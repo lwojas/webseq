@@ -109,7 +109,7 @@ describe("Song mode playback", () => {
     expect(pos.active.map((a) => a.laneId)).toEqual([drums.id, bass.id]);
     expect(pos.active[0].beat).toBeCloseTo(8, 3);
     expect(t.transport.getPlayheadBeatFor(drums.sequences[0].patternId)).toBeCloseTo(8, 3);
-    expect(t.transport.getPlayheadBeatFor(drums.sequences[1].patternId)).toBeNull();
+    expect(t.transport.getPlayheadBeatFor(drums.sequences[1].patternId)).toBeCloseTo(8, 3); // the same pattern as the first: one shared playhead
     t.advance(1.5); // 2.55 s: bars 1: nothing on either lane
     expect(t.transport.getSongPosition()!.active).toEqual([]);
     t.done();

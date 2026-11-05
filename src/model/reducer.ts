@@ -97,6 +97,7 @@ export type Action =
   | { type: "REMOVE_PATTERN"; patternId: PatternId }
   | { type: "RENAME_PATTERN"; patternId: PatternId; name: string }
   | { type: "QUEUE_PATTERN_NEXT"; patternId: PatternId; afterEntryId: ChainEntryId | null }
+  | { type: "ENSURE_PATTERN_QUEUED"; patternId: PatternId }
   | { type: "REMOVE_FROM_QUEUE"; patternId: PatternId }
   | { type: "REMOVE_CHAIN_ENTRY"; entryId: ChainEntryId }
   | { type: "MOVE_CHAIN_ENTRY"; entryId: ChainEntryId; toIndex: number }
@@ -285,6 +286,8 @@ export function projectReducer(state: Project, action: Action): Project {
       return project.renamePattern(state, action.patternId, action.name);
     case "QUEUE_PATTERN_NEXT":
       return project.queuePatternNext(state, action.patternId, action.afterEntryId);
+    case "ENSURE_PATTERN_QUEUED":
+      return project.ensurePatternQueued(state, action.patternId);
     case "REMOVE_FROM_QUEUE":
       return project.removePatternFromQueue(state, action.patternId);
     case "REMOVE_CHAIN_ENTRY":

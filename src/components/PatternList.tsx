@@ -15,7 +15,7 @@ interface Props {
   onRename: (id: PatternId, name: string) => void;
   onSetBars: (id: PatternId, bars: number) => void;
   onQueueNext: (id: PatternId) => void;
-  /** Copy this pattern onto the Composer timeline as a new, independent sequence. */
+  /** Place this pattern on the Composer timeline (the same pattern: editing it changes every placement). */
   onAddToComposer: (id: PatternId) => void;
 }
 
@@ -98,7 +98,7 @@ function PatternRow({ pattern, editing, playing, canDelete, onSelect, onEdit, on
         <button className="btn small" onClick={stop(onQueueNext)} title="Queue to play next">
           Queue →
         </button>
-        <button className="btn small" onClick={stop(onAddToComposer)} title="Add a copy to the Composer timeline">
+        <button className="btn small" onClick={stop(onAddToComposer)} title="Place on the Composer timeline">
           + Composer
         </button>
         <button className="btn small" onClick={stop(onDuplicate)}>
