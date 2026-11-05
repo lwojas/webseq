@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type { AutomationEvent, AutomationLane as AutomationLaneModel } from "../model/types";
 import { normalizedToValue, valueToNormalized, type ModParamDef } from "../model/modulation";
 
@@ -57,7 +57,13 @@ export function visibleEvents(events: readonly AutomationEvent[], start: number 
 export function AutomationLane({ lane, paramDef, totalBeats, beatsPerBar, pxPerBeat, height = AUTOMATION_LANE_HEIGHT, visibleStart, visibleEnd, onSetPoint, onRemovePoint }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const width = totalBeats * pxPerBeat;
-  const events = lane?.events ?? [];
+  // While a point is dragged, only this lane re-renders (local state) with the point at the pointer; the project, and so the audio
+  // and every other view, is updated once, on release.
+  const [drag, setDrag] = useState<{ from: number; beat: number; value: number } | null>(null);
+  const stored = lane?.events ?? [];
+  const events = drag
+    ? [...stored.filter((e) => e.position !== drag.from && e.position !== drag.beat), { position: drag.beat, value: drag.value }].sort((a, b) => a.position - b.position)
+    : stored;
   const bars = Math.max(1, Math.round(totalBeats / beatsPerBar));
 
   const valueToY = (value: number) => height - valueToNormalized(paramDef, value) * height;
@@ -92,11 +98,13 @@ export function AutomationLane({ lane, paramDef, totalBeats, beatsPerBar, pxPerB
       if (Math.abs(ev.clientX - startX) > CLICK_VS_DRAG_PX || Math.abs(ev.clientY - startY) > CLICK_VS_DRAG_PX) moved = true;
       lastBeat = xToBeat(ev.clientX - rect.left);
       lastValue = yToValue(ev.clientY - rect.top);
+      if (moved) setDrag({ from: position, beat: lastBeat, value: lastValue });
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      setDrag(null);
       if (!moved) {
         onRemovePoint(position); // plain click/tap on a point removes it
       } else {
