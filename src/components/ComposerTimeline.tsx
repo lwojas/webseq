@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject } from "react";
 import { canPlace, composerLanes, describeModifiers, laneModifiers, maxSequenceBars, sequenceBars, sequenceName, timelineEnd } from "../model/composer";
-import type { LaneId, Project, SequenceId } from "../model/types";
+import type { AutomationLane as AutomationLaneModel, LaneId, Project, SequenceId } from "../model/types";
 import { usePlayheadAnimation } from "../hooks/usePlayheadAnimation";
 import { AutomationLane } from "./AutomationLane";
 import type { AutomationRowProps } from "./AutomationRow";
@@ -84,9 +84,15 @@ interface Props {
   onMoveLane: (id: LaneId, index: number) => void;
   onRemoveLane: (id: LaneId) => void;
   /** The existing automation lane in focus (the one the Sequencer's grid shows for the selected track or master), and where
-   * it plays in the song. It is drawn over each of those sequences; editing a point edits that one lane, so the Sequencer
-   * shows the same change. Nothing here is Composer data. */
-  automation: { row: AutomationRowProps | null; spans: { startBeat: number; beats: number }[] };
+   * it plays in the song. It is drawn over each of those sequences with that sequence's pattern's own lane, and editing a
+   * point edits that pattern's lane only. Nothing here is Composer data. */
+  automation: {
+    row: AutomationRowProps | null;
+    /** Each sequence the lane plays over, with the lane ITS pattern plays (patterns have their own) and the edit handlers for it. */
+    spans: { startBeat: number; beats: number; patternId: string; lane: AutomationLaneModel | undefined }[];
+    onSetPoint: (patternId: string, position: number, value: number) => void;
+    onRemovePoint: (patternId: string, position: number) => void;
+  };
   toolbar: ComposerToolbarProps;
 }
 
@@ -340,15 +346,15 @@ export function ComposerTimeline({
               <div className="composer-lane-track composer-auto-track" style={{ width: trackWidth }}>
                 {automation.row && automation.spans.length > 0 ? (
                   automation.spans.map((span) => (
-                    <div key={span.startBeat} className="composer-auto-lane" style={{ left: left(span.startBeat / bpb) }}>
+                    <div key={`${span.startBeat}-${span.patternId}`} className="composer-auto-lane" style={{ left: left(span.startBeat / bpb) }}>
                       <AutomationLane
-                        lane={automation.row!.lane}
+                        lane={span.lane}
                         paramDef={automation.row!.paramDef}
                         totalBeats={span.beats}
                         beatsPerBar={bpb}
                         pxPerBeat={barPx / bpb}
-                        onSetPoint={automation.row!.onSetPoint}
-                        onRemovePoint={automation.row!.onRemovePoint}
+                        onSetPoint={(position, value) => automation.onSetPoint(span.patternId, position, value)}
+                        onRemovePoint={(position) => automation.onRemovePoint(span.patternId, position)}
                       />
                     </div>
                   ))

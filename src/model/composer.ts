@@ -502,19 +502,14 @@ export function describeSongPosition(project: Project, songBeat: number): string
 /** Where the existing automation of `target` (a track or the master) plays in the song, as spans in beats from the song
  * start, for the Composer to draw it over: the sequences it applies to (see automationAppliesTo), left to right. Where two
  * of them overlap (parallel lanes) only the first is drawn; the lane is one shared piece of data either way. */
-export function automationSpans(project: Project, target: "master" | TrackId, patternId?: PatternId): { startBeat: number; beats: number }[] {
+export function automationSpans(project: Project, target: "master" | TrackId): { startBeat: number; beats: number; patternId: PatternId }[] {
   const instances = songInstances(project);
   const masterLane = masterLaneIndex(instances);
-  const spans: { startBeat: number; beats: number }[] = [];
-  // The lane shown is the pattern's own, or the owner's when it has none: so it plays over that pattern's sequences, and, in the
-  // second case, over every other pattern that has no lanes of its own either.
-  const shown = patternId ? project.patterns.find((p) => p.id === patternId) : undefined;
-  const sharesLane = (i: SongInstance) =>
-    !patternId || i.pattern.id === patternId || (shown?.automation?.[target] === undefined && i.pattern.automation?.[target] === undefined);
+  const spans: { startBeat: number; beats: number; patternId: PatternId }[] = [];
   let end = -Infinity;
   for (const i of instances) {
-    if (!automationAppliesTo(i, target, masterLane) || !sharesLane(i) || i.startBeat < end) continue;
-    spans.push({ startBeat: i.startBeat, beats: i.beats });
+    if (!automationAppliesTo(i, target, masterLane) || i.startBeat < end) continue;
+    spans.push({ startBeat: i.startBeat, beats: i.beats, patternId: i.pattern.id });
     end = i.startBeat + i.beats;
   }
   return spans;

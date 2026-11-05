@@ -135,5 +135,5 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
     return { label: `${owned} · ${def.label}`, lane, paramDef: def, ...rowHandlers };
   }, [focus, owner, ownerLanes, track, rowHandlers]);
 
-  return { automationFor, row, clearFocus: useCallback(() => setLaneFocus(null), []) };
+  return { automationFor, row, laneFocus: focus, clearFocus: useCallback(() => setLaneFocus(null), []) };
 }

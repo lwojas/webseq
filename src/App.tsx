@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { getHostState, hasEmbeddedHost, sameMidiRoute, type AudioRuntime, type MidiRoute } from "webdsp";
 import { forgetPeaks } from "./audio/peaks";
-import type { Asset, AssetId, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
+import type { Asset, AssetId, AutomationLane, Project, ChainEntryId, FxId, FxTarget, FxType, InstrumentKindId, NoteId, PatternId, PlaybackMode, SampleEnvelope, SampleMode, Track, TrackEventLfo, TrackId, TrackLfo, VoiceMode } from "./model/types";
 import { useAutomationEditing } from "./app/useAutomationEditing";
 import { FX_KIND, fxChainsFor } from "./audio/fxChain";
 import { notesForTrack, totalBeats, trackById, trackHasSource } from "./model/types";
+import { findLane } from "./model/automation";
+import { lanesInPattern } from "./model/patternAutomation";
 import { BANK_SIZE, createInitialProject, pasteNotes, summarizeBanks, tracksInBank, withMissingTracks } from "./model/project";
 import { DEFAULT_GRID_RESOLUTION, FREE_PLACEMENT_RESOLUTION, GRID_RESOLUTIONS, type CopiedNote, type GridResolution } from "./model/notes";
 import { adjacentPatternId } from "./model/patternNav";
@@ -61,7 +63,7 @@ function releaseEngineSamples(rt: AudioRuntime): void {
 }
 
 /** What the Edit panel gets while it isn't showing: shared empties, so nothing is allocated. */
-const NO_SPANS: { startBeat: number; beats: number }[] = [];
+const NO_SPANS: { startBeat: number; beats: number; patternId: string; lane: AutomationLane | undefined }[] = [];
 const NO_EDIT_MODEL: { clipboardRows: ClipboardRow[]; barTools: BarTool[]; chopTools: BarTool[] } = { clipboardRows: [], barTools: [], chopTools: [] };
 
 /** How long the song must be unchanged before it is sent to a host that plays it natively. */
@@ -1361,7 +1363,7 @@ export function App() {
   const derived = deriveLayout(layout, { mobileTab, mainView, takeover, bottomPanelView, trackSubTab, libraryView });
   // Automation (a base-value curve) and the engine's LFO bank are two kinds of modulation source;
   // both are edited through the same card. The focused lane is drawn as a row of the timeline.
-  const { automationFor, row: automationRow } = useAutomationEditing({
+  const { automationFor, row: automationRow, laneFocus: automationFocus } = useAutomationEditing({
     project,
     dispatch,
     selectedTarget,
@@ -1413,8 +1415,27 @@ export function App() {
   };
   // Where the focused automation lane plays in the song (the same lane the grid shows) -- for the Composer to draw it over.
   const composerAutomationSpans = useMemo(
-    () => (mainView === "composer" && automationRow ? automationSpans(project, selectedTarget, selectedPattern.id) : NO_SPANS),
-    [mainView, automationRow, project, selectedTarget, selectedPattern.id],
+    () => {
+      if (mainView !== "composer" || !automationRow || !automationFocus) return NO_SPANS;
+      // Each sequence shows the lane its own pattern plays (its own, else the track's), so they can differ.
+      return automationSpans(project, selectedTarget).map((span) => ({
+        ...span,
+        lane: findLane(lanesInPattern(project, project.patterns.find((p) => p.id === span.patternId), selectedTarget), automationFocus.fxId, automationFocus.parameter),
+      }));
+    },
+    [mainView, automationRow, automationFocus, project, selectedTarget],
+  );
+  const composerAutomationEdit = useMemo(
+    () =>
+      automationFocus
+        ? {
+            onSetPoint: (patternId: string, position: number, value: number) =>
+              dispatch({ type: "SET_AUTOMATION_POINT", target: selectedTarget, fxId: automationFocus.fxId, parameter: automationFocus.parameter, position, value, patternId }),
+            onRemovePoint: (patternId: string, position: number) =>
+              dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId: automationFocus.fxId, parameter: automationFocus.parameter, position, patternId }),
+          }
+        : { onSetPoint: () => {}, onRemovePoint: () => {} },
+    [automationFocus, selectedTarget],
   );
   const composer = useComposer({
     project,
@@ -1640,7 +1661,7 @@ export function App() {
           onMove: composer.onMove,
           onResize: composer.onResize,
           ...composer.laneHandlers,
-          automation: { row: automationRow, spans: composerAutomationSpans },
+          automation: { row: automationRow, spans: composerAutomationSpans, ...composerAutomationEdit },
           toolbar: composer.toolbar,
         }}
         sidePanel={{
