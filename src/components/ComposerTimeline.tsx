@@ -4,6 +4,7 @@ import type { AutomationLane as AutomationLaneModel, LaneId, Project, SequenceId
 import { usePlayheadAnimation } from "../hooks/usePlayheadAnimation";
 import { AutomationLane } from "./AutomationLane";
 import type { AutomationRowProps } from "./AutomationRow";
+import { ComposerTrackList, type ComposerTrackListProps } from "./ComposerTrackList";
 import { RafText } from "./RafText";
 
 /** Pixels per bar at 100% zoom. */
@@ -94,10 +95,12 @@ interface Props {
     onRemovePoint: (patternId: string, position: number) => void;
   };
   toolbar: ComposerToolbarProps;
+  /** The track column under the timeline: select a track (the automation lane follows it), mute, solo, notes off. */
+  trackList: ComposerTrackListProps;
 }
 
-/** The Composer: the song as lanes of sequence blocks on one shared timeline. It is ONE scrolling viewport — ruler, lane
- * headers, blocks and automation all move together — and it owns horizontal navigation: a sideways trackpad swipe
+/** The Composer: the song as lanes of sequence blocks on one shared timeline, with the tracks listed under it. The timeline is
+ * ONE scrolling viewport — ruler, lane headers, blocks and automation all move together — and it owns horizontal navigation: a sideways trackpad swipe
  * scrolls the timeline and does not fall through to the browser's back/forward gesture. A click selects, dragging a
  * block moves it (along its lane, or onto another lane), dragging its right edge resizes it; a drop that would overlap
  * on the lane shows red and is discarded (nothing is ever pushed aside). Pointer events, so it works by touch. */
@@ -120,6 +123,7 @@ export function ComposerTimeline({
   onRemoveLane,
   automation,
   toolbar,
+  trackList,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -373,6 +377,7 @@ export function ComposerTimeline({
           </div>
         </div>
       </div>
+      <ComposerTrackList {...trackList} />
     </div>
   );
 }

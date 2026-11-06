@@ -42,8 +42,19 @@ function baseValue(def: ModParamDef, fx: FxInstance | null, track: Track | null,
 }
 
 export function useAutomationEditing({ project, dispatch, selectedTarget, pattern, pxPerBeat, timelineVisible }: Options) {
-  const [laneFocus, setLaneFocus] = useState<LaneFocus | null>(null);
-  const focus = laneFocus && laneFocus.target === selectedTarget ? laneFocus : null;
+  // One focused lane per owner, so switching between tracks (the Composer's track list) brings back each one's own lane.
+  const [laneFocusByTarget, setLaneFocusByTarget] = useState<Record<string, LaneFocus>>({});
+  const focus = laneFocusByTarget[selectedTarget] ?? null;
+  const setLaneFocus = useCallback(
+    (next: LaneFocus | null) =>
+      setLaneFocusByTarget((all) => {
+        if (next) return { ...all, [next.target]: next };
+        if (!(selectedTarget in all)) return all;
+        const { [selectedTarget]: _closed, ...rest } = all;
+        return rest;
+      }),
+    [selectedTarget],
+  );
 
   const owner = selectedTarget === "master" ? project.master : trackById(project, selectedTarget);
   const track = selectedTarget === "master" ? null : (trackById(project, selectedTarget) ?? null);
@@ -107,7 +118,7 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
         onRemovePoint: (parameter, position) => dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, patternId }),
       };
     },
-    [owner, ownerLanes, patternId, track, project, dispatch, selectedTarget, focus, beats, beatsPerBar, pxPerBeat, timelineVisible],
+    [owner, ownerLanes, patternId, track, project, dispatch, selectedTarget, focus, setLaneFocus, beats, beatsPerBar, pxPerBeat, timelineVisible],
   );
 
   // Handlers depend only on the focus and the target, never on the project, so they keep their
@@ -120,7 +131,7 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
       onRemovePoint: (position: number) => dispatch({ type: "REMOVE_AUTOMATION_POINT", target: selectedTarget, fxId, parameter, position, patternId }),
       onClose: () => setLaneFocus(null),
     };
-  }, [focus, dispatch, selectedTarget, patternId]);
+  }, [focus, dispatch, selectedTarget, patternId, setLaneFocus]);
 
   /** The focused lane as a row of the timeline, or null when nothing is focused (or it is gone). */
   const row = useMemo<AutomationRowProps | null>(() => {
@@ -135,5 +146,5 @@ export function useAutomationEditing({ project, dispatch, selectedTarget, patter
     return { label: `${owned} · ${def.label}`, lane, paramDef: def, ...rowHandlers };
   }, [focus, owner, ownerLanes, track, rowHandlers]);
 
-  return { automationFor, row, laneFocus: focus, clearFocus: useCallback(() => setLaneFocus(null), []) };
+  return { automationFor, row, laneFocus: focus, clearFocus: useCallback(() => setLaneFocus(null), [setLaneFocus]) };
 }

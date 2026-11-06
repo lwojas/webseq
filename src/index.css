@@ -775,8 +775,9 @@ select {
    gesture; ComposerTimeline also consumes mostly-horizontal wheel events itself for browsers that ignore
    it). Only this element -- the rest of the app keeps its normal browser gestures. */
 .composer-viewport {
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
+  max-height: 60%;
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -1066,6 +1067,145 @@ select {
   z-index: 3;
 }
 
+/* The track column under the timeline: only this part scrolls vertically (the timeline above keeps its place), and it has no
+   horizontal scroll or playhead -- it is a list, not a second timeline. Rows reuse the sequencer's track-header look. */
+.composer-tracks {
+  flex: 1 1 0;
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-strong);
+}
+
+.composer-tracks-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.composer-tracks-pattern {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--amber);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.composer-tracks-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.composer-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--row-height);
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.composer-track:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.composer-track.selected {
+  background: rgba(41, 224, 224, 0.05);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.composer-track-num {
+  width: 1.6em;
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.composer-track-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-track-name.unassigned {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.composer-track-name.master-name {
+  color: var(--amber);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* A track that does not play in the selected sequence (muted, or its notes switched off): dimmed name. */
+.composer-track.disabled .composer-track-name {
+  color: var(--text-dim);
+}
+
+.composer-track-state {
+  flex-shrink: 0;
+  min-width: 4.5em;
+  text-align: right;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.composer-track-state.notes {
+  color: var(--accent);
+}
+
+.composer-track-state.off {
+  color: var(--amber);
+}
+
+.composer-track-btn {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  color: var(--text-dim);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.composer-track-btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.composer-track-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-track-btn.mute.active {
+  background: #6b2323;
+  border-color: var(--danger);
+  color: #ffe4e4;
+}
+
+.composer-track-btn.solo.active,
+.composer-track-btn.notes.active {
+  background: #6b5323;
+  border-color: var(--amber);
+  color: #ffe9c4;
+}
+
 /* Lane modifier rows in the Edit panel: label left, [ - value + ] right, whatever the label or value. */
 .composer-mod-row {
   display: flex;
@@ -1147,12 +1287,26 @@ select {
     width: 28px;
     height: 28px;
   }
+
+  .composer-track-btn {
+    padding: 7px 9px;
+  }
 }
 
 /* Phone: tighter toolbar; the timeline scrolls sideways under the sticky lane headers, so blocks keep their size. */
 @media (max-width: 768px) {
   .composer-toolbar {
     padding: 6px 8px;
+  }
+
+  .composer-track {
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .composer-track .track-source-tag,
+  .composer-track .track-fx-badge {
+    display: none;
   }
 }
 

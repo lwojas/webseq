@@ -48,7 +48,7 @@ import { blockWhileGuideOpen, pauseForGuide } from "./guide/session";
 import { Workspace } from "./app/Workspace";
 import { PatternsView } from "./app/PatternsView";
 import { MobileTabBar } from "./app/MobileTabBar";
-import { automationSpans, describeSongPosition, maxPatternBars, sequencesOfPattern, type PlaybackSource } from "./model/composer";
+import { automationSpans, describeSongPosition, maxPatternBars, sequenceName, sequencesOfPattern, type PlaybackSource } from "./model/composer";
 import { useComposer } from "./app/useComposer";
 import { deriveLayout, effectiveSideView, useLayout, type BottomPanelView, type LibraryView, type MainView, type MobileTab, type SidePanelView, type Takeover, type TrackSubTab } from "./app/layout";
 import { useMidiControls } from "./midi/useMidiControls";
@@ -1667,6 +1667,17 @@ export function App() {
           ...composer.laneHandlers,
           automation: { row: automationRow, spans: composerAutomationSpans, ...composerAutomationEdit },
           toolbar: composer.toolbar,
+          trackList: {
+            tracks: project.tracks,
+            masterFxCount: project.master.fx.length,
+            pattern: composer.sequence ? selectedPattern : undefined,
+            patternLabel: composer.sequence ? sequenceName(project, composer.sequence) : "",
+            selectedTarget,
+            onSelectTarget: handleSelectTarget,
+            onSetMuted: handleSetTrackMuted,
+            onSetSoloed: handleSetTrackSoloed,
+            onSetNotesOff: handleSetTrackNotesOff,
+          },
         }}
         sidePanel={{
           view: effectiveSideView(layout, sidePanelView),
