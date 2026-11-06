@@ -161,6 +161,7 @@ export function useComposer({ project, dispatch, launcher, selectedPatternId, se
       dispatch({ type: "COMPOSER_ADD_PATTERN", patternId, laneId: lane?.id, at: marker ?? undefined });
       insertedAt(launcher.find((p) => p.id === patternId)?.bars ?? 1);
     },
+    actions: toolbar,
     onSetLaneModifiers: (patch: Partial<LaneModifiers>) => lane && dispatch({ type: "COMPOSER_SET_LANE_MODIFIERS", laneId: lane.id, patch }),
   };
 

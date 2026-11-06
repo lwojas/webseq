@@ -1,6 +1,7 @@
 import { COMPOSER_COLORS, DEFAULT_LANE_MODIFIERS, MAX_GATE_SCALE, MAX_TRANSPOSE, MAX_VELOCITY_SCALE, MIN_GATE_SCALE, MIN_VELOCITY_SCALE, isIdentity, laneModifiers, maxSequenceBars, sequenceBars, sequenceName } from "../model/composer";
 import type { ComposerLane, ComposerSequence, LaneModifiers, Pattern, Project } from "../model/types";
 import { BarsStepper } from "./PatternStrip";
+import type { ComposerToolbarProps } from "./ComposerTimeline";
 
 export interface ComposerDetailsProps {
   project: Project;
@@ -16,12 +17,15 @@ export interface ComposerDetailsProps {
   blockedReason: string;
   onAddPattern: (patternId: string) => void;
   onSetLaneModifiers: (patch: Partial<LaneModifiers>) => void;
+  /** The arranging actions (add, duplicate, copy, paste, delete, open in the sequencer). */
+  actions: ComposerToolbarProps;
 }
 
-/** The detailed side of arranging, in the Edit panel: the selected sequence's name, length and colour, adding a launcher
- * pattern, and the selected lane's musical modifiers. The Composer's own toolbar has only the quick actions; nothing is in
- * both. Presentational. */
-export function ComposerDetails({ project, sequence, lane, launcher, onRename, onResize, onColor, canInsertBars, blockedReason, onAddPattern, onSetLaneModifiers }: ComposerDetailsProps) {
+/** All of arranging, in the Edit panel, in groups: Add (new sequence, lane, pattern, paste), the selected Sequence (name,
+ * length, colour, open in the sequencer, duplicate / copy / delete) and the selected lane's musical modifiers. The
+ * Composer's own toolbar has only the song status, zoom and Play from here. Presentational. */
+export function ComposerDetails({ project, sequence, lane, launcher, onRename, onResize, onColor, canInsertBars, blockedReason, onAddPattern, onSetLaneModifiers, actions: a }: ComposerDetailsProps) {
+  const needs = a.hasSelection ? undefined : "Select a sequence first";
   const m = laneModifiers(lane);
   // Label on the left, [ − value + ] on the right, so the three rows line up whatever their label or value is.
   const step = (label: string, shown: string, down: () => void, up: () => void, canDown: boolean, canUp: boolean) => (
@@ -41,6 +45,41 @@ export function ComposerDetails({ project, sequence, lane, launcher, onRename, o
   return (
     <>
       <section className="edit-group">
+        <div className="edit-group-title">Add</div>
+        <div className="edit-row">
+          <button className="track-copy-btn" disabled={!a.canNewSequence} onClick={a.onNewSequence} title={a.canNewSequence ? "New empty sequence at the marker (or the end of the selected lane if there is no marker)" : a.blockedReason}>
+            + Sequence
+          </button>
+          <button className="track-copy-btn" onClick={a.onAddLane} title="Add a lane">
+            + Lane
+          </button>
+          <button
+            className="track-paste-btn"
+            disabled={!a.canPaste}
+            title={a.canPaste ? "Paste at the marker (or the end of the selected lane if there is no marker)" : a.hasMarker ? "Nothing copied, or it does not fit at the marker: " + a.blockedReason : "Nothing copied"}
+            onClick={a.onPaste}
+          >
+            Paste
+          </button>
+        </div>
+        <div className="edit-row">
+          <select
+            className="composer-add-select"
+            value=""
+            aria-label="Place a pattern on the selected lane"
+            title="Place a pattern (not a copy: editing it changes every placement) at the marker (or the end of the selected lane if there is no marker)"
+            onChange={(e) => e.target.value && onAddPattern(e.target.value)}
+          >
+            <option value="">+ Add pattern…</option>
+            {launcher.map((p) => (
+              <option key={p.id} value={p.id} disabled={!canInsertBars(p.bars)} title={canInsertBars(p.bars) ? undefined : blockedReason}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+      <section className="edit-group">
         <div className="edit-group-title">Sequence{sequence ? "" : " — none selected"}</div>
         {sequence && (
           <>
@@ -58,20 +97,20 @@ export function ComposerDetails({ project, sequence, lane, launcher, onRename, o
           </>
         )}
         <div className="edit-row">
-          <select
-            className="composer-add-select"
-            value=""
-            aria-label="Place a pattern on the selected lane"
-            title="Place a pattern (not a copy: editing it changes every placement) at the marker (or the end of the selected lane if there is no marker)"
-            onChange={(e) => e.target.value && onAddPattern(e.target.value)}
-          >
-            <option value="">+ Add pattern…</option>
-            {launcher.map((p) => (
-              <option key={p.id} value={p.id} disabled={!canInsertBars(p.bars)} title={canInsertBars(p.bars) ? undefined : blockedReason}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <button className="track-copy-btn" disabled={!a.hasSelection} title={needs ?? "Duplicate as an independent sequence (a new pattern in the Patterns page)"} onClick={a.onDuplicate}>
+            Duplicate
+          </button>
+          <button className="track-copy-btn" disabled={!a.hasSelection} title={needs ?? "Copy this sequence"} onClick={a.onCopy}>
+            Copy
+          </button>
+          <button className="track-copy-btn danger" disabled={!a.hasSelection} title={needs ?? "Delete this sequence"} onClick={a.onDelete}>
+            Delete
+          </button>
+        </div>
+        <div className="edit-row">
+          <button className="track-copy-btn view-switch-btn" disabled={!a.hasSelection} title={needs ?? "Open this sequence in the sequencer"} onClick={a.onEdit}>
+            Edit Sequence ▸
+          </button>
         </div>
       </section>
       {lane && (

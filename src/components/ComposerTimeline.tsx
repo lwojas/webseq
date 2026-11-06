@@ -41,8 +41,8 @@ interface Drag {
   valid: boolean;
 }
 
-/** The few actions arranging needs, always at hand. Everything finer (name, length, colour, lane tracks, adding a
- * pattern) is in the Edit panel's Composer group, not here. */
+/** The arranging actions. The Edit panel's Composer groups show them as buttons; the timeline itself uses only Play from
+ * here (its toolbar) and Edit / Delete (keyboard on a selected block). */
 export interface ComposerToolbarProps {
   hasSelection: boolean;
   hasMarker: boolean;
@@ -407,29 +407,8 @@ function ComposerToolbar(
           +
         </button>
       </div>
-      <button className="btn small" disabled={!p.canNewSequence} onClick={p.onNewSequence} title={p.canNewSequence ? "New empty sequence at the marker (or the end of the selected lane if there is no marker)" : p.blockedReason}>
-        + Sequence
-      </button>
-      <button className="btn small" onClick={p.onAddLane} title="Add a lane">
-        + Lane
-      </button>
-      <button className="btn small" disabled={!p.hasSelection} title={needs ?? "Duplicate as an independent sequence (a new pattern in the Patterns page)"} onClick={p.onDuplicate}>
-        Duplicate
-      </button>
-      <button className="btn small" disabled={!p.hasSelection} title={needs ?? "Copy this sequence"} onClick={p.onCopy}>
-        Copy
-      </button>
-      <button className="btn small" disabled={!p.canPaste} title={p.canPaste ? "Paste at the marker (or the end of the selected lane if there is no marker)" : p.hasMarker ? "Nothing copied, or it does not fit at the marker: " + p.blockedReason : "Nothing copied"} onClick={p.onPaste}>
-        Paste
-      </button>
-      <button className="btn small danger" disabled={!p.hasSelection} title={needs ?? "Delete this sequence"} onClick={p.onDelete}>
-        Delete
-      </button>
       <button className="btn small" disabled={!p.hasSelection && !p.hasMarker} title={p.hasMarker ? "Play the song from the marker" : needs ?? "Play the song from the start of this sequence (set a marker to start anywhere)"} onClick={p.onPlayFromHere}>
         ▶ From here
-      </button>
-      <button className="btn small view-switch-btn" disabled={!p.hasSelection} title={needs ?? "Open this sequence in the sequencer"} onClick={p.onEdit}>
-        Edit Sequence ▸
       </button>
     </div>
   );

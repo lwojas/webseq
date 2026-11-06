@@ -756,7 +756,7 @@ select {
   color: var(--amber);
 }
 
-/* The Sequencer <-> Composer switch: "Edit Sequence ▸" at the right end of the Composer toolbar, "◂ Composer" / "+ Composer"
+/* The Sequencer <-> Composer switch: "Edit Sequence ▸" in the Edit panel's Sequence group, "◂ Composer" / "+ Composer"
    at the right end of the pattern strip. Same look, same width, same place, so it reads as one toggle. */
 .view-switch-btn {
   min-width: 124px;
@@ -2231,6 +2231,16 @@ select {
   padding: 3px 8px;
   cursor: pointer;
   font-size: 10px;
+}
+
+.track-copy-btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.track-copy-btn.danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg);
 }
 
 .track-copy-btn:hover,
