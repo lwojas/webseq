@@ -1244,7 +1244,20 @@ select {
 
 .composer-swatches {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+}
+
+.composer-colour-row {
+  margin-top: 8px;
+}
+
+/* The sequence's actions, set off from its properties above (name, bars, colour). */
+.composer-actions {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .composer-swatch {

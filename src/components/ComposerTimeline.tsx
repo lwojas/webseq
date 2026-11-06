@@ -42,7 +42,7 @@ interface Drag {
   valid: boolean;
 }
 
-/** The arranging actions. The Edit panel's Composer groups show them as buttons; the timeline itself uses only Play from
+/** The arranging actions. The Edit panel's Composer groups show them as buttons; the timeline itself uses only Edit Sequence and Play from
  * here (its toolbar) and Edit / Delete (keyboard on a selected block). */
 export interface ComposerToolbarProps {
   hasSelection: boolean;
@@ -412,6 +412,9 @@ function ComposerToolbar(
           +
         </button>
       </div>
+      <button className="btn small view-switch-btn" disabled={!p.hasSelection} title={needs ?? "Open this sequence in the sequencer"} onClick={p.onEdit}>
+        Edit Sequence ▸
+      </button>
       <button className="btn small" disabled={!p.hasSelection && !p.hasMarker} title={p.hasMarker ? "Play the song from the marker" : needs ?? "Play the song from the start of this sequence (set a marker to start anywhere)"} onClick={p.onPlayFromHere}>
         ▶ From here
       </button>

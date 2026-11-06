@@ -22,8 +22,8 @@ export interface ComposerDetailsProps {
 }
 
 /** All of arranging, in the Edit panel, in groups: Add (new sequence, lane, pattern, paste), the selected Sequence (name,
- * length, colour, open in the sequencer, duplicate / copy / delete) and the selected lane's musical modifiers. The
- * Composer's own toolbar has only the song status, zoom and Play from here. Presentational. */
+ * length, colour, duplicate / copy / delete) and the selected lane's musical modifiers. The
+ * Composer's own toolbar has the song status, zoom, Edit Sequence and Play from here. Presentational. */
 export function ComposerDetails({ project, sequence, lane, launcher, onRename, onResize, onColor, canInsertBars, blockedReason, onAddPattern, onSetLaneModifiers, actions: a }: ComposerDetailsProps) {
   const needs = a.hasSelection ? undefined : "Select a sequence first";
   const m = laneModifiers(lane);
@@ -89,27 +89,27 @@ export function ComposerDetails({ project, sequence, lane, launcher, onRename, o
             <div className="edit-row">
               <BarsStepper bars={sequenceBars(project, sequence)} max={maxSequenceBars(project, sequence)} onSetBars={onResize} />
             </div>
-            <div className="edit-row composer-swatches" role="group" aria-label="Sequence colour">
-              {COMPOSER_COLORS.map((c) => (
-                <button key={c} className={`composer-swatch ${sequence.color === c ? "active" : ""}`} style={{ background: c }} aria-label={`Colour ${c}`} onClick={() => onColor(c)} />
-              ))}
+            <div className="composer-mod-row composer-colour-row" role="group" aria-label="Sequence colour">
+              <span className="composer-mod-label">Colour</span>
+              <span className="composer-swatches">
+                {COMPOSER_COLORS.map((c) => (
+                  <button key={c} className={`composer-swatch ${sequence.color === c ? "active" : ""}`} style={{ background: c }} aria-label={`Colour ${c}`} onClick={() => onColor(c)} />
+                ))}
+              </span>
             </div>
           </>
         )}
-        <div className="edit-row">
+        {/* What you do with the sequence, apart from what it is: the main action first, the destructive one at the far end. */}
+        <div className="edit-row composer-actions">
           <button className="track-copy-btn" disabled={!a.hasSelection} title={needs ?? "Duplicate as an independent sequence (a new pattern in the Patterns page)"} onClick={a.onDuplicate}>
             Duplicate
           </button>
           <button className="track-copy-btn" disabled={!a.hasSelection} title={needs ?? "Copy this sequence"} onClick={a.onCopy}>
             Copy
           </button>
+          <span className="composer-toolbar-spacer" />
           <button className="track-copy-btn danger" disabled={!a.hasSelection} title={needs ?? "Delete this sequence"} onClick={a.onDelete}>
             Delete
-          </button>
-        </div>
-        <div className="edit-row">
-          <button className="track-copy-btn view-switch-btn" disabled={!a.hasSelection} title={needs ?? "Open this sequence in the sequencer"} onClick={a.onEdit}>
-            Edit Sequence ▸
           </button>
         </div>
       </section>
